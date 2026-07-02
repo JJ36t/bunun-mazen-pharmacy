@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ScrollText, ShoppingCart, RotateCcw, Trash2, DollarSign, Calendar, History, Search, FileDown, RefreshCw, Filter, Package, UserPlus, Settings, Database, Shield, AlertTriangle } from 'lucide-react';
+import { ScrollText, ShoppingCart, RotateCcw, Trash2, DollarSign, Calendar, Search, FileDown, RefreshCw, Package, Settings, Database, Shield, AlertTriangle } from 'lucide-react';
 import { exportToPdf } from '../../lib/utils/pdfExport';
 
 export function AuditDashboard() {
