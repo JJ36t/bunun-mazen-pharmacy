@@ -125,6 +125,23 @@ function PosDashboard() {
   const [suspendedInvs, setSuspendedInvs] = useState<any[]>([]);
   const [showSuspended, setShowSuspended] = useState(false);
   const [keypadTarget, setKeypadTarget] = useState<string | null>(null);
+  const [showPayment, setShowPayment] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
+  const [paymentCurrency, setPaymentCurrency] = useState<'IQD' | 'USD'>('IQD');
+  const [usdRate, setUsdRate] = useState(1310);
+  const [paidAmount, setPaidAmount] = useState('');
+  const [mixedCash, setMixedCash] = useState('');
+  const [mixedCard, setMixedCard] = useState('');
+  const [chequeNumber, setChequeNumber] = useState('');
+
+  // تحميل طرق الدفع وسعر الصرف
+  useEffect(() => {
+    invoke<any[]>('get_payment_methods_db').then(setPaymentMethods).catch(() => {});
+    invoke<any>('get_settings_db').then((s: any) => {
+      if (s?.usd_exchange_rate) setUsdRate(parseFloat(s.usd_exchange_rate));
+    }).catch(() => {});
+  }, []);
 
   // State Recovery - حفظ السلة تلقائياً
   useEffect(() => {
@@ -229,8 +246,12 @@ function PosDashboard() {
     } else setDiscountPercentage(val);
   };
 
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (cart.length === 0) return;
+    setShowPayment(true);
+  };
+
+  const handleConfirmPayment = async () => {
     const currentItems = [...cart]; 
     const finalTotal = calculateTotal(); 
     const newInvoiceNum = `INV-${Date.now()}`;
@@ -260,6 +281,8 @@ function PosDashboard() {
         } catch (e) { console.error('Print failed:', e); }
         
         clearCart();
+        setShowPayment(false);
+        setPaidAmount(''); setMixedCash(''); setMixedCard(''); setChequeNumber('');
         toast.success("تم تسجيل البيع والطباعة بنجاح.");
     } catch (e: any) {
         toast.error(e.toString() || "فشل تسجيل الفاتورة! تحقق من الصلاحيات.");
@@ -543,6 +566,28 @@ function PosDashboard() {
       )}
 
       {keypadTarget && <TouchKeypad onConfirm={handleKeypadConfirm} onClose={() => setKeypadTarget(null)} />}
+      
+      {showPayment && (
+        <PaymentModal
+          total={calculateTotal()}
+          paymentMethods={paymentMethods}
+          selectedMethod={selectedPaymentMethod}
+          setSelectedMethod={setSelectedPaymentMethod}
+          currency={paymentCurrency}
+          setCurrency={setPaymentCurrency}
+          usdRate={usdRate}
+          paidAmount={paidAmount}
+          setPaidAmount={setPaidAmount}
+          mixedCash={mixedCash}
+          setMixedCash={setMixedCash}
+          mixedCard={mixedCard}
+          setMixedCard={setMixedCard}
+          chequeNumber={chequeNumber}
+          setChequeNumber={setChequeNumber}
+          onConfirm={handleConfirmPayment}
+          onClose={() => setShowPayment(false)}
+        />
+      )}
       {invoiceData && <Receipt invoiceNumber={invoiceData.invoiceNumber} items={invoiceData.items} total={invoiceData.total} onClose={() => setInvoiceData(null)} />}
     </div>
   );
@@ -789,6 +834,149 @@ function App() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ========================================
+// Payment Modal - نافذة الدفع متعدد العملات
+// ========================================
+function PaymentModal({ 
+  total, paymentMethods, selectedMethod, setSelectedMethod,
+  currency, setCurrency, usdRate, paidAmount, setPaidAmount,
+  mixedCash, setMixedCash, mixedCard, setMixedCard,
+  chequeNumber, setChequeNumber, onConfirm, onClose 
+}: any) {
+  const totalInUsd = total / usdRate;
+  const totalDisplay = currency === 'USD' ? totalInUsd : total;
+  const totalLabel = currency === 'USD' ? '$' : 'د.ع';
+
+  const paidNum = parseFloat(paidAmount) || 0;
+  const change = paidNum - totalDisplay;
+
+  const mixedCashNum = parseFloat(mixedCash) || 0;
+  const mixedCardNum = parseFloat(mixedCard) || 0;
+  const mixedTotal = mixedCashNum + mixedCardNum;
+  const mixedComplete = Math.abs(mixedTotal - totalDisplay) < 0.01;
+
+  const methodLabels: any = {
+    cash: 'نقدي', card: 'بطاقة (مدى/Visa)', cheque: 'شيك', 
+    transfer: 'تحويل بنكي', credit: 'آجل', mixed: 'دفع مقسّم'
+  };
+
+  const methodIcons: any = {
+    cash: '💵', card: '💳', cheque: '📝', transfer: '🏦', credit: '⏰', mixed: '🔀'
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={onClose}>
+      <div className="bg-white p-7 rounded-3xl shadow-2xl w-[480px] animate-scale-in" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-5">
+          <h3 className="text-lg font-bold text-slate-800">إتمام الدفع</h3>
+          <button onClick={onClose} className="btn-icon"><X className="w-5 h-5" /></button>
+        </div>
+
+        {/* الإجمالي */}
+        <div className="bg-gradient-to-r from-brand-600 to-brand-700 text-white p-5 rounded-2xl mb-5 text-center">
+          <p className="text-xs opacity-80">الإجمالي المستحق</p>
+          <p className="text-4xl font-bold tabular mt-1">{totalDisplay.toFixed(2)} <span className="text-lg font-normal">{totalLabel}</span></p>
+          {currency === 'USD' && <p className="text-xs opacity-80 mt-1">≈ {total.toFixed(0)} د.ع</p>}
+          {currency === 'IQD' && <p className="text-xs opacity-80 mt-1">≈ ${(totalInUsd).toFixed(2)}</p>}
+        </div>
+
+        {/* اختيار العملة */}
+        <div className="flex gap-2 mb-4">
+          <button onClick={() => setCurrency('IQD')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${currency === 'IQD' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            دينار عراقي (IQD)
+          </button>
+          <button onClick={() => setCurrency('USD')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${currency === 'USD' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            دولار أمريكي (USD)
+          </button>
+        </div>
+
+        {/* اختيار طريقة الدفع */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {paymentMethods.map((m: any) => (
+            <button key={m.id} onClick={() => setSelectedMethod(m.name)} className={`p-3 rounded-xl text-xs font-semibold transition-all border-2 ${selectedMethod === m.name ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'}`}>
+              <span className="text-lg block mb-1">{methodIcons[m.name] || '💰'}</span>
+              {methodLabels[m.name] || m.displayName}
+            </button>
+          ))}
+        </div>
+
+        {/* حقول الدفع حسب الطريقة */}
+        {selectedMethod === 'cash' && (
+          <div className="mb-4">
+            <label className="label-lg">المبلغ المدفوع ({totalLabel})</label>
+            <input type="number" value={paidAmount} onChange={e => setPaidAmount(e.target.value)} className="input-lg text-2xl font-bold text-center tabular" placeholder="0.00" autoFocus />
+            {paidNum > 0 && (
+              <div className={`mt-2 p-3 rounded-xl text-center ${change >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                {change >= 0 ? `الباقي للزبون: ${change.toFixed(2)} ${totalLabel}` : `المتبقي: ${Math.abs(change).toFixed(2)} ${totalLabel}`}
+              </div>
+            )}
+          </div>
+        )}
+
+        {selectedMethod === 'card' && (
+          <div className="mb-4 p-4 rounded-xl bg-brand-50 text-center">
+            <p className="text-sm font-semibold text-brand-700">سيتم دفع {totalDisplay.toFixed(2)} {totalLabel} عبر بطاقة المدى/Visa</p>
+            <p className="text-xs text-slate-400 mt-1">سيتم تأكيد الدفع عبر جهاز POS</p>
+          </div>
+        )}
+
+        {selectedMethod === 'cheque' && (
+          <div className="mb-4">
+            <label className="label-lg">رقم الشيك</label>
+            <input type="text" value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} className="input tabular" placeholder="123456" />
+            <p className="text-xs text-amber-600 mt-2">⚠️ سيتم تسجيل الشيك كمستحق حتى تحصيله</p>
+          </div>
+        )}
+
+        {selectedMethod === 'transfer' && (
+          <div className="mb-4 p-4 rounded-xl bg-brand-50 text-center">
+            <p className="text-sm font-semibold text-brand-700">تحويل بنكي بقيمة {totalDisplay.toFixed(2)} {totalLabel}</p>
+          </div>
+        )}
+
+        {selectedMethod === 'credit' && (
+          <div className="mb-4 p-4 rounded-xl bg-amber-50 text-center">
+            <p className="text-sm font-semibold text-amber-700">بيع آجل بقيمة {totalDisplay.toFixed(2)} {totalLabel}</p>
+            <p className="text-xs text-slate-400 mt-1">سيتم تسجيله كدين على الزبون</p>
+          </div>
+        )}
+
+        {selectedMethod === 'mixed' && (
+          <div className="mb-4 grid grid-cols-2 gap-3">
+            <div>
+              <label className="label-lg">نقدي ({totalLabel})</label>
+              <input type="number" value={mixedCash} onChange={e => setMixedCash(e.target.value)} className="input-lg text-center font-bold tabular" placeholder="0.00" />
+            </div>
+            <div>
+              <label className="label-lg">بطاقة ({totalLabel})</label>
+              <input type="number" value={mixedCard} onChange={e => setMixedCard(e.target.value)} className="input-lg text-center font-bold tabular" placeholder="0.00" />
+            </div>
+            <div className="col-span-2 p-2 rounded-xl text-center text-sm font-semibold">
+              الإجمالي: {mixedTotal.toFixed(2)} / {totalDisplay.toFixed(2)} {totalLabel}
+              {mixedComplete && <span className="text-emerald-600 mr-2">✓ مكتمل</span>}
+            </div>
+          </div>
+        )}
+
+        {/* سعر الصرف */}
+        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 mb-4 text-xs">
+          <span className="text-slate-400">سعر الصرف الحالي:</span>
+          <span className="font-semibold text-slate-600 tabular">1 USD = {usdRate} IQD</span>
+        </div>
+
+        {/* زر التأكيد */}
+        <button 
+          onClick={onConfirm} 
+          className="btn-primary w-full py-4 text-base shadow-md"
+        >
+          <Calculator className="w-5 h-5" />
+          تأكيد الدفع + طباعة
+        </button>
+      </div>
     </div>
   );
 }
