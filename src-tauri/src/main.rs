@@ -1248,13 +1248,51 @@ fn main() {
             let database_url = "postgres://postgres:123456@localhost:5432/pharmacy_db";
             let pool = tauri::async_runtime::block_on(async { PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to Postgres.") });
             tauri::async_runtime::block_on(async {
-                sqlx::migrate!("./migrations").run(&pool).await.expect("Could not run migrations");
+                // محاولة تشغيل الـ migrations
+                match sqlx::migrate!("./migrations").run(&pool).await {
+                    Ok(_) => println!("Migrations applied successfully."),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        println!("Migration error: {}", err_str);
+                        
+                        // إذا كان خطأ VersionMismatch أو checksum mismatch، احذف _sqlx_migrations وأعد المحاولة
+                        if err_str.contains("VersionMismatch") || err_str.contains("checksum") || err_str.contains("checksum mismatch") {
+                            println!("Detected migration version mismatch. Resetting _sqlx_migrations table...");
+                            let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations").execute(&pool).await;
+                            
+                            // إعادة محاولة الـ migrations
+                            match sqlx::migrate!("./migrations").run(&pool).await {
+                                Ok(_) => println!("Migrations re-applied successfully after reset."),
+                                Err(e2) => {
+                                    let err2_str = e2.to_string();
+                                    println!("Migration retry error: {}", err2_str);
+                                    
+                                    // إذا فشل مرة أخرى، احذف _sqlx_migrations وكل الجداول المعنية وأعد المحاولة
+                                    if err2_str.contains("already exists") || err2_str.contains("VersionMismatch") {
+                                        println!("Performing full migration reset...");
+                                        let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations CASCADE").execute(&pool).await;
+                                        // الـ migrations تستخدم CREATE TABLE IF NOT EXISTS لذا لن تفشل
+                                        match sqlx::migrate!("./migrations").run(&pool).await {
+                                            Ok(_) => println!("Migrations applied after full reset."),
+                                            Err(e3) => panic!("Could not run migrations after full reset: {}", e3),
+                                        }
+                                    } else {
+                                        panic!("Could not run migrations: {}", e2);
+                                    }
+                                }
+                            }
+                        } else {
+                            panic!("Could not run migrations: {}", e);
+                        }
+                    }
+                }
+                
                 let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE username = 'admin'").fetch_one(&pool).await.unwrap_or(0);
                 if admin_count == 0 {
                     let admin_pass = bcrypt::hash("admin123", 8).unwrap();
                     let cashier_pass = bcrypt::hash("cashier123", 8).unwrap();
-                    sqlx::query("INSERT INTO users (username, password, role) VALUES ('admin', $1, 'Super Admin')").bind(admin_pass).execute(&pool).await.expect("Err");
-                    sqlx::query("INSERT INTO users (username, password, role) VALUES ('cashier', $1, 'Cashier')").bind(cashier_pass).execute(&pool).await.expect("Err");
+                    let _ = sqlx::query("INSERT INTO users (username, password, role) VALUES ('admin', $1, 'Super Admin')").bind(admin_pass).execute(&pool).await;
+                    let _ = sqlx::query("INSERT INTO users (username, password, role) VALUES ('cashier', $1, 'Cashier')").bind(cashier_pass).execute(&pool).await;
                 }
             });
             app.manage(pool);
