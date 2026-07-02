@@ -12,47 +12,63 @@ use chrono;
 
 // ===== 1. FINANCIAL LEDGER =====
 
-#[tauri::command]
-pub async fn record_ledger_entry_db(state: tauri::State<'_, PgPool>, transaction_id: String, account_code: String, debit: f64, credit: f64, description: String, reference_type: String, reference_id: Option<String>, user_role: String) -> Result<(), String> {
-    let tx_id = uuid::Uuid::parse_str(&transaction_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
+// دالة مساعدة داخلية (بدون Tauri State) للاستدعاء من داخل دوال أخرى
+async fn record_ledger_entry_inner(
+    pool: &PgPool,
+    transaction_id: uuid::Uuid,
+    account_code: &str,
+    debit: f64,
+    credit: f64,
+    description: &str,
+    reference_type: &str,
+    reference_id: Option<uuid::Uuid>,
+    user_role: &str,
+) -> Result<(), String> {
     let account = sqlx::query("SELECT id FROM ledger_accounts WHERE account_code = $1")
-        .bind(&account_code).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
+        .bind(account_code).fetch_one(pool).await.map_err(|e| e.to_string())?;
     let account_id: uuid::Uuid = account.get(0);
-    let ref_uuid = reference_id.and_then(|s| uuid::Uuid::parse_str(&s).ok());
     
     sqlx::query("INSERT INTO ledger_entries (transaction_id, account_id, debit_amount, credit_amount, description, reference_type, reference_id, user_role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
-        .bind(tx_id).bind(account_id)
+        .bind(transaction_id).bind(account_id)
         .bind(rust_decimal::Decimal::from_f64(debit).ok_or("Err")?)
         .bind(rust_decimal::Decimal::from_f64(credit).ok_or("Err")?)
-        .bind(&description).bind(&reference_type).bind(ref_uuid).bind(&user_role)
-        .execute(state.inner()).await.map_err(|e| e.to_string())?;
+        .bind(description).bind(reference_type).bind(reference_id).bind(user_role)
+        .execute(pool).await.map_err(|e| e.to_string())?;
     
     // تحديث رصيد الحساب
     let debit_dec = rust_decimal::Decimal::from_f64(debit).unwrap_or(rust_decimal::Decimal::ZERO);
     let credit_dec = rust_decimal::Decimal::from_f64(credit).unwrap_or(rust_decimal::Decimal::ZERO);
     sqlx::query("UPDATE ledger_accounts SET balance = balance + $1 - $2 WHERE id = $3")
         .bind(debit_dec).bind(credit_dec).bind(account_id)
-        .execute(state.inner()).await.map_err(|e| e.to_string())?;
+        .execute(pool).await.map_err(|e| e.to_string())?;
     
     Ok(())
+}
+
+#[tauri::command]
+pub async fn record_ledger_entry_db(state: tauri::State<'_, PgPool>, transaction_id: String, account_code: String, debit: f64, credit: f64, description: String, reference_type: String, reference_id: Option<String>, user_role: String) -> Result<(), String> {
+    let tx_id = uuid::Uuid::parse_str(&transaction_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
+    let ref_uuid = reference_id.and_then(|s| uuid::Uuid::parse_str(&s).ok());
+    record_ledger_entry_inner(state.inner(), tx_id, &account_code, debit, credit, &description, &reference_type, ref_uuid, &user_role).await
 }
 
 #[tauri::command]
 pub async fn record_sale_ledger_db(state: tauri::State<'_, PgPool>, invoice_id: String, total_amount: f64, cost_amount: f64, user_role: String) -> Result<(), String> {
     let tx_id = uuid::Uuid::new_v4();
     let inv_uuid = uuid::Uuid::parse_str(&invoice_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
+    let pool = state.inner();
     
     // مدين: الصندوق النقدي (الأصل يزيد)
-    crate::pharmiq_enterprise_complete::record_ledger_entry_db(state.inner().clone() as tauri::State<'_, PgPool>, tx_id.to_string(), "1000".to_string(), total_amount, 0.0, format!("بيع فاتورة {}", invoice_id), "sale".to_string(), Some(inv_uuid.to_string()), user_role.clone()).await?;
+    record_ledger_entry_inner(pool, tx_id, "1000", total_amount, 0.0, &format!("بيع فاتورة {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
     
     // دائن: المبيعات (الإيراد يزيد)
-    crate::pharmiq_enterprise_complete::record_ledger_entry_db(state.inner().clone() as tauri::State<'_, PgPool>, tx_id.to_string(), "4000".to_string(), 0.0, total_amount, format!("إيراد مبيعات {}", invoice_id), "sale".to_string(), Some(inv_uuid.to_string()), user_role.clone()).await?;
+    record_ledger_entry_inner(pool, tx_id, "4000", 0.0, total_amount, &format!("إيراد مبيعات {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
     
     // مدين: تكلفة البضاعة المباعة
-    crate::pharmiq_enterprise_complete::record_ledger_entry_db(state.inner().clone() as tauri::State<'_, PgPool>, tx_id.to_string(), "5000".to_string(), cost_amount, 0.0, format!("تكلفة بضاعة مباعة {}", invoice_id), "sale".to_string(), Some(inv_uuid.to_string()), user_role.clone()).await?;
+    record_ledger_entry_inner(pool, tx_id, "5000", cost_amount, 0.0, &format!("تكلفة بضاعة مباعة {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
     
     // دائن: المخزون (الأصل ينقص)
-    crate::pharmiq_enterprise_complete::record_ledger_entry_db(state.inner().clone() as tauri::State<'_, PgPool>, tx_id.to_string(), "1200".to_string(), 0.0, cost_amount, format!("تخفيض مخزون {}", invoice_id), "sale".to_string(), Some(inv_uuid.to_string()), user_role).await?;
+    record_ledger_entry_inner(pool, tx_id, "1200", 0.0, cost_amount, &format!("تخفيض مخزون {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
     
     Ok(())
 }
