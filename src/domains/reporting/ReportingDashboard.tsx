@@ -10,6 +10,8 @@ export function ReportingDashboard() {
   const [reportData, setReportData] = useState({ totalSales: 0, totalProfits: 0, invoiceCount: 0 });
   const [invoiceDetails, setInvoiceDetails] = useState<any[]>([]);
   const [timeRange, setTimeRange] = useState('today');
+  const [customStart, setCustomStart] = useState(new Date().toISOString().split('T')[0]);
+  const [customEnd, setCustomEnd] = useState(new Date().toISOString().split('T')[0]);
   const [cashierFilter, setCashierFilter] = useState('all');
   const [users, setUsers] = useState<any[]>([]);
   const [reportType, setReportType] = useState<'sales' | 'profits' | 'inventory'>('sales');
@@ -24,13 +26,16 @@ export function ReportingDashboard() {
     fetchInit();
   }, []);
 
-  useEffect(() => { fetchReport(); }, [timeRange, cashierFilter, reportType]);
+  useEffect(() => { fetchReport(); }, [timeRange, cashierFilter, reportType, customStart, customEnd]);
 
   const fetchReport = async () => {
     try {
       const now = new Date();
       let start = new Date(); let end = new Date();
-      if (timeRange === 'today') { start.setHours(0,0,0,0); end.setHours(23,59,59,999); }
+      if (timeRange === 'custom') {
+        start = new Date(customStart + 'T00:00:00');
+        end = new Date(customEnd + 'T23:59:59');
+      } else if (timeRange === 'today') { start.setHours(0,0,0,0); end.setHours(23,59,59,999); }
       else if (timeRange === 'yesterday') { start.setDate(now.getDate() - 1); start.setHours(0,0,0,0); end.setDate(now.getDate() - 1); end.setHours(23,59,59,999); }
       else if (timeRange === 'week') { start.setDate(now.getDate() - 7); start.setHours(0,0,0,0); }
       else if (timeRange === 'month') { start.setDate(1); start.setHours(0,0,0,0); }
@@ -79,8 +84,15 @@ export function ReportingDashboard() {
           الفترة:
         </div>
         <select value={timeRange} onChange={e => setTimeRange(e.target.value)} className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500">
-          <option value="today">اليوم</option><option value="yesterday">أمس</option><option value="week">آخر أسبوع</option><option value="month">هذا الشهر</option><option value="last_month">الشهر السابق</option>
+          <option value="today">اليوم</option><option value="yesterday">أمس</option><option value="week">آخر أسبوع</option><option value="month">هذا الشهر</option><option value="last_month">الشهر السابق</option><option value="custom">نطاق مخصص</option>
         </select>
+        {timeRange === 'custom' && (
+          <div className="flex items-center gap-2">
+            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20" />
+            <span className="text-slate-400 text-xs">إلى</span>
+            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20" />
+          </div>
+        )}
         <div className="h-6 w-px bg-slate-200 mx-2"></div>
         <div className="flex items-center gap-2 text-slate-600 text-sm font-semibold">
           <Users className="w-4 h-4 text-brand-600" /> 

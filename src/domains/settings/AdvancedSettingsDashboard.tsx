@@ -34,7 +34,6 @@ export function AdvancedSettingsDashboard() {
 
   const tabs = [
     { key: 'appearance' as const, label: 'المظهر', icon: Palette },
-    { key: 'taxes' as const, label: 'الضرائب', icon: Percent },
     { key: 'invoice' as const, label: 'الفاتورة', icon: FileText },
     { key: 'performance' as const, label: 'الأداء', icon: Activity },
     { key: 'security' as const, label: 'الأمان', icon: Shield },
@@ -45,7 +44,7 @@ export function AdvancedSettingsDashboard() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="section-title">الإعدادات المتقدمة</h1>
-          <p className="section-subtitle">تخصيص المظهر والضرائب والفواتير والأداء</p>
+          <p className="section-subtitle">تخصيص المظهر والفواتير والأداء والأمان</p>
         </div>
         <div className="flex gap-2">
           <button onClick={handleSave} className="btn-primary">
