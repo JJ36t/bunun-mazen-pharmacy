@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Plus, Users, User, Phone, FileText, Search, Trash2, Edit, Heart, ShoppingBag, X } from 'lucide-react';
+import { Plus, Users, User, Phone, FileText, Search, Heart, ShoppingBag, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function PatientsDashboard() {
@@ -8,13 +8,10 @@ export function PatientsDashboard() {
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [nationalId, setNationalId] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
-  const [isChronic, setIsChronic] = useState(false);
-  const [chronicMeds, setChronicMeds] = useState('');
 
   const fetchPatients = async () => {
     try { setPatients(await invoke<any[]>('get_patients_db')); } catch (e) { console.error(e); }
@@ -45,7 +42,7 @@ export function PatientsDashboard() {
           <h1 className="section-title">إدارة المرضى</h1>
           <p className="section-subtitle">سجل الزبائن + المرضى المزمنين + تاريخ الوصفات</p>
         </div>
-        <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} className="btn-primary">
+        <button onClick={() => { setShowForm(!showForm); }} className="btn-primary">
           <Plus className="w-4 h-4" /> مريض جديد
         </button>
       </div>

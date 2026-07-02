@@ -3,8 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAccountingStore } from './domains/accounting/accounting.store';
 import { useInventoryStore } from './domains/inventory/inventory.store';
 import { useDebtsStore } from './domains/accounting/debts.store';
-import { TrendingUp, Wallet, Users, Package, AlertTriangle, Clock, DollarSign, ArrowUpRight, Activity, ShoppingCart, RotateCcw, Pill, Zap, Trophy, Bell, RefreshCw } from 'lucide-react';
-import { XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, BarChart, Bar } from 'recharts';
+import { TrendingUp, Wallet, Users, Package, AlertTriangle, Clock, DollarSign, ArrowUpRight, Activity, ShoppingCart, RotateCcw, Pill, Zap, Trophy, RefreshCw } from 'lucide-react';
+import { XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart } from 'recharts';
 
 export function MainDashboard() {
   const [stats, setStats] = useState({ todaySales: 0, todayInvoices: 0, lowStockCount: 0 });
