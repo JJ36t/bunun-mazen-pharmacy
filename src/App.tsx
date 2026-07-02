@@ -27,25 +27,25 @@ import { parseISO, startOfDay, isBefore, isAfter, addDays } from 'date-fns';
 import { 
   Search, LogOut, Calculator, LayoutDashboard, ShoppingCart, RotateCcw, 
   Package, Calculator as CalcIcon, Users, FileBarChart, ScrollText, Database, Settings, Truck, UserCog,
-  Pause, Play, Trash2, X
+  Pause, Play, Trash2, X, Hash, Tag, Receipt as ReceiptIcon
 } from 'lucide-react';
 
 type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'patients' | 'reporting' | 'audit' | 'backup' | 'settings' | 'users';
 
 const navItems = [
-  { key: 'dashboard' as TabKey, label: 'الرئيسية', icon: LayoutDashboard },
-  { key: 'pos' as TabKey, label: 'نقاط البيع', icon: ShoppingCart },
-  { key: 'refund' as TabKey, label: 'مرتجع المبيعات', icon: RotateCcw },
-  { key: 'inventory' as TabKey, label: 'المخزون', icon: Package },
-  { key: 'accounting' as TabKey, label: 'المحاسبة', icon: CalcIcon, adminOnly: true },
-  { key: 'debts' as TabKey, label: 'الديون', icon: Users, adminOnly: true },
-  { key: 'suppliers' as TabKey, label: 'الموردون', icon: Truck, adminOnly: true },
-  { key: 'patients' as TabKey, label: 'المرضى', icon: UserCog, adminOnly: true },
-  { key: 'reporting' as TabKey, label: 'التقارير', icon: FileBarChart, adminOnly: true },
-  { key: 'audit' as TabKey, label: 'سجل التدقيق', icon: ScrollText, adminOnly: true },
-  { key: 'backup' as TabKey, label: 'النسخ الاحتياطي', icon: Database, adminOnly: true },
-  { key: 'users' as TabKey, label: 'المستخدمون', icon: UserCog, adminOnly: true },
-  { key: 'settings' as TabKey, label: 'الإعدادات', icon: Settings, adminOnly: true },
+  { key: 'dashboard' as TabKey, label: 'الرئيسية', icon: LayoutDashboard, group: 'العمليات' },
+  { key: 'pos' as TabKey, label: 'نقاط البيع', icon: ShoppingCart, group: 'العمليات' },
+  { key: 'refund' as TabKey, label: 'مرتجع المبيعات', icon: RotateCcw, group: 'العمليات' },
+  { key: 'inventory' as TabKey, label: 'المخزون', icon: Package, group: 'الإدارة' },
+  { key: 'accounting' as TabKey, label: 'المحاسبة', icon: CalcIcon, adminOnly: true, group: 'الإدارة' },
+  { key: 'debts' as TabKey, label: 'الديون', icon: Users, adminOnly: true, group: 'الإدارة' },
+  { key: 'suppliers' as TabKey, label: 'الموردون', icon: Truck, adminOnly: true, group: 'الإدارة' },
+  { key: 'patients' as TabKey, label: 'المرضى', icon: UserCog, adminOnly: true, group: 'الإدارة' },
+  { key: 'reporting' as TabKey, label: 'التقارير', icon: FileBarChart, adminOnly: true, group: 'النظام' },
+  { key: 'audit' as TabKey, label: 'سجل التدقيق', icon: ScrollText, adminOnly: true, group: 'النظام' },
+  { key: 'backup' as TabKey, label: 'النسخ الاحتياطي', icon: Database, adminOnly: true, group: 'النظام' },
+  { key: 'users' as TabKey, label: 'المستخدمون', icon: UserCog, adminOnly: true, group: 'النظام' },
+  { key: 'settings' as TabKey, label: 'الإعدادات', icon: Settings, adminOnly: true, group: 'النظام' },
 ];
 
 function TouchKeypad({ onConfirm, onClose }: { onConfirm: (val: string) => void; onClose: () => void }) {
@@ -57,12 +57,15 @@ function TouchKeypad({ onConfirm, onClose }: { onConfirm: (val: string) => void;
     else setVal(prev => prev + k);
   };
   return (
-    <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white p-6 rounded-2xl shadow-2xl w-80" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-4"><h3 className="text-base font-bold text-slate-800">إدخال الكمية</h3><button onClick={onClose} className="text-slate-400"><X className="w-4 h-4" /></button></div>
-        <input type="text" value={val} readOnly className="w-full text-2xl font-bold text-center bg-slate-100 rounded-lg py-3 mb-4" placeholder="0" />
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={onClose}>
+      <div className="bg-white p-6 rounded-3xl shadow-2xl w-80 animate-scale-in" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-5">
+          <h3 className="text-base font-bold text-slate-800">إدخال الكمية</h3>
+          <button onClick={onClose} className="btn-icon"><X className="w-4 h-4" /></button>
+        </div>
+        <input type="text" value={val} readOnly className="input-lg text-2xl font-bold text-center mb-5 tabular" placeholder="0" />
         <div className="grid grid-cols-3 gap-2">
-          {keys.map(k => <button key={k} onClick={() => handlePress(k)} className={`py-4 rounded-xl text-xl font-bold ${k === '✓' ? 'bg-emerald-600 text-white' : k === 'C' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-700'}`}>{k}</button>)}
+          {keys.map(k => <button key={k} onClick={() => handlePress(k)} className={`py-4 rounded-xl text-xl font-bold transition-all active:scale-95 ${k === '✓' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : k === 'C' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>{k}</button>)}
         </div>
       </div>
     </div>
@@ -208,71 +211,215 @@ function PosDashboard() {
   }, [cart, medicines, discountPercentage]);
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden animate-fade-in">
+      {/* القسم الأيمن - البحث والنتائج */}
       <div className="flex-1 flex flex-col p-6 overflow-hidden">
-        <div className="flex gap-2 mb-4">
-          <div className="relative flex-1"><Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" /><input type="text" value={searchTerm} onChange={handleSearch} onKeyPress={handleSearchKeyPress} placeholder="ابحث أو امسح الباركود... (F1 للدفع، F2 للتعليق)" className="w-full pr-12 pl-4 py-4 bg-white border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm" autoFocus /></div>
-          <button onClick={() => { fetchSuspended(); setShowSuspended(true); }} className="bg-slate-100 text-slate-600 px-4 rounded-xl hover:bg-slate-200 flex items-center gap-2 text-sm font-medium"><Pause className="w-4 h-4" /> الفواتير المعلقة</button>
+        <div className="flex gap-3 mb-5">
+          <div className="relative flex-1">
+            <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <input 
+              type="text" 
+              value={searchTerm} 
+              onChange={handleSearch} 
+              onKeyPress={handleSearchKeyPress} 
+              placeholder="ابحث أو امسح الباركود... (F1 للدفع، F2 للتعليق)" 
+              className="input-lg pr-12 pl-4 shadow-sm" 
+              autoFocus 
+            />
+          </div>
+          <button 
+            onClick={() => { fetchSuspended(); setShowSuspended(true); }} 
+            className="btn-ghost bg-white border border-slate-200"
+          >
+            <Pause className="w-4 h-4" /> 
+            <span>الفواتير المعلقة</span>
+            {suspendedInvs.length > 0 && (
+              <span className="badge-warning">{suspendedInvs.length}</span>
+            )}
+          </button>
         </div>
+        
         <div className="flex-1 overflow-auto">
           {searchTerm && !medicines.find((m:any) => m.barcode === searchTerm.trim()) && (
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              {results.length === 0 ? <p className="p-12 text-center text-slate-400 text-sm">لا توجد نتائج مطابقة</p> : results.map((med:any) => (
-                <div key={med.id} className="p-4 border-b border-slate-100 last:border-0 hover:bg-blue-50/50 cursor-pointer flex items-center justify-between transition-colors" onClick={() => handleAddToCart(med)}>
-                  <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center"><span className="text-slate-400 font-bold text-sm">{med.nameAr.charAt(0)}</span></div><div><p className="font-semibold text-slate-800">{med.nameAr}</p><p className="text-xs text-slate-400">باركود: {med.barcode} • متوفر: {med.quantity}</p></div></div><span className="font-bold text-blue-600">{med.price.toFixed(2)} د.ع</span>
+            <div className="card overflow-hidden animate-slide-up">
+              {results.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-state-icon">
+                    <Search className="w-9 h-9 text-slate-300" />
+                  </div>
+                  <p className="text-slate-400 text-sm">لا توجد نتائج مطابقة</p>
+                  <p className="text-slate-300 text-xs mt-1">جرّب كلمات أخرى أو تحقق من الباركود</p>
+                </div>
+              ) : results.map((med:any) => (
+                <div 
+                  key={med.id} 
+                  className="p-4 border-b border-slate-100 last:border-0 hover:bg-brand-50/40 cursor-pointer flex items-center justify-between transition-colors" 
+                  onClick={() => handleAddToCart(med)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-100 to-brand-50 flex items-center justify-center ring-1 ring-brand-200/50">
+                      <Package className="w-5 h-5 text-brand-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-800">{med.nameAr}</p>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span className="text-xs text-slate-400 flex items-center gap-1">
+                          <Hash className="w-3 h-3" />{med.barcode}
+                        </span>
+                        <span className="text-xs text-slate-400 flex items-center gap-1">
+                          <Tag className="w-3 h-3" />متوفر: {med.quantity}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <span className="font-bold text-brand-700 text-lg tabular">{med.price.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></span>
                 </div>
               ))}
             </div>
           )}
-          {!searchTerm && (<div className="flex items-center justify-center h-full"><div className="text-center"><div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4"><Search className="w-7 h-7 text-slate-300" /></div><p className="text-slate-400 text-sm">ابحث عن دواء لبدء البيع</p></div></div>)}
+          {!searchTerm && (
+            <div className="empty-state h-full">
+              <div className="empty-state-icon bg-gradient-to-br from-brand-100 to-brand-50 ring-1 ring-brand-200/50">
+                <ShoppingCart className="w-9 h-9 text-brand-400" />
+              </div>
+              <p className="text-slate-500 text-base font-semibold">ابحث عن دواء لبدء البيع</p>
+              <p className="text-slate-400 text-sm mt-1">اكتب اسم الدواء أو امسح الباركود</p>
+            </div>
+          )}
         </div>
       </div>
-      <div className="w-[380px] bg-white border-l border-slate-200 flex flex-col">
-        <div className="p-5 border-b border-slate-200"><div className="flex items-center justify-between mb-1"><h3 className="font-bold text-slate-800">الفاتورة الحالية</h3><div className="flex gap-2">{cart.length > 0 && <button onClick={handleSuspend} className="text-xs text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1"><Pause className="w-3 h-3" />تعليق (F2)</button>}<button onClick={clearCart} className="text-xs text-red-500 hover:text-red-700 font-medium">إفراغ</button></div></div><p className="text-xs text-slate-400">{pharmacyName}</p></div>
-        <div className="flex-1 overflow-auto p-5">
-          {cart.length === 0 ? <div className="flex items-center justify-center h-full"><p className="text-slate-300 text-sm">لم تتم إضافة أصناف بعد</p></div> : (
-            <div className="space-y-3">{cart.map(item => (
-              <div key={item.id} className="flex items-start justify-between p-3 rounded-lg bg-slate-50">
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-slate-800">{item.nameAr}</p>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <button onClick={() => removeFromCart(item.id)} className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center text-red-500 hover:bg-red-50 text-sm font-bold">−</button>
-                    <button onClick={() => setKeypadTarget(item.id)} className="text-sm font-semibold text-blue-700 min-w-[40px] text-center bg-blue-50 px-2 py-1 rounded-md">{item.quantity}</button>
-                    <button onClick={() => handleIncreaseCartQty(item)} className="w-6 h-6 rounded-md bg-white border border-slate-200 flex items-center justify-center text-emerald-500 hover:bg-emerald-50 text-sm font-bold">+</button>
-                    <span className="text-xs text-slate-400 mr-2">× {item.price.toFixed(2)}</span>
-                  </div>
-                </div>
-                <span className="text-sm font-bold text-slate-800">{(item.price * item.quantity).toFixed(2)}</span>
-              </div>
-            ))}</div>)}
+      
+      {/* القسم الأيسر - الفاتورة الحالية */}
+      <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col">
+        <div className="p-5 border-b border-slate-200 bg-gradient-subtle">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <ReceiptIcon className="w-4 h-4 text-brand-600" />
+              الفاتورة الحالية
+            </h3>
+            <div className="flex gap-2">
+              {cart.length > 0 && (
+                <button onClick={handleSuspend} className="text-xs text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-amber-50">
+                  <Pause className="w-3 h-3" />تعليق
+                </button>
+              )}
+              {cart.length > 0 && (
+                <button onClick={clearCart} className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded-lg hover:bg-red-50">
+                  إفراغ
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-slate-400">{pharmacyName}</p>
         </div>
+        
+        <div className="flex-1 overflow-auto p-5">
+          {cart.length === 0 ? (
+            <div className="empty-state h-full">
+              <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mb-3">
+                <ShoppingCart className="w-6 h-6 text-slate-300" />
+              </div>
+              <p className="text-slate-300 text-sm">لم تتم إضافة أصناف بعد</p>
+            </div>
+          ) : (
+            <div className="space-y-3 animate-fade-in">
+              {cart.map(item => (
+                <div key={item.id} className="flex items-start justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-800">{item.nameAr}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <button 
+                        onClick={() => removeFromCart(item.id)} 
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-red-500 hover:bg-red-50 hover:border-red-200 text-sm font-bold active:scale-95"
+                      >−</button>
+                      <button 
+                        onClick={() => setKeypadTarget(item.id)} 
+                        className="text-sm font-semibold text-brand-700 min-w-[44px] text-center bg-brand-50 px-3 py-1 rounded-lg hover:bg-brand-100 tabular"
+                      >{item.quantity}</button>
+                      <button 
+                        onClick={() => handleIncreaseCartQty(item)} 
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 text-sm font-bold active:scale-95"
+                      >+</button>
+                      <span className="text-xs text-slate-400 mr-2 tabular">× {item.price.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-slate-800 tabular">{(item.price * item.quantity).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        
         <div className="p-5 border-t border-slate-200 bg-slate-50/50">
-          <div className="flex justify-between items-center mb-2"><span className="text-sm text-slate-500">المجموع الفرعي</span><span className="text-sm font-bold text-slate-700">{calculateSubtotal().toFixed(2)} د.ع</span></div>
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm text-slate-500">المجموع الفرعي</span>
+            <span className="text-sm font-bold text-slate-700 tabular">{calculateSubtotal().toFixed(2)} د.ع</span>
+          </div>
           <div className="flex justify-between items-center mb-4">
             <label className="text-sm text-slate-500">الخصم (الحد الأقصى {maxDiscount}%)</label>
-            <input type="number" min="0" max="100" value={discountPercentage || ''} onChange={handleDiscountChange} className="w-24 px-2 py-1 text-sm text-left border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="0%" />
+            <input 
+              type="number" 
+              min="0" 
+              max="100" 
+              value={discountPercentage || ''} 
+              onChange={handleDiscountChange} 
+              className="w-24 px-3 py-1.5 text-sm text-left border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 tabular" 
+              placeholder="0%" 
+            />
           </div>
-          <div className="flex justify-between items-center mb-4"><span className="text-sm text-slate-500">الإجمالي المستحق</span><span className="text-2xl font-bold text-slate-800">{calculateTotal().toFixed(2)} <span className="text-sm font-normal text-slate-400">د.ع</span></span></div>
-          <button onClick={handleCheckout} disabled={cart.length === 0} className="w-full bg-blue-600 text-white py-3.5 rounded-xl text-base font-bold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm flex items-center justify-center gap-2"><Calculator className="w-4 h-4" />إتمام البيع (F1)</button>
+          <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-200">
+            <span className="text-sm text-slate-600 font-semibold">الإجمالي المستحق</span>
+            <span className="text-3xl font-bold text-brand-700 tabular">{calculateTotal().toFixed(2)} <span className="text-sm font-normal text-slate-400">د.ع</span></span>
+          </div>
+          <button 
+            onClick={handleCheckout} 
+            disabled={cart.length === 0} 
+            className="btn-primary w-full py-4 text-base shadow-md"
+          >
+            <Calculator className="w-5 h-5" />
+            إتمام البيع (F1)
+          </button>
         </div>
       </div>
       
       {showSuspended && (
-        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50" onClick={() => setShowSuspended(false)}>
-          <div className="bg-white p-6 rounded-2xl shadow-2xl w-96" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4"><h3 className="text-base font-bold text-slate-800">الفواتير المعلقة</h3><button onClick={() => setShowSuspended(false)} className="text-slate-400"><X className="w-4 h-4" /></button></div>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={() => setShowSuspended(false)}>
+          <div className="bg-white p-6 rounded-3xl shadow-2xl w-96 animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <Pause className="w-4 h-4 text-amber-500" />
+                الفواتير المعلقة
+              </h3>
+              <button onClick={() => setShowSuspended(false)} className="btn-icon"><X className="w-4 h-4" /></button>
+            </div>
             <div className="space-y-2 max-h-80 overflow-auto">
-              {suspendedInvs.length === 0 ? <p className="text-center text-slate-400 py-8">لا توجد فواتير معلقة</p> : 
-                suspendedInvs.map(inv => (
-                  <div key={inv.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                    <div><p className="text-sm font-medium text-slate-700">{new Date(inv.date).toLocaleString('en-GB')}</p><p className="text-xs text-slate-400">{JSON.parse(inv.itemsJson).length} أصناف</p></div>
+              {suspendedInvs.length === 0 ? (
+                <div className="empty-state py-12">
+                  <div className="empty-state-icon">
+                    <Pause className="w-8 h-8 text-slate-300" />
+                  </div>
+                  <p className="text-slate-400 text-sm">لا توجد فواتير معلقة</p>
+                </div>
+              ) : suspendedInvs.map(inv => (
+                  <div key={inv.id} className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700 tabular">{new Date(inv.date).toLocaleString('en-GB')}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{JSON.parse(inv.itemsJson).length} أصناف</p>
+                    </div>
                     <div className="flex gap-1">
-                      <button onClick={() => handleRecall(inv)} className="bg-blue-50 text-blue-600 p-2 rounded-lg hover:bg-blue-100"><Play className="w-4 h-4" /></button>
-                      <button onClick={() => { invoke('delete_suspended_invoice_db', { invId: inv.id }); fetchSuspended(); }} className="bg-red-50 text-red-600 p-2 rounded-lg hover:bg-red-100"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => handleRecall(inv)} className="btn-icon text-brand-600 hover:bg-brand-50">
+                        <Play className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => { invoke('delete_suspended_invoice_db', { invId: inv.id }); fetchSuspended(); }} 
+                        className="btn-icon text-red-500 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                ))
-              }
+                )
+              )}
             </div>
           </div>
         </div>
@@ -308,6 +455,9 @@ function App() {
 
   const isAdmin = role === 'Super Admin';
   const items = navItems.filter(i => !i.adminOnly || isAdmin);
+  
+  // تنظيم العناصر حسب المجموعة
+  const groups = Array.from(new Set(items.map(i => i.group)));
 
   const handleStartShift = () => {
     const amt = parseFloat(shiftAmount) || 0;
@@ -328,24 +478,95 @@ function App() {
   return (
     <div dir="rtl" className="h-screen flex bg-slate-50 font-sans no-select overflow-hidden">
       <Toaster richColors position="bottom-left" />
-      <aside className="w-64 bg-slate-900 text-white flex flex-col">
-        <div className="h-16 flex items-center gap-3 px-5 border-b border-slate-800"><img src="/logo.png" alt="شعار الصيدلية" className="w-10 h-10 rounded-lg object-contain bg-white/95 p-0.5" /><div><p className="text-sm font-bold text-white">صيدلية بنين مازن</p><p className="text-xs text-slate-400">نظام الإدارة - الإصدار 2.3</p></div></div>
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {items.map(item => { const Icon = item.icon; const isActive = activeTab === item.key; return (<button key={item.key} onClick={() => setActiveTab(item.key)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><Icon className="w-[18px] h-[18px]" /><span>{item.label}</span></button>); })}
+      
+      {/* ===== الشريط الجانبي الأنيق ===== */}
+      <aside className="w-72 bg-gradient-to-b from-brand-900 via-brand-900 to-brand-950 text-white flex flex-col shadow-2xl">
+        {/* الشعار + الاسم */}
+        <div className="h-20 flex items-center gap-3 px-5 border-b border-white/10">
+          <div className="w-12 h-12 rounded-2xl bg-white/95 p-1 shadow-lg flex items-center justify-center">
+            <img src="/logo.png" alt="شعار الصيدلية" className="w-full h-full object-contain" />
+          </div>
+          <div>
+            <p className="text-base font-bold text-white">صيدلية بنين مازن</p>
+            <p className="text-xs text-brand-200">نظام الإدارة - v2.3</p>
+          </div>
+        </div>
+        
+        {/* قائمة التنقل */}
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
+          {groups.map(group => (
+            <div key={group}>
+              <p className="px-3 mb-2 text-[11px] font-bold text-brand-300 uppercase tracking-wider">{group}</p>
+              <div className="space-y-1">
+                {items.filter(i => i.group === group).map(item => { 
+                  const Icon = item.icon; 
+                  const isActive = activeTab === item.key; 
+                  return (
+                    <button 
+                      key={item.key} 
+                      onClick={() => setActiveTab(item.key)} 
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                        isActive 
+                          ? 'bg-white text-brand-800 shadow-lg shadow-brand-950/30' 
+                          : 'text-brand-100 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      <Icon className="w-[18px] h-[18px]" />
+                      <span>{item.label}</span>
+                    </button>
+                  ); 
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
-        <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-xs text-slate-500"><div className="w-2 h-2 rounded-full bg-emerald-500"></div><span>النظام يعمل بشكل طبيعي</span></div></div>
+        
+        {/* حالة النظام */}
+        <div className="p-4 border-t border-white/10">
+          <div className="flex items-center gap-2 text-xs text-brand-200 bg-white/5 rounded-lg px-3 py-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+            <span>النظام يعمل بشكل طبيعي</span>
+          </div>
+        </div>
       </aside>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 print:hidden">
-          <div className="flex items-center gap-4"><h2 className="text-base font-bold text-slate-800">{pharmacyName}</h2><span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-xs font-medium">النظام الإداري</span></div>
-          <div className="flex items-center gap-6">
-            <button onClick={handleCloseShift} className={`text-xs font-medium px-3 py-1.5 rounded-lg ${shiftId ? 'bg-amber-50 text-amber-600 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-600'}`}>{shiftId ? 'إغلاق الشفت' : 'شفت مغلق'}</button>
+        {/* ===== الهيدر العلوي ===== */}
+        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 print:hidden shadow-sm">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-slate-800">{pharmacyName}</h2>
+            <span className="px-3 py-1 rounded-lg bg-brand-50 text-brand-700 text-xs font-semibold border border-brand-100">النظام الإداري</span>
+          </div>
+          <div className="flex items-center gap-5">
+            <button 
+              onClick={handleCloseShift} 
+              className={`text-xs font-semibold px-4 py-2 rounded-xl transition-all ${
+                shiftId 
+                  ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' 
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              }`}
+            >
+              {shiftId ? 'إغلاق الشفت' : 'شفت مغلق'}
+            </button>
             <div className="h-8 w-px bg-slate-200"></div>
-            <div className="flex items-center gap-2"><div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center"><span className="text-purple-700 font-bold text-sm">{username?.charAt(0)}</span></div><div><p className="text-xs font-semibold text-slate-700">{username}</p><p className="text-[10px] text-emerald-500 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>الشفت مفتوح</p></div></div>
-            <button onClick={() => logout()} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><LogOut className="w-5 h-5" /></button>
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-md ring-2 ring-white">
+                <span className="text-white font-bold text-sm">{username?.charAt(0)}</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-700">{username}</p>
+                <p className="text-[11px] text-emerald-600 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  الشفت مفتوح
+                </p>
+              </div>
+            </div>
+            <button onClick={() => logout()} className="btn-icon text-red-500 hover:bg-red-50">
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         </header>
+        
         <main className="flex-1 overflow-hidden print:overflow-visible">
           {activeTab === 'dashboard' && <MainDashboard />}
           {activeTab === 'pos' && <PosDashboard />}
@@ -364,16 +585,31 @@ function App() {
       </div>
 
       {showShiftModal && (
-        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl shadow-2xl w-96">
-            <h3 className="text-base font-bold text-slate-800 mb-4">بدء شفت جديد</h3>
-            <p className="text-xs text-slate-500 mb-4">أدخل المبلغ الافتتاحي الموجود في الصندوق لبداية الشفت.</p>
-            <input type="number" value={shiftAmount} onChange={e => setShiftAmount(e.target.value)} className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm mb-4" placeholder="0.00" />
-            <button onClick={handleStartShift} className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700">بدء الشفت</button>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white p-7 rounded-3xl shadow-2xl w-96 animate-scale-in">
+            <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-brand-100 flex items-center justify-center">
+                <Calculator className="w-4 h-4 text-brand-700" />
+              </div>
+              بدء شفت جديد
+            </h3>
+            <p className="text-xs text-slate-500 mb-5">أدخل المبلغ الافتتاحي الموجود في الصندوق لبداية الشفت.</p>
+            <input 
+              type="number" 
+              value={shiftAmount} 
+              onChange={e => setShiftAmount(e.target.value)} 
+              className="input-lg text-center text-2xl font-bold tabular mb-5" 
+              placeholder="0.00" 
+              autoFocus
+            />
+            <button onClick={handleStartShift} className="btn-primary w-full py-3 text-base">
+              بدء الشفت
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 }
+
 export default App;

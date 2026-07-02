@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Undo2 } from 'lucide-react';
+import { Undo2, RotateCcw, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '../security/auth.store';
 
@@ -33,36 +33,78 @@ export function RefundDashboard() {
     }
   };
 
+  const totalRefundAmount = refunds.reduce((sum, r) => sum + Math.abs(r.totalAmount), 0);
+
   return (
-    <div className="p-8 overflow-auto h-full">
+    <div className="p-8 overflow-auto h-full bg-slate-50 animate-fade-in">
       <div className="flex items-center justify-between mb-6">
-        <div><h1 className="text-2xl font-bold text-slate-800">سجل المرتجعات والتراجع</h1><p className="text-sm text-slate-500 mt-1">يمكن للمدير التراجع عن عمليات المرتجع التي تمت بالخطأ</p></div>
+        <div>
+          <h1 className="section-title">سجل المرتجعات</h1>
+          <p className="section-subtitle">يمكن للمدير التراجع عن عمليات المرتجع التي تمت بالخطأ</p>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      {/* بطاقة إحصائية */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="card-elegant p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+            <RotateCcw className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">عدد المرتجعات</p>
+            <p className="text-xl font-bold text-slate-800 tabular">{refunds.length}</p>
+          </div>
+        </div>
+        <div className="card-elegant p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <Receipt className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">إجمالي المبلغ المرتجع</p>
+            <p className="text-xl font-bold text-slate-800 tabular">{totalRefundAmount.toFixed(0)} <span className="text-xs font-normal text-slate-400">د.ع</span></p>
+          </div>
+        </div>
+      </div>
+
+      <div className="card-elegant overflow-hidden">
         <table className="w-full">
-          <thead className="bg-slate-50/50 border-b border-slate-200">
+          <thead className="bg-slate-50/80 border-b border-slate-200/60">
             <tr>
-              <th className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right p-4">رقم الفاتورة</th>
-              <th className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right p-4">المبلغ المرتجع</th>
-              <th className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right p-4">التوقيت</th>
-              <th className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right p-4">إجراءات</th>
+              <th className="table-header text-right p-4">رقم الفاتورة</th>
+              <th className="table-header text-right p-4">المبلغ المرتجع</th>
+              <th className="table-header text-right p-4">التوقيت</th>
+              <th className="table-header text-right p-4">إجراءات</th>
             </tr>
           </thead>
           <tbody>
             {refunds.length === 0 ? (
-              <tr><td colSpan={4} className="p-8 text-center text-slate-400 text-sm">لا توجد مرتجعات حالية</td></tr>
+              <tr><td colSpan={4}>
+                <div className="empty-state py-12">
+                  <div className="empty-state-icon">
+                    <RotateCcw className="w-8 h-8 text-slate-300" />
+                  </div>
+                  <p className="text-slate-400 text-sm">لا توجد مرتجعات حالية</p>
+                </div>
+              </td></tr>
             ) : refunds.map(ref => (
-              <tr key={ref.id} className="border-b border-slate-100 hover:bg-slate-50/50">
-                <td className="p-4 text-sm font-mono text-slate-500">{ref.id.substring(0, 8)}</td>
-                <td className="p-4 text-sm font-bold text-red-600">{ref.totalAmount.toFixed(2)} د.ع</td>
-                <td className="p-4 text-xs text-slate-400">{new Date(ref.date).toLocaleString('en-GB')}</td>
+              <tr key={ref.id} className="table-row">
+                <td className="p-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
+                      <Receipt className="w-4 h-4 text-slate-500" />
+                    </div>
+                    <span className="text-sm font-mono text-slate-600 tabular">{ref.id.substring(0, 8)}</span>
+                  </div>
+                </td>
+                <td className="p-4 text-sm font-bold text-rose-600 tabular">{ref.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></td>
+                <td className="p-4 text-xs text-slate-400 tabular">{new Date(ref.date).toLocaleString('en-GB')}</td>
                 <td className="p-4">
                   <button 
                     onClick={() => handleReverse(ref.id)}
-                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 flex items-center gap-1"
+                    className="text-xs font-semibold px-3 py-2 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 flex items-center gap-1.5"
                   >
-                    <Undo2 className="w-3 h-3" /> تراجع عن المرتجع
+                    <Undo2 className="w-3.5 h-3.5" /> 
+                    تراجع عن المرتجع
                   </button>
                 </td>
               </tr>

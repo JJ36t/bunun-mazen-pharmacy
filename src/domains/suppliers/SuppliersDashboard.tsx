@@ -3,7 +3,7 @@ import { useSuppliersStore } from './suppliers.store';
 import { useInventoryStore } from '../inventory/inventory.store';
 import { useAuthStore } from '../security/auth.store';
 import { useAccountingStore } from '../accounting/accounting.store';
-import { Truck, Plus, PackagePlus } from 'lucide-react';
+import { Truck, Plus, PackagePlus, Phone, Wallet } from 'lucide-react';
 
 export function SuppliersDashboard() {
   const { suppliers, fetchSuppliers, addSupplier, recordPurchase, paySupplier } = useSuppliersStore();
@@ -54,48 +54,165 @@ export function SuppliersDashboard() {
     setPayAmount({ ...payAmount, [supId]: '' });
   };
 
+  const totalBalance = suppliers.reduce((sum, s) => sum + s.balance, 0);
+
   return (
-    <div className="p-8 overflow-auto h-full">
+    <div className="p-8 overflow-auto h-full bg-slate-50 animate-fade-in">
       <div className="flex items-center justify-between mb-6">
-        <div><h1 className="text-2xl font-bold text-slate-800">الموردون والمشتريات</h1><p className="text-sm text-slate-500 mt-1">إدارة الموردين وتسجيل فواتير الشراء</p></div>
+        <div>
+          <h1 className="section-title">الموردون والمشتريات</h1>
+          <p className="section-subtitle">إدارة الموردين وتسجيل فواتير الشراء</p>
+        </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowPurchaseForm(!showPurchaseForm)} className="btn-ghost border border-slate-200"><PackagePlus className="w-4 h-4" />تسجيل فاتورة شراء</button>
-          <button onClick={() => setShowSupplierForm(!showSupplierForm)} className="btn-primary"><Plus className="w-4 h-4" />مورد جديد</button>
+          <button onClick={() => setShowPurchaseForm(!showPurchaseForm)} className="btn-outline">
+            <PackagePlus className="w-4 h-4" />
+            تسجيل فاتورة شراء
+          </button>
+          <button onClick={() => setShowSupplierForm(!showSupplierForm)} className="btn-primary">
+            <Plus className="w-4 h-4" />
+            مورد جديد
+          </button>
+        </div>
+      </div>
+
+      {/* بطاقة إحصائية */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="card-elegant p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
+            <Truck className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">عدد الموردين</p>
+            <p className="text-xl font-bold text-slate-800 tabular">{suppliers.length}</p>
+          </div>
+        </div>
+        <div className="card-elegant p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <Wallet className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">إجمالي المستحقات</p>
+            <p className="text-xl font-bold text-slate-800 tabular">{totalBalance.toFixed(0)} <span className="text-xs font-normal text-slate-400">د.ع</span></p>
+          </div>
         </div>
       </div>
 
       {showSupplierForm && (
-        <form onSubmit={handleAddSupplier} className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-6 grid grid-cols-2 gap-4">
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1.5">اسم المورد *</label><input className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm" value={sName} onChange={e => setSName(e.target.value)} required /></div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1.5">رقم الهاتف</label><input className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm" value={sPhone} onChange={e => setSPhone(e.target.value)} /></div>
-          <button type="submit" className="btn-success col-span-2">حفظ المورد</button>
+        <form onSubmit={handleAddSupplier} className="card-elegant p-6 mb-6 animate-slide-up">
+          <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-brand-100 flex items-center justify-center">
+              <Truck className="w-4.5 h-4.5 text-brand-700" />
+            </div>
+            إضافة مورد جديد
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="label">اسم المورد *</label><input className="input" value={sName} onChange={e => setSName(e.target.value)} required /></div>
+            <div><label className="label">رقم الهاتف</label><input className="input" value={sPhone} onChange={e => setSPhone(e.target.value)} /></div>
+          </div>
+          <div className="flex gap-2 mt-5">
+            <button type="submit" className="btn-success">حفظ المورد</button>
+            <button type="button" onClick={() => setShowSupplierForm(false)} className="btn-ghost">إلغاء</button>
+          </div>
         </form>
       )}
 
       {showPurchaseForm && (
-        <form onSubmit={handlePurchase} className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-6 grid grid-cols-2 gap-4">
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1.5">المورد *</label><select className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm" value={pSupplier} onChange={e => setPSupplier(e.target.value)} required><option value="">اختر المورد</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1.5">الدواء *</label><select className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm" value={pMedicine} onChange={e => setPMedicine(e.target.value)} required><option value="">اختر الدواء</option>{medicines.filter(m=>!m.isDeleted).map(m => <option key={m.id} value={m.id}>{m.nameAr}</option>)}</select></div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1.5">الكمية *</label><input type="number" className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm" value={pQty} onChange={e => setPQty(e.target.value)} required /></div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1.5">سعر التكلفة (للقطعة) *</label><input type="number" className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm" value={pCost} onChange={e => setPCost(e.target.value)} required /></div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1.5">سعر الجملة *</label><input type="number" className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm" value={pWholesale} onChange={e => setPWholesale(e.target.value)} required /></div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1.5">سعر المبيع (مفرد) *</label><input type="number" className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm" value={pSell} onChange={e => setPSell(e.target.value)} required /></div>
-          <button type="submit" className="btn-primary col-span-2">تسجيل الشراء (تحديث المخزون والأسعار)</button>
+        <form onSubmit={handlePurchase} className="card-elegant p-6 mb-6 animate-slide-up">
+          <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center">
+              <PackagePlus className="w-4.5 h-4.5 text-emerald-700" />
+            </div>
+            تسجيل فاتورة شراء
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">المورد *</label>
+              <select className="input" value={pSupplier} onChange={e => setPSupplier(e.target.value)} required>
+                <option value="">اختر المورد</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">الدواء *</label>
+              <select className="input" value={pMedicine} onChange={e => setPMedicine(e.target.value)} required>
+                <option value="">اختر الدواء</option>
+                {medicines.filter(m=>!m.isDeleted).map(m => <option key={m.id} value={m.id}>{m.nameAr}</option>)}
+              </select>
+            </div>
+            <div><label className="label">الكمية *</label><input type="number" className="input tabular" value={pQty} onChange={e => setPQty(e.target.value)} required /></div>
+            <div><label className="label">سعر التكلفة (للقطعة) *</label><input type="number" className="input tabular" value={pCost} onChange={e => setPCost(e.target.value)} required /></div>
+            <div><label className="label">سعر الجملة *</label><input type="number" className="input tabular" value={pWholesale} onChange={e => setPWholesale(e.target.value)} required /></div>
+            <div><label className="label">سعر المبيع (مفرد) *</label><input type="number" className="input tabular" value={pSell} onChange={e => setPSell(e.target.value)} required /></div>
+          </div>
+          <div className="flex gap-2 mt-5">
+            <button type="submit" className="btn-primary">
+              <PackagePlus className="w-4 h-4" />
+              تسجيل الشراء
+            </button>
+            <button type="button" onClick={() => setShowPurchaseForm(false)} className="btn-ghost">إلغاء</button>
+          </div>
         </form>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="card-elegant overflow-hidden">
         <table className="w-full">
-          <thead className="bg-slate-50/50 border-b border-slate-200">
-            <tr><th className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right p-4">المورد</th><th className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right p-4">الهاتف</th><th className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right p-4">الرصيد المستحق</th><th className="text-xs font-semibold text-slate-500 uppercase tracking-wide text-right p-4">سداد دفعة</th></tr>
+          <thead className="bg-slate-50/80 border-b border-slate-200/60">
+            <tr>
+              <th className="table-header text-right p-4">المورد</th>
+              <th className="table-header text-right p-4">الهاتف</th>
+              <th className="table-header text-right p-4">الرصيد المستحق</th>
+              <th className="table-header text-right p-4">سداد دفعة</th>
+            </tr>
           </thead>
           <tbody>
-            {suppliers.length === 0 ? <tr><td colSpan={4} className="p-12 text-center text-slate-400 text-sm">لا يوجد موردون مسجلون</td></tr> : suppliers.map(sup => (
-              <tr key={sup.id} className="border-b border-slate-100 hover:bg-slate-50/50">
-                <td className="p-4"><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center"><Truck className="w-4 h-4 text-blue-600" /></div><span className="text-sm font-semibold text-slate-800">{sup.name}</span></div></td>
-                <td className="p-4 text-sm text-slate-500">{sup.phone || '-'}</td>
-                <td className="p-4"><span className={`text-sm font-bold ${sup.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{sup.balance.toFixed(2)} د.ع</span></td>
-                <td className="p-4">{sup.balance > 0 && (<div className="flex items-center gap-2"><input type="number" placeholder="مبلغ" value={payAmount[sup.id] || ''} onChange={e => setPayAmount({...payAmount, [sup.id]: e.target.value})} className="w-28 px-2 py-1 border border-slate-200 rounded-md text-sm" /><button onClick={() => handlePay(sup.id)} className="btn-success px-3 py-1 text-xs">سداد</button></div>)}</td>
+            {suppliers.length === 0 ? (
+              <tr><td colSpan={4}>
+                <div className="empty-state py-12">
+                  <div className="empty-state-icon">
+                    <Truck className="w-8 h-8 text-slate-300" />
+                  </div>
+                  <p className="text-slate-400 text-sm">لا يوجد موردون مسجلون</p>
+                </div>
+              </td></tr>
+            ) : suppliers.map(sup => (
+              <tr key={sup.id} className="table-row">
+                <td className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-100 to-brand-50 flex items-center justify-center ring-1 ring-brand-200/50">
+                      <Truck className="w-4 h-4 text-brand-600" />
+                    </div>
+                    <span className="text-sm font-semibold text-slate-800">{sup.name}</span>
+                  </div>
+                </td>
+                <td className="p-4">
+                  <div className="flex items-center gap-1.5 text-sm text-slate-500">
+                    {sup.phone ? (
+                      <>
+                        <Phone className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="tabular">{sup.phone}</span>
+                      </>
+                    ) : '-'}
+                  </div>
+                </td>
+                <td className="p-4">
+                  <span className={`text-sm font-bold tabular ${sup.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {sup.balance.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span>
+                  </span>
+                </td>
+                <td className="p-4">
+                  {sup.balance > 0 && (
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="number" 
+                        placeholder="مبلغ" 
+                        value={payAmount[sup.id] || ''} 
+                        onChange={e => setPayAmount({...payAmount, [sup.id]: e.target.value})} 
+                        className="w-28 px-3 py-1.5 border border-slate-200 rounded-lg text-sm tabular focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500" 
+                      />
+                      <button onClick={() => handlePay(sup.id)} className="btn-success px-3 py-1.5 text-xs">سداد</button>
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
