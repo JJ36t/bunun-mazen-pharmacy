@@ -25,6 +25,8 @@ import { PrescriptionsDashboard } from './domains/intelligence/PrescriptionsDash
 import { ImportDashboard } from './domains/intelligence/ImportDashboard';
 import { CashDrawerDashboard } from './domains/intelligence/CashDrawerDashboard';
 import { IntelligenceAnalyticsDashboard } from './domains/intelligence/IntelligenceAnalyticsDashboard';
+import { LabelPrintingDashboard } from './domains/intelligence/LabelPrintingDashboard';
+import { ParentDrugGroupsDashboard } from './domains/intelligence/ParentDrugGroupsDashboard';
 import { RefundDashboard } from './domains/pos/RefundDashboard';
 import { PatientsDashboard } from './domains/patients/PatientsDashboard';
 import { Receipt } from './domains/pos/Receipt';
@@ -57,7 +59,7 @@ function ensurePluginsInitialized() {
   }
 }
 
-type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'patients' | 'reporting' | 'audit' | 'backup' | 'settings' | 'users' | 'advanced_settings' | 'plugins' | 'drug_intelligence' | 'barcode_intelligence' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'intelligence_analytics';
+type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'patients' | 'reporting' | 'audit' | 'backup' | 'settings' | 'users' | 'advanced_settings' | 'plugins' | 'drug_intelligence' | 'barcode_intelligence' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'intelligence_analytics' | 'label_printing' | 'parent_drug_groups';
 
 const navItems: { key: TabKey; label: string; icon: any; group: string; permission?: Permission }[] = [
   { key: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard, group: 'العمليات' },
@@ -67,7 +69,9 @@ const navItems: { key: TabKey; label: string; icon: any; group: string; permissi
   { key: 'cash_drawer', label: 'موازنة الصندوق', icon: CalcIcon, group: 'العمليات', permission: 'pos.use' as Permission },
   { key: 'inventory', label: 'المخزون', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
   { key: 'drug_intelligence', label: 'ذكاء الأدوية', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
+  { key: 'parent_drug_groups', label: 'مجموعات الأدوية', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
   { key: 'barcode_intelligence', label: 'ذكاء الباركود', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
+  { key: 'label_printing', label: 'طباعة الملصقات', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
   { key: 'stock_count', label: 'الجرد', icon: Package, group: 'الإدارة', permission: 'inventory.adjust' as Permission },
   { key: 'import', label: 'استيراد الأدوية', icon: Package, group: 'الإدارة', permission: 'inventory.add' as Permission },
   { key: 'intelligence_analytics', label: 'التحليلات الذكية', icon: Package, group: 'الإدارة', permission: 'reports.view' as Permission },
@@ -671,6 +675,8 @@ function App() {
           {activeTab === 'cash_drawer' && <CashDrawerDashboard />}
           {activeTab === 'import' && <ImportDashboard />}
           {activeTab === 'intelligence_analytics' && <IntelligenceAnalyticsDashboard />}
+          {activeTab === 'label_printing' && <LabelPrintingDashboard />}
+          {activeTab === 'parent_drug_groups' && <ParentDrugGroupsDashboard />}
           
           {/* عرض صفحات الـ plugins المفعّلة */}
           {pluginRegistry.getWithDashboard().map(plugin => 

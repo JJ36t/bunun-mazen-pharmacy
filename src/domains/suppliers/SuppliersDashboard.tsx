@@ -3,16 +3,24 @@ import { useSuppliersStore } from './suppliers.store';
 import { useInventoryStore } from '../inventory/inventory.store';
 import { useAuthStore } from '../security/auth.store';
 import { useAccountingStore } from '../accounting/accounting.store';
-import { Truck, Plus, PackagePlus, Phone, Wallet } from 'lucide-react';
+import { Truck, Plus, PackagePlus, Phone, Wallet, RotateCcw, History } from 'lucide-react';
+import { supplierReturnsService } from '../../lib/services/pharmiq_complete';
+import { toast } from 'sonner';
 
 export function SuppliersDashboard() {
   const { suppliers, fetchSuppliers, addSupplier, recordPurchase, paySupplier } = useSuppliersStore();
   const { medicines, fetchMedicines } = useInventoryStore();
-  const { role } = useAuthStore();
+  const { role, username } = useAuthStore();
   const { fetchSummary } = useAccountingStore();
   
   const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [sName, setSName] = useState('');
+  const [showReturns, setShowReturns] = useState(false);
+  const [returns, setReturns] = useState<any[]>([]);
+  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [returnSupplier, setReturnSupplier] = useState('');
+  const [returnAmount, setReturnAmount] = useState('');
+  const [returnReason, setReturnReason] = useState('');
   const [sPhone, setSPhone] = useState('');
   
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
@@ -64,6 +72,14 @@ export function SuppliersDashboard() {
           <p className="section-subtitle">إدارة الموردين وتسجيل فواتير الشراء</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={async () => { setShowReturns(!showReturns); if (!showReturns) { try { setReturns(await supplierReturnsService.get()); } catch (e) { console.error(e); } } }} className="btn-ghost border border-slate-200">
+            <History className="w-4 h-4" />
+            المرتجعات
+          </button>
+          <button onClick={() => setShowReturnForm(!showReturnForm)} className="btn-ghost border border-slate-200">
+            <RotateCcw className="w-4 h-4" />
+            مرتجع مورد
+          </button>
           <button onClick={() => setShowPurchaseForm(!showPurchaseForm)} className="btn-outline">
             <PackagePlus className="w-4 h-4" />
             تسجيل فاتورة شراء
@@ -74,6 +90,75 @@ export function SuppliersDashboard() {
           </button>
         </div>
       </div>
+
+      {/* نموذج مرتجع مورد */}
+      {showReturnForm && (
+        <div className="card-elegant p-5 mb-5 animate-slide-up">
+          <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <RotateCcw className="w-4 h-4 text-brand-600" /> تسجيل مرتجع مورد
+          </h3>
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            <div>
+              <label className="label">المورد *</label>
+              <select value={returnSupplier} onChange={(e) => setReturnSupplier(e.target.value)} className="input">
+                <option value="">اختر المورد</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">المبلغ *</label>
+              <input type="number" value={returnAmount} onChange={(e) => setReturnAmount(e.target.value)} className="input tabular" placeholder="0.00" />
+            </div>
+            <div>
+              <label className="label">السبب</label>
+              <input value={returnReason} onChange={(e) => setReturnReason(e.target.value)} className="input" placeholder="سبب المرتجع" />
+            </div>
+          </div>
+          <button onClick={async () => {
+            if (!returnSupplier || !returnAmount) { toast.error('أدخل المورد والمبلغ'); return; }
+            try {
+              await supplierReturnsService.create(returnSupplier, parseFloat(returnAmount), returnReason, username || 'admin');
+              toast.success('تم تسجيل المرتجع');
+              setShowReturnForm(false);
+              setReturnSupplier(''); setReturnAmount(''); setReturnReason('');
+              setReturns(await supplierReturnsService.get());
+            } catch (e) { toast.error('فشل التسجيل: ' + e); }
+          }} className="btn-success">
+            <RotateCcw className="w-4 h-4" /> تسجيل
+          </button>
+        </div>
+      )}
+
+      {/* سجل المرتجعات */}
+      {showReturns && (
+        <div className="card-elegant overflow-hidden mb-5">
+          <div className="p-4 border-b border-slate-100"><h3 className="text-base font-bold text-slate-800">سجل مرتجعات الموردين ({returns.length})</h3></div>
+          <table className="w-full">
+            <thead className="bg-slate-50/80 border-b border-slate-200/60">
+              <tr>
+                <th className="table-header text-right p-3">المورد</th>
+                <th className="table-header text-right p-3">المبلغ</th>
+                <th className="table-header text-right p-3">السبب</th>
+                <th className="table-header text-right p-3">الحالة</th>
+                <th className="table-header text-right p-3">التاريخ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {returns.length === 0 ? (
+                <tr><td colSpan={5}><div className="empty-state py-8"><p className="text-slate-400 text-sm">لا توجد مرتجعات</p></div></td></tr>
+              ) : returns.map(r => (
+                <tr key={r.id} className="table-row">
+                  <td className="p-3 text-sm font-semibold text-slate-800">{r.supplierName}</td>
+                  <td className="p-3 text-sm font-bold text-rose-600 tabular">{r.totalAmount.toFixed(2)}</td>
+                  <td className="p-3 text-sm text-slate-600">{r.reason || '-'}</td>
+                  <td className="p-3"><span className={`badge ${r.status === 'completed' ? 'badge-success' : r.status === 'rejected' ? 'badge-danger' : 'badge-warning'}`}>{r.status}</span></td>
+                  <td className="p-3 text-xs text-slate-400 tabular">{new Date(r.createdAt).toLocaleString('en-GB')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* بطاقة إحصائية */}
       <div className="grid grid-cols-2 gap-4 mb-6">
