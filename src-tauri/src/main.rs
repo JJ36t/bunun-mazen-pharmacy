@@ -43,9 +43,9 @@ fn generate_device_fingerprint() -> String {
 
 fn generate_activation_key(device_id: &str) -> String {
     // السر مشفّر وقت البناء (obfstr) لمنع استخراجه بسهولة من الـ binary
-    let obfuscated_secret = obfstr!("IRAQ_PHARMA_SECRET_2024_HMAC");
-    let secret = obfuscated_secret.as_bytes();
-    let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
+    // نحوّل إلى Vec<u8> مملوك لتجنب مشكلة القيمة المؤقتة
+    let secret: Vec<u8> = obfstr!("IRAQ_PHARMA_SECRET_2024_HMAC").as_bytes().to_vec();
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &secret);
     let tag = hmac::sign(&key, device_id.as_bytes());
     let hex_tag = hex::encode(tag).to_uppercase();
     format!("{}-{}-{}", &hex_tag[0..4], &hex_tag[4..8], &hex_tag[8..12])
