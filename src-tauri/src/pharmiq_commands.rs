@@ -18,9 +18,14 @@ pub async fn get_drug_master_db(state: tauri::State<'_, PgPool>) -> Result<Vec<s
         .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut results = Vec::new();
     for row in rows {
-        let active_ingredients: Option<Vec<String>> = row.get(4);
-        let storage: Option<serde_json::Value> = row.get(14);
-        let warnings: Option<Vec<String>> = row.get(15);
+        // قراءة الأعمدة بالترتيب الصحيح:
+        // 0=id, 1=trade_name, 2=scientific_name, 3=arabic_name, 4=normalized_arabic
+        // 5=active_ingredients (TEXT[]), 6=dosage_strength, 7=dosage_form, 8=manufacturer
+        // 9=country_of_origin, 10=category, 11=is_otc, 12=is_prescription, 13=is_controlled
+        // 14=storage_conditions (JSONB), 15=warning_flags (TEXT[]), 16=parent_drug_id
+        let active_ingredients: Option<Vec<String>> = row.try_get(5).unwrap_or(None);
+        let storage: Option<serde_json::Value> = row.try_get(14).unwrap_or(None);
+        let warnings: Option<Vec<String>> = row.try_get(15).unwrap_or(None);
         results.push(serde_json::json!({
             "id": row.get::<uuid::Uuid, _>(0).to_string(),
             "tradeName": row.get::<String, _>(1),
