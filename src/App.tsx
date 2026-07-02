@@ -216,11 +216,49 @@ function PosDashboard() {
         await fetchMedicines(); 
         await fetchSummary(); 
         
-        setInvoiceData({ items: currentItems, total: finalTotal, invoiceNumber: newInvoiceNum }); 
+        // طباعة مباشرة تلقائياً
+        try {
+          const printers = await invoke<string[]>('get_available_printers');
+          if (printers.length > 0) {
+            await invoke('print_receipt_direct', {
+              printerName: printers[0],
+              pharmacyName,
+              invoiceNum: newInvoiceNum,
+              itemsJson: JSON.stringify(currentItems),
+              total: finalTotal.toFixed(2)
+            });
+          }
+        } catch (e) { console.error('Print failed:', e); }
+        
         clearCart();
-        toast.success("تم تسجيل الفاتورة بنجاح.");
+        toast.success("تم تسجيل البيع والطباعة بنجاح.");
     } catch (e: any) {
         toast.error(e.toString() || "فشل تسجيل الفاتورة! تحقق من الصلاحيات.");
+    }
+  };
+
+  const handlePrintOnly = async () => {
+    if (cart.length === 0) return;
+    const currentItems = [...cart];
+    const finalTotal = calculateTotal();
+    const newInvoiceNum = `PRINT-${Date.now()}`;
+    
+    try {
+      const printers = await invoke<string[]>('get_available_printers');
+      if (printers.length === 0) {
+        toast.error("لا توجد طابعة متاحة");
+        return;
+      }
+      await invoke('print_receipt_direct', {
+        printerName: printers[0],
+        pharmacyName,
+        invoiceNum: newInvoiceNum,
+        itemsJson: JSON.stringify(currentItems),
+        total: finalTotal.toFixed(2)
+      });
+      toast.success("تم طباعة الوصل بنجاح (بدون تسجيل بيع).");
+    } catch (e: any) {
+      toast.error("فشلت الطباعة: " + e);
     }
   };
 
@@ -411,14 +449,24 @@ function PosDashboard() {
             <span className="text-sm text-slate-600 font-semibold">الإجمالي المستحق</span>
             <span className="text-3xl font-bold text-brand-700 tabular">{calculateTotal().toFixed(2)} <span className="text-sm font-normal text-slate-400">د.ع</span></span>
           </div>
-          <button 
-            onClick={handleCheckout} 
-            disabled={cart.length === 0} 
-            className="btn-primary w-full py-4 text-base shadow-md"
-          >
-            <Calculator className="w-5 h-5" />
-            إتمام البيع (F1)
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button 
+              onClick={handleCheckout} 
+              disabled={cart.length === 0} 
+              className="btn-primary py-4 text-base shadow-md"
+            >
+              <Calculator className="w-5 h-5" />
+              إتمام البيع + طباعة (F1)
+            </button>
+            <button 
+              onClick={handlePrintOnly} 
+              disabled={cart.length === 0}
+              className="btn-outline py-4 text-base"
+            >
+              <ReceiptIcon className="w-5 h-5" />
+              طباعة الوصل فقط
+            </button>
+          </div>
         </div>
       </div>
       

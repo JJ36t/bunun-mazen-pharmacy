@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { prescriptionService } from '../../lib/services/pharmiq';
-import { FileText, Plus, Pill, AlertTriangle, X } from 'lucide-react';
+import { FileText, Plus, Pill, AlertTriangle, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function PrescriptionsDashboard() {
@@ -124,12 +124,15 @@ function PrescriptionForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
       
       <p className="label-lg mb-3">الأدوية الموصوفة</p>
       {items.map((item, i) => (
-        <div key={i} className="grid grid-cols-5 gap-2 mb-2">
-          <input className="input" placeholder="اسم الدواء" value={item.drugName} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, drugName: e.target.value } : it))} />
-          <input className="input" placeholder="الجرعة" value={item.dosage} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, dosage: e.target.value } : it))} />
-          <input className="input" placeholder="التكرار" value={item.frequency} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, frequency: e.target.value } : it))} />
-          <input className="input" placeholder="المدة" value={item.duration} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, duration: e.target.value } : it))} />
-          <input type="number" className="input tabular" placeholder="الكمية" value={item.quantity || ''} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, quantity: parseInt(e.target.value) || 0 } : it))} />
+        <div key={i} className="grid grid-cols-12 gap-2 mb-2 items-center">
+          <input className="input col-span-4" placeholder="اسم الدواء" value={item.drugName} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, drugName: e.target.value } : it))} />
+          <input className="input col-span-2" placeholder="الجرعة" value={item.dosage} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, dosage: e.target.value } : it))} />
+          <input className="input col-span-2" placeholder="التكرار" value={item.frequency} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, frequency: e.target.value } : it))} />
+          <input className="input col-span-2" placeholder="المدة" value={item.duration} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, duration: e.target.value } : it))} />
+          <input type="number" className="input col-span-1 tabular" placeholder="الكمية" value={item.quantity || ''} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, quantity: parseInt(e.target.value) || 0 } : it))} />
+          <button type="button" onClick={() => setItems(prev => prev.filter((_, idx) => idx !== i))} className="col-span-1 p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center">
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       ))}
       <button type="button" onClick={() => setItems([...items, { drugName: '', dosage: '', frequency: '', duration: '', quantity: 0 }])} className="btn-ghost mt-2">

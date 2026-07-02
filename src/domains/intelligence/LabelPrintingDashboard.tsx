@@ -19,6 +19,7 @@ export function LabelPrintingDashboard() {
   const [printers, setPrinters] = useState<string[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const { medicines, fetchMedicines } = useInventoryStore();
 
   useEffect(() => {
@@ -26,6 +27,13 @@ export function LabelPrintingDashboard() {
     loadPrinters();
     loadJobs();
   }, []);
+
+  const filteredMedicines = medicines.filter((m: any) => !m.isDeleted && (
+    !searchQuery.trim() || 
+    m.nameAr?.includes(searchQuery) || 
+    m.barcode?.includes(searchQuery) ||
+    m.nameEn?.toLowerCase().includes(searchQuery.toLowerCase())
+  ));
 
   const loadPrinters = async () => {
     try { setPrinters(await invoke<string[]>('get_available_printers')); } catch (e) { console.error(e); }
@@ -136,12 +144,21 @@ export function LabelPrintingDashboard() {
 
         {/* قائمة الأدوية */}
         <div className="col-span-2 card-elegant overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-3">
             <h3 className="text-base font-bold text-slate-800">اختر الأدوية</h3>
-            <span className="text-xs text-slate-500">{selectedMedicines.length} محدد</span>
+            <div className="flex items-center gap-3 flex-1 max-w-md">
+              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="بحث..." className="input text-sm" />
+              <button onClick={() => setSelectedMedicines(filteredMedicines.map((m: any) => m.id))} className="btn-ghost text-xs whitespace-nowrap">
+                تحديد الكل
+              </button>
+              <button onClick={() => setSelectedMedicines([])} className="btn-ghost text-xs whitespace-nowrap">
+                إلغاء التحديد
+              </button>
+            </div>
+            <span className="text-xs text-slate-500 whitespace-nowrap">{selectedMedicines.length} محدد</span>
           </div>
           <div className="max-h-[500px] overflow-auto">
-            {medicines.filter((m: any) => !m.isDeleted).map((med: any) => (
+            {filteredMedicines.map((med: any) => (
               <div key={med.id} onClick={() => handleToggleMedicine(med.id)} className={`flex items-center gap-3 p-3 border-b border-slate-100 cursor-pointer transition-colors ${selectedMedicines.includes(med.id) ? 'bg-brand-50' : 'hover:bg-slate-50'}`}>
                 <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${selectedMedicines.includes(med.id) ? 'border-brand-600 bg-brand-600' : 'border-slate-300'}`}>
                   {selectedMedicines.includes(med.id) && <CheckCircle className="w-3.5 h-3.5 text-white" />}

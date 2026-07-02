@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { UserPlus, UserX, Check, KeyRound, User, Shield } from 'lucide-react';
+import { UserPlus, UserX, Check, KeyRound, User, Shield, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ALL_ROLES, RoleName, ROLE_DISPLAY_NAMES, normalizeRole, isAdmin } from '../../lib/core/rbac';
 
@@ -14,6 +14,17 @@ export function UserManagementDashboard() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<RoleName>('cashier');
+
+  const handleDelete = async (id: string, name: string) => {
+    if (name === 'admin') { toast.error('لا يمكن حذف المدير الرئيسي'); return; }
+    if (window.confirm(`هل أنت متأكد من حذف المستخدم: ${name}؟`)) {
+      try {
+        await invoke('delete_user_db', { userId: id, deletedBy: username || 'admin' });
+        toast.success('تم حذف المستخدم');
+        fetchUsers();
+      } catch (e: any) { toast.error('فشل الحذف: ' + e); }
+    }
+  };
 
   const fetchUsers = async () => {
     try { setUsers(await invoke<any[]>('get_users_db')); } catch (e) { console.error(e); }
@@ -188,6 +199,14 @@ export function UserManagementDashboard() {
                         {usr.isActive 
                           ? <><UserX className="w-3.5 h-3.5" />تعطيل</> 
                           : <><Check className="w-3.5 h-3.5" />تفعيل</>}
+                      </button>
+                    )}
+                    {usr.username !== 'admin' && (
+                      <button 
+                        onClick={() => handleDelete(usr.id, usr.username)}
+                        className="text-xs font-semibold px-3 py-2 rounded-lg border bg-red-50 text-red-700 hover:bg-red-100 border-red-200 flex items-center gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />حذف
                       </button>
                     )}
                   </div>

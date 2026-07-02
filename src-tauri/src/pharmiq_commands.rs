@@ -592,7 +592,12 @@ pub async fn record_invoice_payment_db(state: tauri::State<'_, PgPool>, invoice_
 
 #[tauri::command]
 pub async fn add_prescription_db(state: tauri::State<'_, PgPool>, patient_id: String, doctor_name: String, doctor_license: Option<String>, prescription_date: String, diagnosis: Option<String>, notes: Option<String>, is_antibiotic: bool, items_json: String) -> Result<String, String> {
-    let pat_uuid = uuid::Uuid::parse_str(&patient_id).map_err(|e| e.to_string())?;
+    // patient_id يمكن أن يكون فارغاً - نستخدم UUID عشوائي في هذه الحالة
+    let pat_uuid = if patient_id.is_empty() || patient_id == "00000000-0000-0000-0000-000000000000" {
+        uuid::Uuid::new_v4()
+    } else {
+        uuid::Uuid::parse_str(&patient_id).map_err(|e| e.to_string())?
+    };
     let rx_date = chrono::NaiveDate::parse_from_str(&prescription_date, "%Y-%m-%d").map_err(|e| e.to_string())?;
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
     let row = sqlx::query("INSERT INTO prescriptions (patient_id, doctor_name, doctor_license, prescription_date, diagnosis, notes, is_antibiotic) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id")

@@ -188,7 +188,7 @@ async fn verify_admin_password_db(state: tauri::State<'_, PgPool>, password: Str
 
 #[tauri::command]
 async fn get_users_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_json::Value>, String> {
-    let rows = sqlx::query("SELECT id, username, role, is_active FROM users ORDER BY username")
+    let rows = sqlx::query("SELECT id, username, role, is_active FROM users WHERE deleted_at IS NULL ORDER BY username")
         .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut users = Vec::new();
     for row in rows {
@@ -216,6 +216,18 @@ async fn reset_user_password_db(state: tauri::State<'_, PgPool>, user_id: String
 async fn toggle_user_status_db(state: tauri::State<'_, PgPool>, user_id: String, is_active: bool) -> Result<(), String> {
     let uuid_id = uuid::Uuid::parse_str(&user_id).map_err(|e| e.to_string())?;
     sqlx::query("UPDATE users SET is_active = $1 WHERE id = $2").bind(is_active).bind(uuid_id).execute(state.inner()).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_user_db(state: tauri::State<'_, PgPool>, user_id: String, deleted_by: String) -> Result<(), String> {
+    let uuid_id = uuid::Uuid::parse_str(&user_id).map_err(|e| e.to_string())?;
+    // Soft delete - لا نحذف فعلياً
+    sqlx::query("UPDATE users SET deleted_at = NOW(), deleted_by = $1, is_active = FALSE WHERE id = $2 AND username != 'admin'")
+        .bind(&deleted_by).bind(uuid_id).execute(state.inner()).await.map_err(|e| e.to_string())?;
+    let desc = format!("حذف مستخدم");
+    let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'DELETE_USER', $2)")
+        .bind(&deleted_by).bind(&desc).execute(state.inner()).await;
     Ok(())
 }
 
@@ -1307,7 +1319,7 @@ fn main() {
             get_top_medicines_db, get_dashboard_stats, get_filtered_sales_report, get_invoice_details_report, get_weekly_sales_stats,
             add_customer_debt_db, pay_customer_debt_db, get_customer_debts_db, delete_customer_debt_db,
             add_supplier_db, get_suppliers_db, record_purchase_db, pay_supplier_db,
-            get_users_db, add_user_db, toggle_user_status_db, verify_admin_password_db, reset_user_password_db,
+            get_users_db, add_user_db, toggle_user_status_db, delete_user_db, verify_admin_password_db, reset_user_password_db,
             start_shift_db, close_shift_db, get_active_shift_db,
             suspend_invoice_db, get_suspended_invoices_db, delete_suspended_invoice_db,
             add_patient_db, get_patients_db,
