@@ -15,6 +15,8 @@ import { ReportingDashboard } from './domains/reporting/ReportingDashboard';
 import { BackupDashboard } from './domains/settings/BackupDashboard';
 import { SettingsDashboard } from './domains/settings/SettingsDashboard';
 import { UserManagementDashboard } from './domains/settings/UserManagementDashboard';
+import { AdvancedSettingsDashboard } from './domains/settings/AdvancedSettingsDashboard';
+import { PluginsDashboard } from './domains/settings/PluginsDashboard';
 import { AuditDashboard } from './domains/security/AuditDashboard';
 import { RefundDashboard } from './domains/pos/RefundDashboard';
 import { PatientsDashboard } from './domains/patients/PatientsDashboard';
@@ -30,22 +32,42 @@ import {
   Pause, Play, Trash2, X, Hash, Tag, Receipt as ReceiptIcon
 } from 'lucide-react';
 
-type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'patients' | 'reporting' | 'audit' | 'backup' | 'settings' | 'users';
+// استيراد الأنظمة المؤسسية الجديدة
+import { hasPermission, Permission } from './lib/core/rbac';
+import { eventBus, EventNames } from './lib/core/eventBus';
+import { sessionManager } from './lib/core/sessionManager';
+import { fraudDetector } from './lib/core/fraudDetector';
+import { crashRecovery } from './lib/core/crashRecovery';
+import { cache } from './lib/cache/MemoryCache';
+import { registerAllPlugins, pluginRegistry } from './plugins';
 
-const navItems = [
-  { key: 'dashboard' as TabKey, label: 'الرئيسية', icon: LayoutDashboard, group: 'العمليات' },
-  { key: 'pos' as TabKey, label: 'نقاط البيع', icon: ShoppingCart, group: 'العمليات' },
-  { key: 'refund' as TabKey, label: 'مرتجع المبيعات', icon: RotateCcw, group: 'العمليات' },
-  { key: 'inventory' as TabKey, label: 'المخزون', icon: Package, group: 'الإدارة' },
-  { key: 'accounting' as TabKey, label: 'المحاسبة', icon: CalcIcon, adminOnly: true, group: 'الإدارة' },
-  { key: 'debts' as TabKey, label: 'الديون', icon: Users, adminOnly: true, group: 'الإدارة' },
-  { key: 'suppliers' as TabKey, label: 'الموردون', icon: Truck, adminOnly: true, group: 'الإدارة' },
-  { key: 'patients' as TabKey, label: 'المرضى', icon: UserCog, adminOnly: true, group: 'الإدارة' },
-  { key: 'reporting' as TabKey, label: 'التقارير', icon: FileBarChart, adminOnly: true, group: 'النظام' },
-  { key: 'audit' as TabKey, label: 'سجل التدقيق', icon: ScrollText, adminOnly: true, group: 'النظام' },
-  { key: 'backup' as TabKey, label: 'النسخ الاحتياطي', icon: Database, adminOnly: true, group: 'النظام' },
-  { key: 'users' as TabKey, label: 'المستخدمون', icon: UserCog, adminOnly: true, group: 'النظام' },
-  { key: 'settings' as TabKey, label: 'الإعدادات', icon: Settings, adminOnly: true, group: 'النظام' },
+// تهيئة الـ plugins مرة واحدة
+let pluginsInitialized = false;
+function ensurePluginsInitialized() {
+  if (!pluginsInitialized) {
+    registerAllPlugins();
+    pluginsInitialized = true;
+  }
+}
+
+type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'patients' | 'reporting' | 'audit' | 'backup' | 'settings' | 'users' | 'advanced_settings' | 'plugins';
+
+const navItems: { key: TabKey; label: string; icon: any; group: string; permission?: Permission }[] = [
+  { key: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard, group: 'العمليات' },
+  { key: 'pos', label: 'نقاط البيع', icon: ShoppingCart, group: 'العمليات', permission: 'pos.use' as Permission },
+  { key: 'refund', label: 'مرتجع المبيعات', icon: RotateCcw, group: 'العمليات', permission: 'pos.refund' as Permission },
+  { key: 'inventory', label: 'المخزون', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
+  { key: 'accounting', label: 'المحاسبة', icon: CalcIcon, group: 'الإدارة', permission: 'accounting.view' as Permission },
+  { key: 'debts', label: 'الديون', icon: Users, group: 'الإدارة', permission: 'accounting.debts' as Permission },
+  { key: 'suppliers', label: 'الموردون', icon: Truck, group: 'الإدارة', permission: 'accounting.suppliers' as Permission },
+  { key: 'patients', label: 'المرضى', icon: UserCog, group: 'الإدارة', permission: 'system.patients' as Permission },
+  { key: 'reporting', label: 'التقارير', icon: FileBarChart, group: 'النظام', permission: 'reports.view' as Permission },
+  { key: 'audit', label: 'سجل التدقيق', icon: ScrollText, group: 'النظام', permission: 'system.audit' as Permission },
+  { key: 'backup', label: 'النسخ الاحتياطي', icon: Database, group: 'النظام', permission: 'system.backup' as Permission },
+  { key: 'users', label: 'المستخدمون', icon: UserCog, group: 'النظام', permission: 'system.users' as Permission },
+  { key: 'settings', label: 'الإعدادات', icon: Settings, group: 'النظام', permission: 'system.settings' as Permission },
+  { key: 'advanced_settings', label: 'الإعدادات المتقدمة', icon: Settings, group: 'النظام', permission: 'system.settings' as Permission },
+  { key: 'plugins', label: 'الإضافات', icon: Settings, group: 'النظام', permission: 'system.settings' as Permission },
 ];
 
 function TouchKeypad({ onConfirm, onClose }: { onConfirm: (val: string) => void; onClose: () => void }) {
@@ -442,19 +464,62 @@ function App() {
   const [shiftAmount, setShiftAmount] = useState('');
 
   useEffect(() => { checkLicense(); }, [checkLicense]);
+  
+  // تهيئة الأنظمة المؤسسية عند بدء التشغيل
   useEffect(() => {
     if (isLicensed && isAuthenticated) {
+      // تهيئة الـ plugins
+      ensurePluginsInitialized();
+      
+      // بدء جلسة المستخدم
+      sessionManager.startSession('user-id', username || 'unknown');
+      
+      // استرجاع العمليات المعلقة (Crash Recovery)
+      crashRecovery.recoverPendingOperations().then(result => {
+        if (result.recovered > 0) {
+          toast.success(`تم استرجاع ${result.recovered} عملية معلقة`);
+        }
+        if (result.failed > 0) {
+          toast.warning(`فشل استرجاع ${result.failed} عملية`);
+        }
+      });
+      
+      // نشر حدث تسجيل الدخول
+      eventBus.emit(EventNames.USER_LOGGED_IN, { username, role });
+      
+      // تحميل البيانات
       fetchMedicines(); fetchSummary(); fetchSettings(); fetchDebts(); fetchSuppliers();
       checkShift().then(() => {
         if (!useAuthStore.getState().shiftId) setShowShiftModal(true);
       });
+      
+      // فحص النسخ الاحتياطي التلقائي
+      invoke<boolean>('check_auto_backup').then(shouldBackup => {
+        if (shouldBackup) {
+          invoke<string>('create_auto_backup_db', { userRole: username || 'system' })
+            .then(() => toast.info('تم إنشاء نسخة احتياطية تلقائية'))
+            .catch(() => {});
+        }
+      }).catch(() => {});
     }
-  }, [isLicensed, isAuthenticated, fetchMedicines, fetchSummary, fetchSettings, fetchDebts, fetchSuppliers, checkShift]);
+  }, [isLicensed, isAuthenticated, fetchMedicines, fetchSummary, fetchSettings, fetchDebts, fetchSuppliers, checkShift, username, role]);
+  
+  // Cleanup عند الخروج
+  useEffect(() => {
+    return () => {
+      sessionManager.endSession();
+      fraudDetector.resetSession();
+      cache.clear();
+    };
+  }, []);
 
   if (!isLicensed || !isAuthenticated) return <><Login /><Toaster richColors position="bottom-left" /></>;
 
-  const isAdmin = role === 'Super Admin';
-  const items = navItems.filter(i => !i.adminOnly || isAdmin);
+  // فلترة القائمة حسب الصلاحيات (RBAC)
+  const items = navItems.filter(item => {
+    if (!item.permission) return true; // العناصر بدون صلاحية = للجميع
+    return hasPermission(role || 'cashier', item.permission);
+  });
   
   // تنظيم العناصر حسب المجموعة
   const groups = Array.from(new Set(items.map(i => i.group)));
@@ -572,15 +637,24 @@ function App() {
           {activeTab === 'pos' && <PosDashboard />}
           {activeTab === 'refund' && <RefundDashboard />}
           {activeTab === 'inventory' && <InventoryDashboard />}
-          {isAdmin && activeTab === 'accounting' && <AccountingDashboard />}
-          {isAdmin && activeTab === 'debts' && <DebtsDashboard />}
-          {isAdmin && activeTab === 'suppliers' && <SuppliersDashboard />}
-          {isAdmin && activeTab === 'patients' && <PatientsDashboard />}
-          {isAdmin && activeTab === 'reporting' && <ReportingDashboard />}
-          {isAdmin && activeTab === 'audit' && <AuditDashboard />}
-          {isAdmin && activeTab === 'backup' && <BackupDashboard />}
-          {isAdmin && activeTab === 'users' && <UserManagementDashboard />}
-          {isAdmin && activeTab === 'settings' && <SettingsDashboard />}
+          {hasPermission(role || 'cashier', 'accounting.view' as Permission) && activeTab === 'accounting' && <AccountingDashboard />}
+          {hasPermission(role || 'cashier', 'accounting.debts' as Permission) && activeTab === 'debts' && <DebtsDashboard />}
+          {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'suppliers' && <SuppliersDashboard />}
+          {hasPermission(role || 'cashier', 'system.patients' as Permission) && activeTab === 'patients' && <PatientsDashboard />}
+          {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'reporting' && <ReportingDashboard />}
+          {hasPermission(role || 'cashier', 'system.audit' as Permission) && activeTab === 'audit' && <AuditDashboard />}
+          {hasPermission(role || 'cashier', 'system.backup' as Permission) && activeTab === 'backup' && <BackupDashboard />}
+          {hasPermission(role || 'cashier', 'system.users' as Permission) && activeTab === 'users' && <UserManagementDashboard />}
+          {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'settings' && <SettingsDashboard />}
+          {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'advanced_settings' && <AdvancedSettingsDashboard />}
+          {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'plugins' && <PluginsDashboard />}
+          
+          {/* عرض صفحات الـ plugins المفعّلة */}
+          {pluginRegistry.getWithDashboard().map(plugin => 
+            activeTab === `plugin-${plugin.name}` && plugin.dashboard 
+              ? <plugin.dashboard key={plugin.name} /> 
+              : null
+          )}
         </main>
       </div>
 

@@ -38,5 +38,17 @@
     "category": "Business",
     "shortDescription": "Bunun Mazen Pharmacy Management System",
     "longDescription": "Electronic pharmacy management system for Bunun Mazen Pharmacy."
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/JJ36t/bunun-mazen-pharmacy/releases/latest/download/latest.json"
+      ],
+      "pubkey": "",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

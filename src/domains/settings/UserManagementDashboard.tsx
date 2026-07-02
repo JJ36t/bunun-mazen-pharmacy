@@ -2,13 +2,18 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { UserPlus, UserX, Check, KeyRound, User, Shield } from 'lucide-react';
 import { toast } from 'sonner';
+import { ALL_ROLES, RoleName, ROLE_DISPLAY_NAMES, normalizeRole, isAdmin } from '../../lib/core/rbac';
+
+// دوال مساعدة محلية
+const isAdminRole = (role: string) => isAdmin(role);
+const normalizeRoleSafe = (role: string): RoleName => normalizeRole(role);
 
 export function UserManagementDashboard() {
   const [users, setUsers] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Cashier');
+  const [role, setRole] = useState<RoleName>('cashier');
 
   const fetchUsers = async () => {
     try { setUsers(await invoke<any[]>('get_users_db')); } catch (e) { console.error(e); }
@@ -108,9 +113,10 @@ export function UserManagementDashboard() {
             </div>
             <div>
               <label className="label">الصلاحية</label>
-              <select className="input" value={role} onChange={e => setRole(e.target.value)}>
-                <option value="Cashier">كاشير</option>
-                <option value="Super Admin">مدير</option>
+              <select className="input" value={role} onChange={e => setRole(e.target.value as RoleName)}>
+                {ALL_ROLES.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -152,8 +158,8 @@ export function UserManagementDashboard() {
                   </div>
                 </td>
                 <td className="p-4">
-                  <span className={usr.role === 'Super Admin' ? 'badge-info' : 'badge-neutral'}>
-                    {usr.role === 'Super Admin' ? 'مدير' : 'كاشير'}
+                  <span className={isAdminRole(usr.role) ? 'badge-info' : 'badge-neutral'}>
+                    {ROLE_DISPLAY_NAMES[normalizeRoleSafe(usr.role)] || usr.role}
                   </span>
                 </td>
                 <td className="p-4">

@@ -27,6 +27,12 @@ base64 = "0.21"
 rand = "0.8"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+# Code Obfuscation - تشفير السلاسل النصية وقت البناء
+obfstr = "0.4"
+# subtle - بديل آمن لـ ring::constant_time (المُهمَل)
+subtle = "2.5"
+# Tauri Updater - نظام التحديثات التلقائية
+tauri-plugin-updater = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
