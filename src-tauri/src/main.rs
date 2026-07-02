@@ -43,7 +43,8 @@ fn generate_device_fingerprint() -> String {
 
 fn generate_activation_key(device_id: &str) -> String {
     // السر مشفّر وقت البناء (obfstr) لمنع استخراجه بسهولة من الـ binary
-    let secret = obfstr!("IRAQ_PHARMA_SECRET_2024_HMAC").as_bytes();
+    let obfuscated_secret = obfstr!("IRAQ_PHARMA_SECRET_2024_HMAC");
+    let secret = obfuscated_secret.as_bytes();
     let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
     let tag = hmac::sign(&key, device_id.as_bytes());
     let hex_tag = hex::encode(tag).to_uppercase();
@@ -53,7 +54,8 @@ fn generate_activation_key(device_id: &str) -> String {
 fn is_valid_key(device_id: &str, input_key: &str) -> bool { 
     let expected_key = generate_activation_key(device_id);
     // استخدام subtle::ConstantTimeEq بدلاً من ring::constant_time المُهمَل
-    expected_key.as_bytes().ct_eq(input_key.to_uppercase().as_bytes()).is_ok()
+    // ct_eq تُعيد Choice، نحولها لـ u8 ونقارن بـ 1
+    expected_key.as_bytes().ct_eq(input_key.to_uppercase().as_bytes()).unwrap_u8() == 1
 }
 
 fn get_license_file_path() -> PathBuf {
@@ -1183,7 +1185,7 @@ async fn get_performance_metrics_db(state: tauri::State<'_, PgPool>, metric_name
 
 // --- 9. تقارير إضافية ---
 #[tauri::command]
-async fn get_inventory_movement_report_db(state: tauri::State<'_, PgPool>, start_date: String, end_date: String) -> Result<Vec<serde_json::Value>, String> {
+async fn get_inventory_movement_report_db(state: tauri::State<'_, PgPool>, _start_date: String, _end_date: String) -> Result<Vec<serde_json::Value>, String> {
     let rows = sqlx::query("SELECT m.name_ar, m.barcode, m.quantity FROM medicines m WHERE m.is_deleted = FALSE ORDER BY m.name_ar")
         .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut results = Vec::new();
