@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { drugMasterService } from '../../lib/services/pharmiq';
-import { Search, Pill, AlertTriangle, Package, Plus, BookOpen, Activity, X } from 'lucide-react';
+import { Search, Pill, AlertTriangle, Package, Plus, BookOpen, Activity, X, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function DrugIntelligenceDashboard() {
@@ -19,7 +19,24 @@ export function DrugIntelligenceDashboard() {
   const [needSeed, setNeedSeed] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const [syncing, setSyncing] = useState(false);
+
   useEffect(() => { fetchDrugs(); }, []);
+
+  const handleSyncToInventory = async () => {
+    setSyncing(true);
+    try {
+      const count = await invoke<number>('sync_drug_master_to_medicines_db', { userRole: 'admin' });
+      if (count > 0) {
+        toast.success(`تمت مزامنة ${count} دواء إلى المخزون بنجاح`);
+      } else {
+        toast.info('جميع الأدوية موجودة مسبقاً في المخزون');
+      }
+    } catch (e) {
+      toast.error('فشلت المزامنة: ' + e);
+    }
+    setSyncing(false);
+  };
 
   const fetchDrugs = async () => {
     setLoading(true);
@@ -70,9 +87,15 @@ export function DrugIntelligenceDashboard() {
           <h1 className="section-title">ذكاء الأدوية</h1>
           <p className="section-subtitle">قاعدة بيانات الأدوية الذكية + البدائل + التفاعلات</p>
         </div>
-        <button onClick={() => setShowAddForm(!showAddForm)} className="btn-primary">
-          <Plus className="w-4 h-4" /> إضافة دواء
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleSyncToInventory} disabled={syncing} className="btn-success">
+            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'جاري المزامنة...' : 'مزامنة للمخزون'}
+          </button>
+          <button onClick={() => setShowAddForm(!showAddForm)} className="btn-primary">
+            <Plus className="w-4 h-4" /> إضافة دواء
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">

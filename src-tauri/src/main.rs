@@ -1348,6 +1348,7 @@ fn main() {
             pharmiq_commands::check_controlled_medicine_db,
             pharmiq_commands::seed_iraqi_medicines_db,
             pharmiq_commands::convert_currency_db, pharmiq_commands::update_exchange_rate_db,
+            pharmiq_commands::sync_drug_master_to_medicines_db,
             // أوامر PharmIQ Complete الجديدة
             pharmiq_complete::import_medicines_csv_db,
             pharmiq_complete::create_label_print_job_db, pharmiq_complete::get_label_print_jobs_db,

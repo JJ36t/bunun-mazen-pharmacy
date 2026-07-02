@@ -755,7 +755,6 @@ pub async fn check_controlled_medicine_db(state: tauri::State<'_, PgPool>, medic
 pub async fn seed_iraqi_medicines_db(state: tauri::State<'_, PgPool>) -> Result<i64, String> {
     // أدوية عراقية شائعة - إدراج في drug_master
     let medicines = vec![
-        ("Paracetamol", "Paracetamol", "باراسيتامول", "500mg", "tablet", "analgesics", false, false),
         ("Panadol", "Paracetamol", "بنادول", "500mg", "tablet", "analgesics", false, false),
         ("Panadol Extra", "Paracetamol+Caffeine", "بنادول اكسترا", "500mg+65mg", "tablet", "analgesics", false, false),
         ("Ibuprofen", "Ibuprofen", "ايبوبروفين", "400mg", "tablet", "analgesics", false, false),
@@ -846,4 +845,47 @@ pub async fn update_exchange_rate_db(state: tauri::State<'_, PgPool>, rate: f64)
     sqlx::query("INSERT INTO settings (key, value) VALUES ('usd_exchange_rate', $1) ON CONFLICT (key) DO UPDATE SET value = $1")
         .bind(rate.to_string()).execute(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ===== 19. SYNC DRUG_MASTER TO MEDICINES (المخزون) =====
+
+#[tauri::command]
+pub async fn sync_drug_master_to_medicines_db(state: tauri::State<'_, PgPool>, user_role: String) -> Result<i64, String> {
+    // نسخ جميع الأدوية من drug_master إلى medicines (إذا لم تكن موجودة)
+    let rows = sqlx::query("SELECT trade_name, scientific_name, arabic_name, dosage_strength, dosage_form FROM drug_master")
+        .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
+    
+    let mut inserted: i64 = 0;
+    for row in rows {
+        let trade_name: String = row.get(0);
+        let scientific: Option<String> = row.get(1);
+        let arabic_name: String = row.get(2);
+        let strength: Option<String> = row.get(3);
+        let _form: Option<String> = row.get(4);
+        
+        // التحقق من عدم وجود الدواء مسبقاً (بالمطابقة على الاسم العربي)
+        let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM medicines WHERE name_ar = $1 AND is_deleted = FALSE")
+            .bind(&arabic_name).fetch_one(state.inner()).await.unwrap_or(0);
+        
+        if existing == 0 {
+            // إنشاء باركود تلقائي
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM medicines").fetch_one(state.inner()).await.unwrap_or(0);
+            let barcode = format!("600{:07}", count + 1);
+            
+            // سعر افتراضي 1000 د.ع وسعر تكلفة 700 د.ع
+            let result = sqlx::query("INSERT INTO medicines (name_ar, name_en, scientific_name, barcode, price, wholesale_price, cost_price, quantity, expiry_date) VALUES ($1, $2, $3, $4, 1000, 900, 700, 0, NULL)")
+                .bind(&arabic_name).bind(&trade_name).bind(&scientific).bind(&barcode)
+                .execute(state.inner()).await;
+            
+            if result.is_ok() {
+                inserted += 1;
+            }
+        }
+    }
+    
+    let desc = format!("مزامنة {} دواء من قاعدة بيانات الأدوية إلى المخزون", inserted);
+    let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'SYNC_DRUGS_TO_INVENTORY', $2)")
+        .bind(&user_role).bind(&desc).execute(state.inner()).await;
+    
+    Ok(inserted)
 }
