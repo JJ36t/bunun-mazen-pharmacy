@@ -162,7 +162,7 @@ pub async fn lookup_barcode_db(state: tauri::State<'_, PgPool>, barcode: String)
             "batchNumber": r.get::<Option<String>, _>(4),
             "expiryDate": r.get::<Option<chrono::NaiveDate>, _>(5).map(|d| d.to_string()),
             "medicineName": r.get::<Option<String>, _>(6),
-            "price": r.get::<Option<rust_decimal::Decimal>, _>(7).to_string().parse::<f64>().unwrap_or(0.0),
+            "price": r.get::<Option<rust_decimal::Decimal>, _>(7).map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0),
             "quantity": r.get::<Option<i32>, _>(8).unwrap_or(0),
         })))
     } else {
@@ -734,7 +734,7 @@ pub async fn check_controlled_medicine_db(state: tauri::State<'_, PgPool>, medic
             "medicineName": name,
             "isControlled": is_controlled,
             "requiresPrescription": true,
-            "warning": if is_controlled { "هذا دواء مُضبوط - يتطلب وصفة طبية وتسجيل خاص" } else { null }
+            "warning": if is_controlled { Some("هذا دواء مُضبوط - يتطلب وصفة طبية وتسجيل خاص") } else { None }
         }))
     } else {
         Ok(serde_json::json!({
