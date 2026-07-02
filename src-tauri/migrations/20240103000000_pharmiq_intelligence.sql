@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS medicine_pricing (
 );
 
 -- ===== 11. Supplier Intelligence =====
-ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS reliability_score DECIMAL(3,2) DEFAULT 50.00;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS reliability_score DECIMAL(5,2) DEFAULT 50.00;
 ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS total_orders INTEGER DEFAULT 0;
 ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS delayed_orders INTEGER DEFAULT 0;
 ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS returned_orders INTEGER DEFAULT 0;
@@ -195,7 +195,7 @@ CREATE TABLE IF NOT EXISTS purchase_suggestions (
     suggested_quantity INTEGER NOT NULL,
     reason VARCHAR(50),  -- low_stock, seasonal, fast_moving, dead_stock_replacement
     priority VARCHAR(20) DEFAULT 'medium',  -- low, medium, high, critical
-    confidence_score DECIMAL(3,2) DEFAULT 50.00,
+    confidence_score DECIMAL(5,2) DEFAULT 50.00,
     metadata JSONB DEFAULT '{}',
     is_dismissed BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT NOW()
@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS demand_forecasts (
     forecast_period VARCHAR(20),  -- daily, weekly, monthly, seasonal
     forecast_date DATE NOT NULL,
     predicted_quantity INTEGER NOT NULL,
-    confidence_level DECIMAL(3,2),
+    confidence_level DECIMAL(5,2),
     factors JSONB DEFAULT '{}',  -- {season: "flu", trend: "up", confidence: 0.85}
     created_at TIMESTAMP DEFAULT NOW()
 );
