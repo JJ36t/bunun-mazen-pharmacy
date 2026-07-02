@@ -25,6 +25,7 @@ use tracing_subscriber;
 
 // إضافة وحدة PharmIQ Intelligence
 mod pharmiq_commands;
+mod pharmiq_complete;
 
 // --- نظام السجلات المنظمة (Structured Logging) ---
 fn init_logging() {
@@ -1307,7 +1308,29 @@ fn main() {
             pharmiq_commands::complete_stock_count_db,
             pharmiq_commands::check_controlled_medicine_db,
             pharmiq_commands::seed_iraqi_medicines_db,
-            pharmiq_commands::convert_currency_db, pharmiq_commands::update_exchange_rate_db
+            pharmiq_commands::convert_currency_db, pharmiq_commands::update_exchange_rate_db,
+            // أوامر PharmIQ Complete الجديدة
+            pharmiq_complete::import_medicines_csv_db,
+            pharmiq_complete::create_label_print_job_db, pharmiq_complete::get_label_print_jobs_db,
+            pharmiq_complete::print_labels_direct_db,
+            pharmiq_complete::get_refund_reasons_db, pharmiq_complete::record_refund_with_reason_db,
+            pharmiq_complete::get_cash_drawer_events_db, pharmiq_complete::record_cash_drawer_event_db,
+            pharmiq_complete::balance_cash_drawer_db,
+            pharmiq_complete::get_expiry_losses_db, pharmiq_complete::record_expiry_loss_db,
+            pharmiq_complete::get_expiry_transfer_suggestions_db,
+            pharmiq_complete::get_stop_purchase_suggestions_db,
+            pharmiq_complete::get_supplier_pricing_history_db,
+            pharmiq_complete::create_supplier_return_db, pharmiq_complete::get_supplier_returns_db,
+            pharmiq_complete::get_seasonal_demand_analysis_db,
+            pharmiq_complete::calculate_demand_forecast_db,
+            pharmiq_complete::get_parent_drug_groups_db, pharmiq_complete::create_parent_drug_group_db,
+            pharmiq_complete::assign_drug_to_parent_group_db,
+            pharmiq_complete::check_dosage_compatibility_db,
+            pharmiq_complete::parse_gs1_barcode_db,
+            pharmiq_complete::get_multi_pack_barcodes_db, pharmiq_complete::add_multi_pack_barcode_db,
+            pharmiq_complete::calculate_smart_profit_db,
+            pharmiq_complete::get_drug_aliases_db, pharmiq_complete::add_drug_alias_db,
+            pharmiq_complete::get_scan_modes_db, pharmiq_complete::update_scan_mode_db
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
