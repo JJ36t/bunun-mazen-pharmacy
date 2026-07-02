@@ -27,6 +27,7 @@ import { CashDrawerDashboard } from './domains/intelligence/CashDrawerDashboard'
 import { IntelligenceAnalyticsDashboard } from './domains/intelligence/IntelligenceAnalyticsDashboard';
 import { LabelPrintingDashboard } from './domains/intelligence/LabelPrintingDashboard';
 import { ParentDrugGroupsDashboard } from './domains/intelligence/ParentDrugGroupsDashboard';
+import { EnterpriseDashboard } from './domains/intelligence/EnterpriseDashboard';
 import { RefundDashboard } from './domains/pos/RefundDashboard';
 import { PatientsDashboard } from './domains/patients/PatientsDashboard';
 import { Receipt } from './domains/pos/Receipt';
@@ -59,7 +60,7 @@ function ensurePluginsInitialized() {
   }
 }
 
-type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'patients' | 'reporting' | 'audit' | 'backup' | 'settings' | 'users' | 'advanced_settings' | 'plugins' | 'drug_intelligence' | 'barcode_intelligence' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'intelligence_analytics' | 'label_printing' | 'parent_drug_groups';
+type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'patients' | 'reporting' | 'audit' | 'backup' | 'settings' | 'users' | 'advanced_settings' | 'plugins' | 'drug_intelligence' | 'barcode_intelligence' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'intelligence_analytics' | 'label_printing' | 'parent_drug_groups' | 'enterprise';
 
 const navItems: { key: TabKey; label: string; icon: any; group: string; permission?: Permission }[] = [
   { key: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard, group: 'العمليات' },
@@ -74,7 +75,8 @@ const navItems: { key: TabKey; label: string; icon: any; group: string; permissi
   { key: 'label_printing', label: 'طباعة الملصقات', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
   { key: 'stock_count', label: 'الجرد', icon: Package, group: 'الإدارة', permission: 'inventory.adjust' as Permission },
   { key: 'import', label: 'استيراد الأدوية', icon: Package, group: 'الإدارة', permission: 'inventory.add' as Permission },
-  { key: 'intelligence_analytics', label: 'التحليلات الذكية', icon: Package, group: 'الإدارة', permission: 'reports.view' as Permission },
+  { key: 'intelligence_analytics', label: 'التحليلات الذكية', icon: FileBarChart, group: 'النظام', permission: 'reports.view' as Permission },
+  { key: 'enterprise', label: 'الإدارة المؤسسية', icon: Database, group: 'النظام', permission: 'system.settings' as Permission },
   { key: 'accounting', label: 'المحاسبة', icon: CalcIcon, group: 'الإدارة', permission: 'accounting.view' as Permission },
   { key: 'debts', label: 'الديون', icon: Users, group: 'الإدارة', permission: 'accounting.debts' as Permission },
   { key: 'suppliers', label: 'الموردون', icon: Truck, group: 'الإدارة', permission: 'accounting.suppliers' as Permission },
@@ -123,6 +125,33 @@ function PosDashboard() {
   const [suspendedInvs, setSuspendedInvs] = useState<any[]>([]);
   const [showSuspended, setShowSuspended] = useState(false);
   const [keypadTarget, setKeypadTarget] = useState<string | null>(null);
+
+  // State Recovery - حفظ السلة تلقائياً
+  useEffect(() => {
+    const loadDraft = async () => {
+      try {
+        const draft = await invoke<any | null>('load_draft_session_db', { sessionKey: 'pos_cart' });
+        if (draft && draft.items && Array.isArray(draft.items) && draft.items.length > 0) {
+          draft.items.forEach((item: any) => addToCart(item));
+          toast.info('تم استرجاع السلة المحفوظة');
+        }
+      } catch (e) { console.error(e); }
+    };
+    loadDraft();
+  }, []);
+
+  // حفظ السلة عند كل تغيير
+  useEffect(() => {
+    if (cart.length > 0) {
+      invoke('save_draft_session_db', { 
+        sessionKey: 'pos_cart', 
+        sessionData: JSON.stringify({ items: cart, discount: discountPercentage }),
+        userRole: username || 'Unknown',
+      }).catch(() => {});
+    } else {
+      invoke('clear_draft_session_db', { sessionKey: 'pos_cart' }).catch(() => {});
+    }
+  }, [cart, discountPercentage]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); };
   
@@ -725,6 +754,7 @@ function App() {
           {activeTab === 'intelligence_analytics' && <IntelligenceAnalyticsDashboard />}
           {activeTab === 'label_printing' && <LabelPrintingDashboard />}
           {activeTab === 'parent_drug_groups' && <ParentDrugGroupsDashboard />}
+          {activeTab === 'enterprise' && <EnterpriseDashboard />}
           
           {/* عرض صفحات الـ plugins المفعّلة */}
           {pluginRegistry.getWithDashboard().map(plugin => 
