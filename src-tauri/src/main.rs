@@ -26,6 +26,7 @@ use tracing_subscriber;
 // إضافة وحدة PharmIQ Intelligence
 mod pharmiq_commands;
 mod pharmiq_complete;
+mod pharmiq_enterprise_complete;
 
 // --- نظام السجلات المنظمة (Structured Logging) ---
 fn init_logging() {
@@ -1368,7 +1369,28 @@ fn main() {
             pharmiq_complete::get_multi_pack_barcodes_db, pharmiq_complete::add_multi_pack_barcode_db,
             pharmiq_complete::calculate_smart_profit_db,
             pharmiq_complete::get_drug_aliases_db, pharmiq_complete::add_drug_alias_db,
-            pharmiq_complete::get_scan_modes_db, pharmiq_complete::update_scan_mode_db
+            pharmiq_complete::get_scan_modes_db, pharmiq_complete::update_scan_mode_db,
+            // أوامر Enterprise Complete الجديدة
+            pharmiq_enterprise_complete::record_ledger_entry_db,
+            pharmiq_enterprise_complete::record_sale_ledger_db,
+            pharmiq_enterprise_complete::get_ledger_balance_db,
+            pharmiq_enterprise_complete::get_ledger_entries_db,
+            pharmiq_enterprise_complete::get_trial_balance_db,
+            pharmiq_enterprise_complete::quarantine_stock_db,
+            pharmiq_enterprise_complete::get_quarantined_stock_db,
+            pharmiq_enterprise_complete::resolve_quarantine_db,
+            pharmiq_enterprise_complete::save_draft_session_db,
+            pharmiq_enterprise_complete::load_draft_session_db,
+            pharmiq_enterprise_complete::clear_draft_session_db,
+            pharmiq_enterprise_complete::record_price_change_db,
+            pharmiq_enterprise_complete::get_price_history_db,
+            pharmiq_enterprise_complete::get_expiry_sale_rules_db,
+            pharmiq_enterprise_complete::calculate_expiry_discount_db,
+            pharmiq_enterprise_complete::get_feature_flags_db,
+            pharmiq_enterprise_complete::toggle_feature_flag_db,
+            pharmiq_enterprise_complete::check_feature_flag_db,
+            pharmiq_enterprise_complete::get_system_health_db,
+            pharmiq_enterprise_complete::update_batch_exchange_rate_db
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
