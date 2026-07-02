@@ -1,0 +1,32 @@
+[package]
+name = "bunun-mazen-pharmacy"
+version = "2.3.0"
+description = "Bunun Mazen Pharmacy Management System"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sysinfo = "0.29"
+dirs-next = "2.0"
+chrono = "0.4"
+tokio = { version = "1.0", features = ["full"] }
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono", "rust_decimal", "migrate"] }
+uuid = { version = "1.8", features = ["v4", "serde"] }
+rust_decimal = { version = "1.32", features = ["serde-with-str"] }
+bcrypt = "0.15"
+ring = "0.17"
+hex = "0.4"
+aes-gcm = "0.10"
+base64 = "0.21"
+rand = "0.8"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

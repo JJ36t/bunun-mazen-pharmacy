@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: 'Cairo', sans-serif;
+  background-color: #f8fafc;
+}
+
+/* إعدادات الطباعة الحرارية (Thermal Printer Support) */
+@media print {
+  @page {
+    size: 80mm auto; /* مقاس ورق الطابعة الحرارية */
+    margin: 0; /* إزالة هوامش المتصفح */
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    width: 100%;
+  }
+  body * {
+    visibility: hidden; /* إخفاء كل شيء */
+  }
+  #receipt-print-area, #receipt-print-area * {
+    visibility: visible; /* إظهار الفاتورة فقط */
+  }
+  #receipt-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 80mm; /* عرض ورقة الكاشير الثابتة */
+    margin: 0 auto; /* توسيط الفاتورة في الورقة */
+    padding: 2mm; /* هوامش بسيطة جداً لمنع قطع النص */
+    box-sizing: border-box;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+  .no-print {
+    display: none !important; /* إخفاء الأزرار نهائياً عند الطباعة */
+  }
+}
+
+/* شريط التمرير الأنيق */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+.no-select { -webkit-user-select: none; -moz-user-select: none; user-select: none; }
