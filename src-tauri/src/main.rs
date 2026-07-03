@@ -1261,16 +1261,15 @@ fn main() {
             println!("==============================\nDevice ID: {}\nValid Activation Key: {}\n==============================", device_fingerprint, generate_activation_key(&device_fingerprint));
             let database_url = "postgres://postgres:123456@localhost:5432/pharmacy_db";
             let pool = tauri::async_runtime::block_on(async { 
-                // محاولة الاتصال، إذا فشلت أنشئ قاعدة البيانات
-                match PgPoolOptions::new().max_connections(5).connect(database_url).await {
-                    Ok(p) => p,
-                    Err(_) => {
-                        let admin_url = "postgres://postgres:123456@localhost:5432/postgres";
-                        let admin_pool = PgPoolOptions::new().max_connections(1).connect(admin_url).await.expect("Failed to connect to postgres");
-                        sqlx::query("CREATE DATABASE pharmacy_db").execute(&admin_pool).await.ok();
-                        PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to new Postgres.")
-                    }
-                }
+                let admin_url = "postgres://postgres:123456@localhost:5432/postgres";
+                let admin_pool = PgPoolOptions::new().max_connections(1).connect(admin_url).await.expect("Failed to connect to postgres");
+                // حذف قاعدة البيانات القديمة بالكامل
+                let _ = sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'pharmacy_db'").execute(&admin_pool).await;
+                let _ = sqlx::query("DROP DATABASE IF EXISTS pharmacy_db").execute(&admin_pool).await;
+                // إنشاء قاعدة بيانات جديدة نظيفة
+                sqlx::query("CREATE DATABASE pharmacy_db").execute(&admin_pool).await.expect("Failed to create database");
+                drop(admin_pool);
+                PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to new database")
             });
             tauri::async_runtime::block_on(async {
                 // تشغيل migrations (تستخدم CREATE TABLE IF NOT EXISTS فلا تضارب)
