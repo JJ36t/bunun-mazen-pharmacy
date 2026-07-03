@@ -1261,57 +1261,26 @@ fn main() {
             println!("==============================\nDevice ID: {}\nValid Activation Key: {}\n==============================", device_fingerprint, generate_activation_key(&device_fingerprint));
             let database_url = "postgres://postgres:123456@localhost:5432/pharmacy_db";
             let pool = tauri::async_runtime::block_on(async { 
-                // محاولة الاتصال بقاعدة البيانات الموجودة
                 match PgPoolOptions::new().max_connections(5).connect(database_url).await {
-                    Ok(p) => {
-                        // التحقق من وجود جدول users (يعني القاعدة سليمة)
-                        let check: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'users'").fetch_one(&p).await.unwrap_or(0);
-                        if check > 0 {
-                            println!("Connected to existing database.");
-                            p
-                        } else {
-                            // القاعدة موجودة لكن فارغة - نشغل migrations
-                            println!("Database exists but empty. Running migrations...");
-                            let _ = sqlx::migrate!("./migrations").run(&p).await;
-                            p
-                        }
-                    }
+                    Ok(p) => p,
                     Err(_) => {
-                        // قاعدة البيانات غير موجودة - ننشئها
-                        println!("Database not found. Creating new database...");
                         let admin_url = "postgres://postgres:123456@localhost:5432/postgres";
                         let admin_pool = PgPoolOptions::new().max_connections(1).connect(admin_url).await.expect("Failed to connect to postgres");
                         sqlx::query("CREATE DATABASE pharmacy_db").execute(&admin_pool).await.ok();
                         drop(admin_pool);
-                        let new_pool = PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to new database");
-                        let _ = sqlx::migrate!("./migrations").run(&new_pool).await;
-                        new_pool
+                        PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to database")
                     }
                 }
             });
             tauri::async_runtime::block_on(async {
-                // تشغيل migrations (تستخدم CREATE TABLE IF NOT EXISTS فلا تضارب)
-                match sqlx::migrate!("./migrations").run(&pool).await {
-                    Ok(_) => println!("Migrations applied successfully."),
-                    Err(e) => {
-                        println!("Migration error: {}", e);
-                        // حذف سجل migrations وإعادة المحاولة
-                        let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations CASCADE").execute(&pool).await;
-                        match sqlx::migrate!("./migrations").run(&pool).await {
-                            Ok(_) => println!("Migrations applied after reset."),
-                            Err(e2) => panic!("Could not run migrations: {}", e2),
-                        }
-                    }
-                }
+                sqlx::migrate!("./migrations").run(&pool).await.expect("Could not run migrations");
                 
-                // إنشاء المستخدمين الافتراضيين فقط إذا لم يكونوا موجودين
                 let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE username = 'admin'").fetch_one(&pool).await.unwrap_or(0);
                 if admin_count == 0 {
                     let admin_pass = bcrypt::hash("admin123", 8).unwrap();
                     let cashier_pass = bcrypt::hash("cashier123", 8).unwrap();
                     let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('admin', $1, 'Super Admin', TRUE)").bind(admin_pass).execute(&pool).await;
                     let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('cashier', $1, 'Cashier', TRUE)").bind(cashier_pass).execute(&pool).await;
-                    println!("Default users created: admin/admin123, cashier/cashier123");
                 }
             });
             app.manage(pool);
