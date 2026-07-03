@@ -4,7 +4,7 @@ import { useSuppliersStore } from './suppliers.store';
 import { useInventoryStore } from '../inventory/inventory.store';
 import { useAuthStore } from '../security/auth.store';
 import { useAccountingStore } from '../accounting/accounting.store';
-import { Truck, Plus, PackagePlus, Phone, Wallet, RotateCcw, History, DollarSign } from 'lucide-react';
+import { Truck, Plus, PackagePlus, Phone, Wallet, RotateCcw, History, DollarSign, Search } from 'lucide-react';
 import { supplierReturnsService } from '../../lib/services/pharmiq_complete';
 import { toast } from 'sonner';
 
@@ -33,6 +33,7 @@ export function SuppliersDashboard() {
   const [pWholesale, setPWholesale] = useState('');
   const [purchaseCurrency, setPurchaseCurrency] = useState<'IQD' | 'USD'>('IQD');
   const [usdRate, setUsdRate] = useState(1310);
+  const [medSearch, setMedSearch] = useState('');
   
   const [payAmount, setPayAmount] = useState<{ [key: string]: string }>({});
 
@@ -68,7 +69,7 @@ export function SuppliersDashboard() {
     }
     await recordPurchase(pSupplier, pMedicine, qty, cost, sell, wholesale, role || 'Unknown');
     await fetchMedicines();
-    setPSupplier(''); setPMedicine(''); setPQty(''); setPCost(''); setPSell(''); setPWholesale(''); 
+    setPSupplier(''); setPMedicine(''); setPQty(''); setPCost(''); setPSell(''); setPWholesale(''); setMedSearch(''); 
     setShowPurchaseForm(false);
   };
 
@@ -237,10 +238,24 @@ export function SuppliersDashboard() {
             </div>
             <div>
               <label className="label">الدواء *</label>
-              <select className="input" value={pMedicine} onChange={e => setPMedicine(e.target.value)} required>
-                <option value="">اختر الدواء</option>
-                {medicines.filter(m=>!m.isDeleted).map(m => <option key={m.id} value={m.id}>{m.nameAr}</option>)}
-              </select>
+              <div className="relative">
+                <input type="text" value={medSearch} onChange={e => { setMedSearch(e.target.value); setPMedicine(''); }} className="input pr-10" placeholder="ابحث عن دواء..." required />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                {pMedicine && <span className="absolute left-10 top-1/2 -translate-y-1/2 text-xs text-emerald-600 font-semibold">✓ محدد</span>}
+              </div>
+              {medSearch && !pMedicine && (
+                <div className="mt-1 max-h-40 overflow-auto border border-slate-200 rounded-lg bg-white shadow-sm">
+                  {medicines.filter(m => !m.isDeleted && m.nameAr?.includes(medSearch)).slice(0, 20).map(m => (
+                    <div key={m.id} onClick={() => { setPMedicine(m.id); setMedSearch(m.nameAr); }} className="p-2 hover:bg-brand-50 cursor-pointer text-sm border-b border-slate-50 last:border-0">
+                      <span className="font-semibold text-slate-700">{m.nameAr}</span>
+                      <span className="text-xs text-slate-400 mr-2">{m.barcode}</span>
+                    </div>
+                  ))}
+                  {medicines.filter(m => !m.isDeleted && m.nameAr?.includes(medSearch)).length === 0 && (
+                    <div className="p-3 text-center text-xs text-slate-400">لا توجد نتائج</div>
+                  )}
+                </div>
+              )}
             </div>
             <div><label className="label">الكمية *</label><input type="number" className="input tabular" value={pQty} onChange={e => setPQty(e.target.value)} required /></div>
             <div>
