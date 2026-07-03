@@ -92,16 +92,18 @@ pub async fn mark_invoice_printed_db(state: tauri::State<'_, PgPool>, invoice_id
 pub async fn get_daily_receipt_stats_db(state: tauri::State<'_, PgPool>) -> Result<serde_json::Value, String> {
     let today = chrono::Local::now().date_naive();
     
-    let row = sqlx::query("SELECT COUNT(*), COALESCE(SUM(total_amount), 0), COALESCE(MAX(daily_receipt_number), 0) FROM invoices WHERE created_at::date = $1 AND total_amount > 0")
+    // فواتير اليوم (المبيعات فقط - المبلغ موجب)
+    let row = sqlx::query("SELECT COUNT(*), COALESCE(SUM(CASE WHEN total_amount > 0 THEN total_amount ELSE 0 END), 0), COALESCE(MAX(daily_receipt_number), 0) FROM invoices WHERE created_at::date = $1")
         .bind(today).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
     
     let count: i64 = row.get(0);
     let total: rust_decimal::Decimal = row.get(1);
     let last_num: i64 = row.get(2);
+    let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
     
     Ok(serde_json::json!({
         "todayCount": count,
-        "todayTotal": total.to_string().parse::<f64>().unwrap_or(0.0),
+        "todayTotal": total_f64,
         "lastReceiptNumber": last_num,
         "nextReceiptNumber": last_num + 1,
     }))

@@ -164,6 +164,7 @@ function PosDashboard() {
   const [mixedCash, setMixedCash] = useState('');
   const [mixedCard, setMixedCard] = useState('');
   const [chequeNumber, setChequeNumber] = useState('');
+  const [customerName, setCustomerName] = useState('');
 
   // تحميل طرق الدفع
   useEffect(() => {
@@ -298,6 +299,18 @@ function PosDashboard() {
           userRole: username || 'Unknown' 
         });
         
+        // إذا كان الدفع آجل، أضف دين للزبون
+        if (selectedPaymentMethod === 'credit') {
+          const debtCustomerName = customerName || 'زبون آجل';
+          await invoke('add_customer_debt_db', {
+            customerName: debtCustomerName,
+            amount: finalTotal,
+            note: `فاتورة آجلة - ${newInvoiceNum}`,
+            userRole: username || 'Unknown',
+          });
+          toast.info(`تم تسجيل دين بقيمة ${finalTotal.toFixed(0)} د.ع للزبون: ${debtCustomerName}`);
+        }
+        
         await fetchMedicines(); 
         await fetchSummary(); 
         
@@ -317,7 +330,7 @@ function PosDashboard() {
         
         clearCart();
         setShowPayment(false);
-        setPaidAmount(''); setMixedCash(''); setMixedCard(''); setChequeNumber('');
+        setPaidAmount(''); setMixedCash(''); setMixedCard(''); setChequeNumber(''); setCustomerName('');
         toast.success("تم تسجيل البيع والطباعة بنجاح.");
     } catch (e: any) {
         toast.error(e.toString() || "فشل تسجيل الفاتورة! تحقق من الصلاحيات.");
@@ -616,6 +629,8 @@ function PosDashboard() {
           setMixedCard={setMixedCard}
           chequeNumber={chequeNumber}
           setChequeNumber={setChequeNumber}
+          customerName={customerName}
+          setCustomerName={setCustomerName}
           onConfirm={handleConfirmPayment}
           onClose={() => setShowPayment(false)}
         />
@@ -880,7 +895,7 @@ function PaymentModal({
   total, paymentMethods, selectedMethod, setSelectedMethod,
   paidAmount, setPaidAmount,
   mixedCash, setMixedCash, mixedCard, setMixedCard,
-  chequeNumber, setChequeNumber, onConfirm, onClose 
+  chequeNumber, setChequeNumber, customerName, setCustomerName, onConfirm, onClose 
 }: any) {
   const totalDisplay = total;
   const totalLabel = 'د.ع';
@@ -961,9 +976,10 @@ function PaymentModal({
         )}
 
         {selectedMethod === 'credit' && (
-          <div className="mb-4 p-4 rounded-xl bg-amber-50 text-center">
-            <p className="text-sm font-semibold text-amber-700">بيع آجل بقيمة {totalDisplay.toFixed(2)} {totalLabel}</p>
-            <p className="text-xs text-slate-400 mt-1">سيتم تسجيله كدين على الزبون</p>
+          <div className="mb-4">
+            <label className="label-lg">اسم الزبون *</label>
+            <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} className="input" placeholder="اسم الزبون" autoFocus />
+            <p className="text-xs text-amber-600 mt-2">⚠️ سيتم تسجيل المبلغ كدين على الزبون في قسم الديون</p>
           </div>
         )}
 
