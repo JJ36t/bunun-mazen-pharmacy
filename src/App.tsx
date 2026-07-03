@@ -243,6 +243,7 @@ function PosDashboard() {
     const medData = medicines.find((m:any) => m.id === item.id);
     if (medData && item.quantity < medData.quantity) addToCart({ ...item, quantity: 1 });
     else toast.error("الكمية المتوفرة لا تكفي.");
+  };
 
   const handleDecreaseCartQty = (item: any) => {
     if (item.quantity > 1) {
@@ -250,7 +251,6 @@ function PosDashboard() {
     } else {
       removeFromCart(item.id);
     }
-  };
   };
 
   const handleKeypadConfirm = (val: string) => {
