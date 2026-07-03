@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useInventoryStore } from '../inventory/inventory.store';
 import { useSuppliersStore } from './suppliers.store';
 import { useAuthStore } from '../security/auth.store';
-import { Send, Download, Cloud, Check, X, Package, Truck, RefreshCw, FileText, Link2, AlertCircle, Zap } from 'lucide-react';
+import { Send, Download, Cloud, Check, X, Package, RefreshCw, FileText, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 // قائمة المستودعات العراقية المدعومة
