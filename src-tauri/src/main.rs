@@ -1268,8 +1268,8 @@ fn main() {
                         let err_str = e.to_string();
                         println!("Migration error: {}", err_str);
                         
-                        // إذا كان خطأ VersionMismatch أو VersionMissing أو checksum mismatch، احذف _sqlx_migrations وأعد المحاولة
-                        if err_str.contains("VersionMismatch") || err_str.contains("VersionMissing") || err_str.contains("checksum") || err_str.contains("checksum mismatch") {
+                        // معالجة جميع أخطاء migration
+                        if err_str.contains("VersionMismatch") || err_str.contains("VersionMissing") || err_str.contains("checksum") || err_str.contains("foreign key") || err_str.contains("violates") {
                             println!("Detected migration version mismatch. Resetting _sqlx_migrations table...");
                             let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations").execute(&pool).await;
                             
