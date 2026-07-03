@@ -4,11 +4,11 @@ import { useInventoryStore } from '../inventory/inventory.store';
 import { useSuppliersStore } from './suppliers.store';
 import { useAuthStore } from '../security/auth.store';
 import { useAccountingStore } from '../accounting/accounting.store';
-import { Search, Barcode, Plus, Trash2, Upload, FileDown, ShoppingCart, Package, X, Check, DollarSign, Calculator } from 'lucide-react';
+import { Search, Barcode, Plus, Trash2, Upload, FileDown, ShoppingCart, Package, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function QuickPurchaseDashboard() {
-  const { suppliers, fetchSuppliers, recordPurchase } = useSuppliersStore();
+  const { suppliers, fetchSuppliers } = useSuppliersStore();
   const { medicines, fetchMedicines } = useInventoryStore();
   const { role } = useAuthStore();
   const { fetchSummary } = useAccountingStore();
