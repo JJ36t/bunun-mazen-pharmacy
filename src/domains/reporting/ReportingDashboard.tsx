@@ -136,59 +136,42 @@ export function ReportingDashboard() {
             <table className="w-full">
               <thead className="bg-slate-50/80 border-b border-slate-200/60">
                 <tr>
-                  <th className="table-header text-right p-4">رقم الفاتورة</th>
-                  <th className="table-header text-right p-4">المبلغ</th>
+                  <th className="table-header text-right p-4">الدواء</th>
+                  <th className="table-header text-right p-4">العدد</th>
+                  <th className="table-header text-right p-4">السعر</th>
+                  <th className="table-header text-right p-4">الإجمالي</th>
                   <th className="table-header text-right p-4">الكاشير</th>
-                  <th className="table-header text-right p-4">الأصناف</th>
+                  <th className="table-header text-right p-4">رقم الفاتورة</th>
                   <th className="table-header text-right p-4">التوقيت</th>
                 </tr>
               </thead>
               <tbody>
                 {invoiceDetails.length === 0 ? (
-                  <tr><td colSpan={5}>
+                  <tr><td colSpan={7}>
                     <div className="empty-state py-12">
-                      <div className="empty-state-icon">
-                        <Receipt className="w-8 h-8 text-slate-300" />
-                      </div>
+                      <div className="empty-state-icon"><Receipt className="w-8 h-8 text-slate-300" /></div>
                       <p className="text-slate-400 text-sm">لا توجد فواتير في هذه الفترة</p>
                     </div>
                   </td></tr>
-                ) : invoiceDetails.map(inv => (
-                  <tr key={inv.id} className="table-row align-top">
-                    <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
-                    <td className="p-4 text-sm font-bold text-brand-700 tabular">{inv.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></td>
-                    <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
-                    <td className="p-4 text-xs text-slate-600">
-                      <table className="w-full border border-slate-200 rounded-lg overflow-hidden">
-                        <thead className="bg-slate-100">
-                          <tr>
-                            <th className="text-[10px] font-bold text-slate-500 text-right px-2 py-1">الدواء</th>
-                            <th className="text-[10px] font-bold text-slate-500 text-center px-2 py-1">العدد</th>
-                            <th className="text-[10px] font-bold text-slate-500 text-left px-2 py-1">السعر</th>
-                            <th className="text-[10px] font-bold text-slate-500 text-left px-2 py-1">الإجمالي</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {inv.items.map((it: any, i: number) => (
-                            <tr key={i} className="border-t border-slate-100">
-                              <td className="text-xs text-slate-700 px-2 py-1">{it.name}</td>
-                              <td className="text-xs text-slate-600 text-center px-2 py-1 tabular">{it.qty}</td>
-                              <td className="text-xs text-slate-600 text-left px-2 py-1 tabular">{it.price.toFixed(0)}</td>
-                              <td className="text-xs font-semibold text-slate-700 text-left px-2 py-1 tabular">{(it.price * it.qty).toFixed(0)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </td>
-                    <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
-                  </tr>
-                ))}
+                ) : invoiceDetails.map(inv => 
+                  inv.items.map((it: any, i: number) => (
+                    <tr key={`${inv.id}-${i}`} className="table-row">
+                      <td className="p-4 text-sm font-semibold text-slate-700">{it.name}</td>
+                      <td className="p-4 text-sm text-slate-600 text-center tabular">{it.qty}</td>
+                      <td className="p-4 text-sm text-slate-600 tabular">{it.price.toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></td>
+                      <td className="p-4 text-sm font-bold text-brand-700 tabular">{(it.price * it.qty).toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></td>
+                      <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
+                      <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
+                      <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
               {invoiceDetails.length > 0 && (
                 <tfoot className="bg-brand-50/50 border-t-2 border-brand-200">
                   <tr>
-                    <td className="p-4 text-sm font-bold text-slate-800">الإجمالي الكلي للمبيعات</td>
-                    <td className="p-4 text-sm font-extrabold text-brand-700 tabular">{reportData.totalSales.toFixed(2)} د.ع</td>
+                    <td colSpan={3} className="p-4 text-sm font-bold text-slate-800">الإجمالي الكلي للمبيعات</td>
+                    <td className="p-4 text-sm font-extrabold text-brand-700 tabular">{reportData.totalSales.toFixed(0)} د.ع</td>
                     <td colSpan={3}></td>
                   </tr>
                 </tfoot>
@@ -231,57 +214,42 @@ export function ReportingDashboard() {
             <table className="w-full">
               <thead className="bg-slate-50/80 border-b border-slate-200/60">
                 <tr>
-                  <th className="table-header text-right p-4">رقم الفاتورة</th>
-                  <th className="table-header text-right p-4">صافي الربح</th>
+                  <th className="table-header text-right p-4">الدواء</th>
+                  <th className="table-header text-right p-4">العدد</th>
+                  <th className="table-header text-right p-4">السعر</th>
+                  <th className="table-header text-right p-4">الإجمالي</th>
                   <th className="table-header text-right p-4">الكاشير</th>
-                  <th className="table-header text-right p-4">الأصناف</th>
+                  <th className="table-header text-right p-4">رقم الفاتورة</th>
                   <th className="table-header text-right p-4">التوقيت</th>
                 </tr>
               </thead>
               <tbody>
                 {invoiceDetails.length === 0 ? (
-                  <tr><td colSpan={5}>
+                  <tr><td colSpan={7}>
                     <div className="empty-state py-12">
-                      <div className="empty-state-icon">
-                        <TrendingUp className="w-8 h-8 text-slate-300" />
-                      </div>
+                      <div className="empty-state-icon"><TrendingUp className="w-8 h-8 text-slate-300" /></div>
                       <p className="text-slate-400 text-sm">لا توجد فواتير في هذه الفترة</p>
                     </div>
                   </td></tr>
-                ) : invoiceDetails.map(inv => (
-                  <tr key={inv.id} className="table-row align-top">
-                    <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
-                    <td className="p-4 text-sm font-bold text-emerald-700 tabular">{inv.profitAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></td>
-                    <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
-                    <td className="p-4 text-xs text-slate-600">
-                      <table className="w-full border border-slate-200 rounded-lg overflow-hidden">
-                        <thead className="bg-slate-100">
-                          <tr>
-                            <th className="text-[10px] font-bold text-slate-500 text-right px-2 py-1">الدواء</th>
-                            <th className="text-[10px] font-bold text-slate-500 text-center px-2 py-1">العدد</th>
-                            <th className="text-[10px] font-bold text-slate-500 text-left px-2 py-1">السعر</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {inv.items.map((it: any, i: number) => (
-                            <tr key={i} className="border-t border-slate-100">
-                              <td className="text-xs text-slate-700 px-2 py-1">{it.name}</td>
-                              <td className="text-xs text-slate-600 text-center px-2 py-1 tabular">{it.qty}</td>
-                              <td className="text-xs text-slate-600 text-left px-2 py-1 tabular">{it.price.toFixed(0)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </td>
-                    <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
-                  </tr>
-                ))}
+                ) : invoiceDetails.map(inv => 
+                  inv.items.map((it: any, i: number) => (
+                    <tr key={`${inv.id}-${i}`} className="table-row">
+                      <td className="p-4 text-sm font-semibold text-slate-700">{it.name}</td>
+                      <td className="p-4 text-sm text-slate-600 text-center tabular">{it.qty}</td>
+                      <td className="p-4 text-sm text-slate-600 tabular">{it.price.toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></td>
+                      <td className="p-4 text-sm font-bold text-emerald-700 tabular">{(it.price * it.qty).toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></td>
+                      <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
+                      <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
+                      <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
               {invoiceDetails.length > 0 && (
                 <tfoot className="bg-emerald-50/50 border-t-2 border-emerald-200">
                   <tr>
-                    <td className="p-4 text-sm font-bold text-slate-800">الإجمالي الكلي للأرباح</td>
-                    <td className="p-4 text-sm font-extrabold text-emerald-700 tabular">{reportData.totalProfits.toFixed(2)} د.ع</td>
+                    <td colSpan={3} className="p-4 text-sm font-bold text-slate-800">الإجمالي الكلي للأرباح</td>
+                    <td className="p-4 text-sm font-extrabold text-emerald-700 tabular">{reportData.totalProfits.toFixed(0)} د.ع</td>
                     <td colSpan={3}></td>
                   </tr>
                 </tfoot>
