@@ -6,7 +6,6 @@
 use sqlx::{PgPool, Row};
 use serde_json;
 use uuid;
-use rust_decimal::prelude::FromPrimitive;
 use chrono;
 
 #[tauri::command]
@@ -90,21 +89,31 @@ pub async fn mark_invoice_printed_db(state: tauri::State<'_, PgPool>, invoice_id
 
 #[tauri::command]
 pub async fn get_daily_receipt_stats_db(state: tauri::State<'_, PgPool>) -> Result<serde_json::Value, String> {
-    let today = chrono::Local::now().date_naive();
-    
-    // فواتير اليوم (المبيعات فقط - المبلغ موجب)
-    let row = sqlx::query("SELECT COUNT(*), COALESCE(SUM(CASE WHEN total_amount > 0 THEN total_amount ELSE 0 END), 0), COALESCE(MAX(daily_receipt_number), 0) FROM invoices WHERE created_at::date = $1")
-        .bind(today).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
-    
+    // استخدم CURRENT_DATE من PostgreSQL لضمان التوافق مع get_daily_receipt_number()
+    // التي تستخدم CURRENT_DATE أيضاً — هذا يمنع اختلاف التوقيت بين التطبيق وقاعدة البيانات
+    let row = sqlx::query(
+        "SELECT
+            COUNT(*)::BIGINT,
+            COALESCE(SUM(CASE WHEN total_amount > 0 THEN total_amount ELSE 0 END), 0),
+            COALESCE(MAX(daily_receipt_number), 0)::BIGINT,
+            COALESCE(MAX(daily_receipt_number), 0)::BIGINT + 1
+         FROM invoices
+         WHERE created_at::date = CURRENT_DATE"
+    )
+    .fetch_one(state.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
     let count: i64 = row.get(0);
     let total: rust_decimal::Decimal = row.get(1);
     let last_num: i64 = row.get(2);
+    let next_num: i64 = row.get(3);
     let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
-    
+
     Ok(serde_json::json!({
         "todayCount": count,
         "todayTotal": total_f64,
         "lastReceiptNumber": last_num,
-        "nextReceiptNumber": last_num + 1,
+        "nextReceiptNumber": next_num,
     }))
 }

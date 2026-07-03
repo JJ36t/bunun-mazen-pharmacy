@@ -288,20 +288,26 @@ function PosDashboard() {
   };
 
   const handleConfirmPayment = async () => {
-    const currentItems = [...cart]; 
-    const finalTotal = calculateTotal(); 
+    const currentItems = [...cart];
+    const finalTotal = calculateTotal();
     const newInvoiceNum = `INV-${Date.now()}`;
-    
+
+    // التحقق من اسم الزبون عند الدفع الآجل
+    if (selectedPaymentMethod === 'credit' && !customerName.trim()) {
+      toast.error("يجب إدخال اسم الزبون للدفع الآجل!");
+      return;
+    }
+
     try {
-        await invoke('record_sale_db', { 
-          discountPercentage: discountPercentage, 
-          itemsJson: JSON.stringify(currentItems), 
-          userRole: username || 'Unknown' 
+        await invoke('record_sale_db', {
+          discountPercentage: discountPercentage,
+          itemsJson: JSON.stringify(currentItems),
+          userRole: username || 'Unknown'
         });
-        
-        // إذا كان الدفع آجل، أضف دين للزبون
+
+        // إذا كان الدفع آجل، أضف دين للزبون (اسم الزبون إلزامي)
         if (selectedPaymentMethod === 'credit') {
-          const debtCustomerName = customerName || 'زبون آجل';
+          const debtCustomerName = customerName.trim();
           await invoke('add_customer_debt_db', {
             customerName: debtCustomerName,
             amount: finalTotal,
@@ -310,10 +316,10 @@ function PosDashboard() {
           });
           toast.info(`تم تسجيل دين بقيمة ${finalTotal.toFixed(0)} د.ع للزبون: ${debtCustomerName}`);
         }
-        
-        await fetchMedicines(); 
-        await fetchSummary(); 
-        
+
+        await fetchMedicines();
+        await fetchSummary();
+
         // طباعة مباشرة تلقائياً
         try {
           const printers = await invoke<string[]>('get_available_printers');
@@ -327,7 +333,7 @@ function PosDashboard() {
             });
           }
         } catch (e) { console.error('Print failed:', e); }
-        
+
         clearCart();
         setShowPayment(false);
         setPaidAmount(''); setMixedCash(''); setMixedCard(''); setChequeNumber(''); setCustomerName('');
@@ -1001,10 +1007,17 @@ function PaymentModal({
         )}
 
         {/* زر التأكيد */}
-        <button onClick={onConfirm} className="btn-primary w-full py-4 text-base shadow-md">
+        <button
+          onClick={onConfirm}
+          disabled={selectedMethod === 'credit' && !customerName.trim()}
+          className="btn-primary w-full py-4 text-base shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+        >
           <Calculator className="w-5 h-5" />
           تأكيد الدفع + طباعة
         </button>
+        {selectedMethod === 'credit' && !customerName.trim() && (
+          <p className="text-xs text-rose-600 text-center mt-2">⚠️ أدخل اسم الزبون لتفعيل الزر</p>
+        )}
       </div>
     </div>
   );
