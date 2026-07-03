@@ -158,8 +158,27 @@ export function ReportingDashboard() {
                     <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
                     <td className="p-4 text-sm font-bold text-brand-700 tabular">{inv.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></td>
                     <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
-                    <td className="p-4 text-xs text-slate-500 space-y-1">
-                      {inv.items.map((it: any, i: number) => (<div key={i}>{it.name} (x{it.qty}) - {it.price.toFixed(2)}</div>))}
+                    <td className="p-4 text-xs text-slate-600">
+                      <table className="w-full border border-slate-200 rounded-lg overflow-hidden">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            <th className="text-[10px] font-bold text-slate-500 text-right px-2 py-1">الدواء</th>
+                            <th className="text-[10px] font-bold text-slate-500 text-center px-2 py-1">العدد</th>
+                            <th className="text-[10px] font-bold text-slate-500 text-left px-2 py-1">السعر</th>
+                            <th className="text-[10px] font-bold text-slate-500 text-left px-2 py-1">الإجمالي</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inv.items.map((it: any, i: number) => (
+                            <tr key={i} className="border-t border-slate-100">
+                              <td className="text-xs text-slate-700 px-2 py-1">{it.name}</td>
+                              <td className="text-xs text-slate-600 text-center px-2 py-1 tabular">{it.qty}</td>
+                              <td className="text-xs text-slate-600 text-left px-2 py-1 tabular">{it.price.toFixed(0)}</td>
+                              <td className="text-xs font-semibold text-slate-700 text-left px-2 py-1 tabular">{(it.price * it.qty).toFixed(0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </td>
                     <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
                   </tr>
@@ -234,7 +253,26 @@ export function ReportingDashboard() {
                     <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
                     <td className="p-4 text-sm font-bold text-emerald-700 tabular">{inv.profitAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></td>
                     <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
-                    <td className="p-4 text-xs text-slate-500 space-y-1">{inv.items.map((it: any, i: number) => (<div key={i}>{it.name} (x{it.qty})</div>))}</td>
+                    <td className="p-4 text-xs text-slate-600">
+                      <table className="w-full border border-slate-200 rounded-lg overflow-hidden">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            <th className="text-[10px] font-bold text-slate-500 text-right px-2 py-1">الدواء</th>
+                            <th className="text-[10px] font-bold text-slate-500 text-center px-2 py-1">العدد</th>
+                            <th className="text-[10px] font-bold text-slate-500 text-left px-2 py-1">السعر</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inv.items.map((it: any, i: number) => (
+                            <tr key={i} className="border-t border-slate-100">
+                              <td className="text-xs text-slate-700 px-2 py-1">{it.name}</td>
+                              <td className="text-xs text-slate-600 text-center px-2 py-1 tabular">{it.qty}</td>
+                              <td className="text-xs text-slate-600 text-left px-2 py-1 tabular">{it.price.toFixed(0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
                     <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
                   </tr>
                 ))}
