@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from './domains/security/auth.store';
 import { Login } from './domains/security/Login';
 import { usePosStore } from './domains/pos/pos.store';
@@ -131,6 +131,32 @@ function PosDashboard() {
   const [suspendedInvs, setSuspendedInvs] = useState<any[]>([]);
   const [showSuspended, setShowSuspended] = useState(false);
   const [keypadTarget, setKeypadTarget] = useState<string | null>(null);
+  const draftLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (draftLoadedRef.current) return;
+    draftLoadedRef.current = true;
+    const loadDraft = async () => {
+      try {
+        const draft = await invoke<any | null>('load_draft_session_db', { sessionKey: 'pos_cart' });
+        if (draft && draft.items && Array.isArray(draft.items) && draft.items.length > 0 && cart.length === 0) {
+          draft.items.forEach((item: any) => addToCart(item));
+          if (draft.discount) setDiscountPercentage(draft.discount);
+        }
+      } catch (e) { console.error(e); }
+    };
+    loadDraft();
+  }, []);
+
+  useEffect(() => {
+    if (cart.length > 0) {
+      invoke('save_draft_session_db', {
+        sessionKey: 'pos_cart',
+        sessionData: JSON.stringify({ items: cart, discount: discountPercentage }),
+        userRole: username || 'Unknown',
+      }).catch(() => {});
+    }
+  }, [cart, discountPercentage]);
   const [showPayment, setShowPayment] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
@@ -217,6 +243,14 @@ function PosDashboard() {
     const medData = medicines.find((m:any) => m.id === item.id);
     if (medData && item.quantity < medData.quantity) addToCart({ ...item, quantity: 1 });
     else toast.error("الكمية المتوفرة لا تكفي.");
+
+  const handleDecreaseCartQty = (item: any) => {
+    if (item.quantity > 1) {
+      updateItemQuantity(item.id, item.quantity - 1);
+    } else {
+      removeFromCart(item.id);
+    }
+  };
   };
 
   const handleKeypadConfirm = (val: string) => {
@@ -460,7 +494,7 @@ function PosDashboard() {
                     <p className="text-sm font-semibold text-slate-800">{item.nameAr}</p>
                     <div className="flex items-center gap-2 mt-2">
                       <button 
-                        onClick={() => removeFromCart(item.id)} 
+                        onClick={() => handleDecreaseCartQty(item)} 
                         className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-red-500 hover:bg-red-50 hover:border-red-200 text-sm font-bold active:scale-95"
                       >−</button>
                       <button 
