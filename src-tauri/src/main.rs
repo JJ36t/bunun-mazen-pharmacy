@@ -27,6 +27,7 @@ use tracing_subscriber;
 mod pharmiq_commands;
 mod pharmiq_complete;
 mod pharmiq_enterprise_complete;
+mod invoices_commands;
 
 // --- نظام السجلات المنظمة (Structured Logging) ---
 fn init_logging() {
@@ -432,7 +433,7 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
     let final_total = subtotal - discount_amount;
     let final_profit = total_profit - discount_amount;
 
-    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role) VALUES ($1, $2, $3) RETURNING id")
+    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number) VALUES ($1, $2, $3, get_daily_receipt_number()) RETURNING id")
         .bind(final_total).bind(final_profit).bind(&user_role).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let invoice_id: uuid::Uuid = row.get(0);
 
@@ -1416,7 +1417,12 @@ fn main() {
             pharmiq_enterprise_complete::toggle_feature_flag_db,
             pharmiq_enterprise_complete::check_feature_flag_db,
             pharmiq_enterprise_complete::get_system_health_db,
-            pharmiq_enterprise_complete::update_batch_exchange_rate_db
+            pharmiq_enterprise_complete::update_batch_exchange_rate_db,
+            // أوامر الفواتير الشاملة
+            invoices_commands::get_all_invoices_with_details_db,
+            invoices_commands::delete_invoice_db,
+            invoices_commands::mark_invoice_printed_db,
+            invoices_commands::get_daily_receipt_stats_db
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

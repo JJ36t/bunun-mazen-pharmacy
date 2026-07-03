@@ -28,6 +28,7 @@ import { IntelligenceAnalyticsDashboard } from './domains/intelligence/Intellige
 import { LabelPrintingDashboard } from './domains/intelligence/LabelPrintingDashboard';
 import { ParentDrugGroupsDashboard } from './domains/intelligence/ParentDrugGroupsDashboard';
 import { EnterpriseDashboard } from './domains/intelligence/EnterpriseDashboard';
+import { InvoicesDashboard } from './domains/reporting/InvoicesDashboard';
 import { RefundDashboard } from './domains/pos/RefundDashboard';
 import { PatientsDashboard } from './domains/patients/PatientsDashboard';
 import { Receipt } from './domains/pos/Receipt';
@@ -60,7 +61,7 @@ function ensurePluginsInitialized() {
   }
 }
 
-type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'patients' | 'reporting' | 'audit' | 'backup' | 'settings' | 'users' | 'advanced_settings' | 'plugins' | 'drug_intelligence' | 'barcode_intelligence' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'intelligence_analytics' | 'label_printing' | 'parent_drug_groups' | 'enterprise';
+type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'patients' | 'reporting' | 'invoices' | 'audit' | 'backup' | 'settings' | 'users' | 'advanced_settings' | 'plugins' | 'drug_intelligence' | 'barcode_intelligence' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'intelligence_analytics' | 'label_printing' | 'parent_drug_groups' | 'enterprise';
 
 const navItems: { key: TabKey; label: string; icon: any; group: string; permission?: Permission }[] = [
   { key: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard, group: 'العمليات' },
@@ -82,6 +83,7 @@ const navItems: { key: TabKey; label: string; icon: any; group: string; permissi
   { key: 'suppliers', label: 'الموردون', icon: Truck, group: 'الإدارة', permission: 'accounting.suppliers' as Permission },
   { key: 'patients', label: 'المرضى', icon: UserCog, group: 'الإدارة', permission: 'system.patients' as Permission },
   { key: 'reporting', label: 'التقارير', icon: FileBarChart, group: 'النظام', permission: 'reports.view' as Permission },
+  { key: 'invoices', label: 'الفواتير الشاملة', icon: FileBarChart, group: 'النظام', permission: 'reports.view' as Permission },
   { key: 'audit', label: 'سجل التدقيق', icon: ScrollText, group: 'النظام', permission: 'system.audit' as Permission },
   { key: 'backup', label: 'النسخ الاحتياطي', icon: Database, group: 'النظام', permission: 'system.backup' as Permission },
   { key: 'users', label: 'المستخدمون', icon: UserCog, group: 'النظام', permission: 'system.users' as Permission },
@@ -774,6 +776,7 @@ function App() {
           {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'suppliers' && <SuppliersDashboard />}
           {hasPermission(role || 'cashier', 'system.patients' as Permission) && activeTab === 'patients' && <PatientsDashboard />}
           {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'reporting' && <ReportingDashboard />}
+          {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'invoices' && <InvoicesDashboard />}
           {hasPermission(role || 'cashier', 'system.audit' as Permission) && activeTab === 'audit' && <AuditDashboard />}
           {hasPermission(role || 'cashier', 'system.backup' as Permission) && activeTab === 'backup' && <BackupDashboard />}
           {hasPermission(role || 'cashier', 'system.users' as Permission) && activeTab === 'users' && <UserManagementDashboard />}
