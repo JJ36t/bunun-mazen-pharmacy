@@ -27,6 +27,25 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- تحديث الفواتير الموجودة بأرقام يومية
-UPDATE invoices SET daily_receipt_number = ROW_NUMBER() OVER (PARTITION BY created_at::date ORDER BY created_at)
-WHERE daily_receipt_number IS NULL AND total_amount > 0;
+-- تحديث الفواتير الموجودة بأرقام يومية (بدون window functions)
+DO $$
+DECLARE
+    inv RECORD;
+    current_num INTEGER;
+    current_date_str TEXT;
+BEGIN
+    current_num := 0;
+    current_date_str := '';
+    
+    FOR inv IN SELECT id, created_at FROM invoices WHERE daily_receipt_number IS NULL AND total_amount > 0 ORDER BY created_at ASC LOOP
+        IF current_date_str != inv.created_at::date::text THEN
+            current_num := 1;
+            current_date_str := inv.created_at::date::text;
+        ELSE
+            current_num := current_num + 1;
+        END IF;
+        
+        UPDATE invoices SET daily_receipt_number = current_num WHERE id = inv.id;
+    END LOOP;
+END;
+$$;
