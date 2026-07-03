@@ -3,7 +3,7 @@ import { useSuppliersStore } from './suppliers.store';
 import { useInventoryStore } from '../inventory/inventory.store';
 import { useAuthStore } from '../security/auth.store';
 import { useAccountingStore } from '../accounting/accounting.store';
-import { Truck, Plus, PackagePlus, Phone, Wallet, RotateCcw, History } from 'lucide-react';
+import { Truck, Plus, PackagePlus, Phone, Wallet, RotateCcw, History, DollarSign } from 'lucide-react';
 import { supplierReturnsService } from '../../lib/services/pharmiq_complete';
 import { toast } from 'sonner';
 
@@ -30,8 +30,17 @@ export function SuppliersDashboard() {
   const [pCost, setPCost] = useState('');
   const [pSell, setPSell] = useState('');
   const [pWholesale, setPWholesale] = useState('');
+  const [purchaseCurrency, setPurchaseCurrency] = useState<'IQD' | 'USD'>('IQD');
+  const [usdRate, setUsdRate] = useState(1310);
   
   const [payAmount, setPayAmount] = useState<{ [key: string]: string }>({});
+
+  useEffect(() => {
+    fetchSuppliers();
+    invoke<any>('get_settings_db').then((s: any) => {
+      if (s?.usd_exchange_rate) setUsdRate(parseFloat(s.usd_exchange_rate));
+    }).catch(() => {});
+  }, [fetchSuppliers]);
 
   useEffect(() => { fetchSuppliers(); }, [fetchSuppliers]);
 
@@ -44,14 +53,22 @@ export function SuppliersDashboard() {
 
   const handlePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    const qty = parseInt(pQty); const cost = parseFloat(pCost); const sell = parseFloat(pSell); const wholesale = parseFloat(pWholesale);
+    const qty = parseInt(pQty); 
+    let cost = parseFloat(pCost); 
+    const sell = parseFloat(pSell); 
+    const wholesale = parseFloat(pWholesale);
     if (!pSupplier || !pMedicine || isNaN(qty) || isNaN(cost) || isNaN(sell) || isNaN(wholesale)) {
       alert("يرجى ملء جميع الحقول بشكل صحيح");
       return;
     }
+    // تحويل USD إلى IQD إذا لزم الأمر
+    if (purchaseCurrency === 'USD') {
+      cost = cost * usdRate; // تحويل للدينار
+    }
     await recordPurchase(pSupplier, pMedicine, qty, cost, sell, wholesale, role || 'Unknown');
     await fetchMedicines();
-    setPSupplier(''); setPMedicine(''); setPQty(''); setPCost(''); setPSell(''); setPWholesale(''); setShowPurchaseForm(false);
+    setPSupplier(''); setPMedicine(''); setPQty(''); setPCost(''); setPSell(''); setPWholesale(''); 
+    setShowPurchaseForm(false);
   };
 
   const handlePay = async (supId: string) => {
@@ -225,10 +242,36 @@ export function SuppliersDashboard() {
               </select>
             </div>
             <div><label className="label">الكمية *</label><input type="number" className="input tabular" value={pQty} onChange={e => setPQty(e.target.value)} required /></div>
-            <div><label className="label">سعر التكلفة (للقطعة) *</label><input type="number" className="input tabular" value={pCost} onChange={e => setPCost(e.target.value)} required /></div>
-            <div><label className="label">سعر الجملة *</label><input type="number" className="input tabular" value={pWholesale} onChange={e => setPWholesale(e.target.value)} required /></div>
-            <div><label className="label">سعر المبيع (مفرد) *</label><input type="number" className="input tabular" value={pSell} onChange={e => setPSell(e.target.value)} required /></div>
+            <div>
+              <label className="label">عملة الشراء *</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setPurchaseCurrency('IQD')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${purchaseCurrency === 'IQD' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  دينار (IQD)
+                </button>
+                <button type="button" onClick={() => setPurchaseCurrency('USD')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${purchaseCurrency === 'USD' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  دولار (USD)
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="label">سعر التكلفة ({purchaseCurrency}) {purchaseCurrency === 'USD' && <span className="text-emerald-600">× {usdRate} = {(parseFloat(pCost || '0') * usdRate).toFixed(0)} د.ع</span>}</label>
+              <input type="number" className="input tabular" value={pCost} onChange={e => setPCost(e.target.value)} required />
+            </div>
+            <div>
+              <label className="label">سعر الجملة (د.ع) *</label>
+              <input type="number" className="input tabular" value={pWholesale} onChange={e => setPWholesale(e.target.value)} required />
+            </div>
+            <div>
+              <label className="label">سعر المبيع مفرد (د.ع) *</label>
+              <input type="number" className="input tabular" value={pSell} onChange={e => setPSell(e.target.value)} required />
+            </div>
           </div>
+          {purchaseCurrency === 'USD' && (
+            <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-emerald-600" />
+              <span className="text-xs text-emerald-700">سيتم تحويل سعر التكلفة من USD إلى IQD تلقائياً عند الحفظ (1 USD = {usdRate} IQD)</span>
+            </div>
+          )}
           <div className="flex gap-2 mt-5">
             <button type="submit" className="btn-primary">
               <PackagePlus className="w-4 h-4" />

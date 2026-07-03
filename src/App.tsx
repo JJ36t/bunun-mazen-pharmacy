@@ -128,19 +128,14 @@ function PosDashboard() {
   const [showPayment, setShowPayment] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
-  const [paymentCurrency, setPaymentCurrency] = useState<'IQD' | 'USD'>('IQD');
-  const [usdRate, setUsdRate] = useState(1310);
   const [paidAmount, setPaidAmount] = useState('');
   const [mixedCash, setMixedCash] = useState('');
   const [mixedCard, setMixedCard] = useState('');
   const [chequeNumber, setChequeNumber] = useState('');
 
-  // تحميل طرق الدفع وسعر الصرف
+  // تحميل طرق الدفع
   useEffect(() => {
     invoke<any[]>('get_payment_methods_db').then(setPaymentMethods).catch(() => {});
-    invoke<any>('get_settings_db').then((s: any) => {
-      if (s?.usd_exchange_rate) setUsdRate(parseFloat(s.usd_exchange_rate));
-    }).catch(() => {});
   }, []);
 
   // State Recovery - حفظ السلة تلقائياً
@@ -573,9 +568,6 @@ function PosDashboard() {
           paymentMethods={paymentMethods}
           selectedMethod={selectedPaymentMethod}
           setSelectedMethod={setSelectedPaymentMethod}
-          currency={paymentCurrency}
-          setCurrency={setPaymentCurrency}
-          usdRate={usdRate}
           paidAmount={paidAmount}
           setPaidAmount={setPaidAmount}
           mixedCash={mixedCash}
@@ -839,17 +831,16 @@ function App() {
 }
 
 // ========================================
-// Payment Modal - نافذة الدفع متعدد العملات
+// Payment Modal - نافذة الدفع (دينار عراقي فقط)
 // ========================================
 function PaymentModal({ 
   total, paymentMethods, selectedMethod, setSelectedMethod,
-  currency, setCurrency, usdRate, paidAmount, setPaidAmount,
+  paidAmount, setPaidAmount,
   mixedCash, setMixedCash, mixedCard, setMixedCard,
   chequeNumber, setChequeNumber, onConfirm, onClose 
 }: any) {
-  const totalInUsd = total / usdRate;
-  const totalDisplay = currency === 'USD' ? totalInUsd : total;
-  const totalLabel = currency === 'USD' ? '$' : 'د.ع';
+  const totalDisplay = total;
+  const totalLabel = 'د.ع';
 
   const paidNum = parseFloat(paidAmount) || 0;
   const change = paidNum - totalDisplay;
@@ -880,18 +871,6 @@ function PaymentModal({
         <div className="bg-gradient-to-r from-brand-600 to-brand-700 text-white p-5 rounded-2xl mb-5 text-center">
           <p className="text-xs opacity-80">الإجمالي المستحق</p>
           <p className="text-4xl font-bold tabular mt-1">{totalDisplay.toFixed(2)} <span className="text-lg font-normal">{totalLabel}</span></p>
-          {currency === 'USD' && <p className="text-xs opacity-80 mt-1">≈ {total.toFixed(0)} د.ع</p>}
-          {currency === 'IQD' && <p className="text-xs opacity-80 mt-1">≈ ${(totalInUsd).toFixed(2)}</p>}
-        </div>
-
-        {/* اختيار العملة */}
-        <div className="flex gap-2 mb-4">
-          <button onClick={() => setCurrency('IQD')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${currency === 'IQD' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-            دينار عراقي (IQD)
-          </button>
-          <button onClick={() => setCurrency('USD')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${currency === 'USD' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-            دولار أمريكي (USD)
-          </button>
         </div>
 
         {/* اختيار طريقة الدفع */}
@@ -962,17 +941,8 @@ function PaymentModal({
           </div>
         )}
 
-        {/* سعر الصرف */}
-        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 mb-4 text-xs">
-          <span className="text-slate-400">سعر الصرف الحالي:</span>
-          <span className="font-semibold text-slate-600 tabular">1 USD = {usdRate} IQD</span>
-        </div>
-
         {/* زر التأكيد */}
-        <button 
-          onClick={onConfirm} 
-          className="btn-primary w-full py-4 text-base shadow-md"
-        >
+        <button onClick={onConfirm} className="btn-primary w-full py-4 text-base shadow-md">
           <Calculator className="w-5 h-5" />
           تأكيد الدفع + طباعة
         </button>
