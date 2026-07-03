@@ -1263,14 +1263,29 @@ fn main() {
             let pool = tauri::async_runtime::block_on(async { 
                 // محاولة الاتصال بقاعدة البيانات الموجودة
                 match PgPoolOptions::new().max_connections(5).connect(database_url).await {
-                    Ok(p) => p,
+                    Ok(p) => {
+                        // التحقق من وجود جدول users (يعني القاعدة سليمة)
+                        let check: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'users'").fetch_one(&p).await.unwrap_or(0);
+                        if check > 0 {
+                            println!("Connected to existing database.");
+                            p
+                        } else {
+                            // القاعدة موجودة لكن فارغة - نشغل migrations
+                            println!("Database exists but empty. Running migrations...");
+                            let _ = sqlx::migrate!("./migrations").run(&p).await;
+                            p
+                        }
+                    }
                     Err(_) => {
-                        // إنشاء قاعدة بيانات جديدة فقط إذا لم تكن موجودة
+                        // قاعدة البيانات غير موجودة - ننشئها
+                        println!("Database not found. Creating new database...");
                         let admin_url = "postgres://postgres:123456@localhost:5432/postgres";
                         let admin_pool = PgPoolOptions::new().max_connections(1).connect(admin_url).await.expect("Failed to connect to postgres");
                         sqlx::query("CREATE DATABASE pharmacy_db").execute(&admin_pool).await.ok();
                         drop(admin_pool);
-                        PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to database")
+                        let new_pool = PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to new database");
+                        let _ = sqlx::migrate!("./migrations").run(&new_pool).await;
+                        new_pool
                     }
                 }
             });
