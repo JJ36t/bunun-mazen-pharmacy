@@ -1267,35 +1267,12 @@ fn main() {
                     Err(e) => {
                         let err_str = e.to_string();
                         println!("Migration error: {}", err_str);
-                        
-                        // معالجة جميع أخطاء migration
-                        if err_str.contains("VersionMismatch") || err_str.contains("VersionMissing") || err_str.contains("checksum") || err_str.contains("foreign key") || err_str.contains("violates") {
-                            println!("Detected migration version mismatch. Resetting _sqlx_migrations table...");
-                            let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations").execute(&pool).await;
-                            
-                            // إعادة محاولة الـ migrations
-                            match sqlx::migrate!("./migrations").run(&pool).await {
-                                Ok(_) => println!("Migrations re-applied successfully after reset."),
-                                Err(e2) => {
-                                    let err2_str = e2.to_string();
-                                    println!("Migration retry error: {}", err2_str);
-                                    
-                                    // إذا فشل مرة أخرى، احذف _sqlx_migrations وكل الجداول المعنية وأعد المحاولة
-                                    if err2_str.contains("already exists") || err2_str.contains("VersionMismatch") {
-                                        println!("Performing full migration reset...");
-                                        let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations CASCADE").execute(&pool).await;
-                                        // الـ migrations تستخدم CREATE TABLE IF NOT EXISTS لذا لن تفشل
-                                        match sqlx::migrate!("./migrations").run(&pool).await {
-                                            Ok(_) => println!("Migrations applied after full reset."),
-                                            Err(e3) => panic!("Could not run migrations after full reset: {}", e3),
-                                        }
-                                    } else {
-                                        panic!("Could not run migrations: {}", e2);
-                                    }
-                                }
-                            }
-                        } else {
-                            panic!("Could not run migrations: {}", e);
+                        println!("Performing full migration reset (dropping _sqlx_migrations)...");
+                        let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations CASCADE").execute(&pool).await;
+                        // إعادة تشغيل جميع migrations من الصفر
+                        match sqlx::migrate!("./migrations").run(&pool).await {
+                            Ok(_) => println!("Migrations applied successfully after full reset."),
+                            Err(e2) => panic!("Could not run migrations after full reset: {}", e2),
                         }
                     }
                 }
