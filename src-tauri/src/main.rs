@@ -1321,13 +1321,6 @@ fn main() {
                     let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('admin', $1, 'Super Admin', TRUE) ON CONFLICT (username) DO UPDATE SET password = $1, is_active = TRUE, deleted_at = NULL").bind(admin_pass).execute(&pool).await;
                     let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('cashier', $1, 'Cashier', TRUE) ON CONFLICT (username) DO UPDATE SET password = $1, is_active = TRUE, deleted_at = NULL").bind(cashier_pass).execute(&pool).await;
                     println!("Default users created: admin/admin123, cashier/cashier123");
-                } else {
-                    // إعادة تعيين كلمات المرور للتأكد
-                    let admin_pass = bcrypt::hash("admin123", 8).unwrap();
-                    let cashier_pass = bcrypt::hash("cashier123", 8).unwrap();
-                    let _ = sqlx::query("UPDATE users SET password = $1, is_active = TRUE WHERE username = 'admin'").bind(admin_pass).execute(&pool).await;
-                    let _ = sqlx::query("UPDATE users SET password = $1, is_active = TRUE WHERE username = 'cashier'").bind(cashier_pass).execute(&pool).await;
-                    println!("Default passwords reset: admin/admin123, cashier/cashier123");
                 }
             });
             app.manage(pool);
