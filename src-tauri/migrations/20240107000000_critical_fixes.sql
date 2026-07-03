@@ -21,25 +21,12 @@ UPDATE medicines SET expiry_date = (CURRENT_DATE + INTERVAL '1 year')::date
 WHERE expiry_date IS NULL AND is_deleted = FALSE;
 
 -- ===== 2. ربط تلقائي للأدوية بمجموعات حسب الاسم العلمي =====
--- إنشاء مجموعات أساسية حسب الاسم العلمي
+-- إنشاء مجموعات أساسية حسب الاسم العلمي فقط (الربط في migration 20240108)
 INSERT INTO parent_drug_groups (group_name, scientific_name, description)
 SELECT DISTINCT scientific_name, scientific_name, 'مجموعة تلقائية حسب الاسم العلمي'
 FROM drug_master 
 WHERE scientific_name IS NOT NULL AND scientific_name != ''
 ON CONFLICT DO NOTHING;
-
--- ربط كل دواء بمجموعته حسب الاسم العلمي (بشكل آمن - فقط المجموعات الموجودة)
-UPDATE drug_master dm
-SET parent_drug_id = sub.pg_id
-FROM (
-  SELECT dm2.id as drug_id, pg.id as pg_id
-  FROM drug_master dm2
-  JOIN parent_drug_groups pg ON dm2.scientific_name = pg.scientific_name
-  WHERE dm2.scientific_name IS NOT NULL 
-    AND dm2.scientific_name != ''
-    AND dm2.parent_drug_id IS NULL
-) sub
-WHERE dm.id = sub.drug_id;
 
 -- ===== 3. إضافة عمود deleted_at للأدوية (Soft Delete) =====
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
