@@ -1260,66 +1260,40 @@ fn main() {
             let device_fingerprint = generate_device_fingerprint();
             println!("==============================\nDevice ID: {}\nValid Activation Key: {}\n==============================", device_fingerprint, generate_activation_key(&device_fingerprint));
             let database_url = "postgres://postgres:123456@localhost:5432/pharmacy_db";
-            // محاولة الاتصال بقاعدة البيانات، إذا فشلت أنشئها
             let pool = tauri::async_runtime::block_on(async { 
+                // محاولة الاتصال، إذا فشلت أنشئ قاعدة البيانات
                 match PgPoolOptions::new().max_connections(5).connect(database_url).await {
                     Ok(p) => p,
                     Err(_) => {
-                        // الاتصال بقاعدة البيانات الافتراضية لإنشاء pharmacy_db
                         let admin_url = "postgres://postgres:123456@localhost:5432/postgres";
                         let admin_pool = PgPoolOptions::new().max_connections(1).connect(admin_url).await.expect("Failed to connect to postgres");
-                        sqlx::query("DROP DATABASE IF EXISTS pharmacy_db").execute(&admin_pool).await.ok();
                         sqlx::query("CREATE DATABASE pharmacy_db").execute(&admin_pool).await.ok();
                         PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to new Postgres.")
                     }
                 }
             });
             tauri::async_runtime::block_on(async {
-                // محاولة تشغيل الـ migrations
+                // تشغيل migrations (تستخدم CREATE TABLE IF NOT EXISTS فلا تضارب)
                 match sqlx::migrate!("./migrations").run(&pool).await {
                     Ok(_) => println!("Migrations applied successfully."),
                     Err(e) => {
-                        let err_str = e.to_string();
-                        println!("Migration error: {}", err_str);
-                        println!("Performing full migration reset (dropping _sqlx_migrations)...");
+                        println!("Migration error: {}", e);
+                        // حذف سجل migrations وإعادة المحاولة
                         let _ = sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations CASCADE").execute(&pool).await;
-                        // إعادة تشغيل جميع migrations من الصفر
                         match sqlx::migrate!("./migrations").run(&pool).await {
-                            Ok(_) => println!("Migrations applied successfully after full reset."),
-                            Err(e2) => {
-                                let err2_str = e2.to_string();
-                                println!("Migration retry error: {}", err2_str);
-                                println!("Recreating database from scratch...");
-                                // حذف وإعادة إنشاء قاعدة البيانات بالكامل
-                                let admin_url = "postgres://postgres:123456@localhost:5432/postgres";
-                                match PgPoolOptions::new().max_connections(1).connect(admin_url).await {
-                                    Ok(admin_pool) => {
-                                        // إنهاء جميع الاتصالات بقاعدة البيانات
-                                        let _ = sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'pharmacy_db'").execute(&admin_pool).await;
-                                        let _ = sqlx::query("DROP DATABASE IF EXISTS pharmacy_db").execute(&admin_pool).await;
-                                        let _ = sqlx::query("CREATE DATABASE pharmacy_db").execute(&admin_pool).await;
-                                        println!("Database recreated. Running migrations on fresh database...");
-                                        drop(admin_pool);
-                                        // الاتصال بقاعدة البيانات الجديدة وتشغيل migrations
-                                        let new_pool = PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to new database");
-                                        match sqlx::migrate!("./migrations").run(&new_pool).await {
-                                            Ok(_) => println!("Migrations applied successfully on fresh database."),
-                                            Err(e3) => panic!("Could not run migrations on fresh database: {}", e3),
-                                        }
-                                    }
-                                    Err(e3) => panic!("Could not recreate database: {}", e3),
-                                }
-                            }
+                            Ok(_) => println!("Migrations applied after reset."),
+                            Err(e2) => panic!("Could not run migrations: {}", e2),
                         }
                     }
                 }
                 
-                let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE username = 'admin' AND deleted_at IS NULL").fetch_one(&pool).await.unwrap_or(0);
+                // إنشاء المستخدمين الافتراضيين فقط إذا لم يكونوا موجودين
+                let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE username = 'admin'").fetch_one(&pool).await.unwrap_or(0);
                 if admin_count == 0 {
                     let admin_pass = bcrypt::hash("admin123", 8).unwrap();
                     let cashier_pass = bcrypt::hash("cashier123", 8).unwrap();
-                    let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('admin', $1, 'Super Admin', TRUE) ON CONFLICT (username) DO UPDATE SET password = $1, is_active = TRUE, deleted_at = NULL").bind(admin_pass).execute(&pool).await;
-                    let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('cashier', $1, 'Cashier', TRUE) ON CONFLICT (username) DO UPDATE SET password = $1, is_active = TRUE, deleted_at = NULL").bind(cashier_pass).execute(&pool).await;
+                    let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('admin', $1, 'Super Admin', TRUE)").bind(admin_pass).execute(&pool).await;
+                    let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('cashier', $1, 'Cashier', TRUE)").bind(cashier_pass).execute(&pool).await;
                     println!("Default users created: admin/admin123, cashier/cashier123");
                 }
             });
