@@ -28,12 +28,18 @@ FROM drug_master
 WHERE scientific_name IS NOT NULL AND scientific_name != ''
 ON CONFLICT DO NOTHING;
 
--- ربط كل دواء بمجموعته حسب الاسم العلمي
+-- ربط كل دواء بمجموعته حسب الاسم العلمي (بشكل آمن - فقط المجموعات الموجودة)
 UPDATE drug_master dm
-SET parent_drug_id = pg.id
-FROM parent_drug_groups pg
-WHERE dm.scientific_name = pg.scientific_name 
-  AND dm.parent_drug_id IS NULL;
+SET parent_drug_id = sub.pg_id
+FROM (
+  SELECT dm2.id as drug_id, pg.id as pg_id
+  FROM drug_master dm2
+  JOIN parent_drug_groups pg ON dm2.scientific_name = pg.scientific_name
+  WHERE dm2.scientific_name IS NOT NULL 
+    AND dm2.scientific_name != ''
+    AND dm2.parent_drug_id IS NULL
+) sub
+WHERE dm.id = sub.drug_id;
 
 -- ===== 3. إضافة عمود deleted_at للأدوية (Soft Delete) =====
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
