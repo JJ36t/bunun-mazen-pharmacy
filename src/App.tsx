@@ -37,6 +37,7 @@ import { Receipt } from './domains/pos/Receipt';
 import { MainDashboard } from './MainDashboard';
 import { searchMedicines } from './lib/utils/search';
 import { invoke } from '@tauri-apps/api/core';
+import { SmartBarcodeLookup } from './domains/pos/SmartBarcodeLookup';
 import { Toaster, toast } from 'sonner';
 import { parseISO, startOfDay, isBefore, isAfter, addDays } from 'date-fns';
 import { 
@@ -162,6 +163,7 @@ function PosDashboard() {
     }
   }, [cart, discountPercentage]);
   const [showPayment, setShowPayment] = useState(false);
+  const [smartLookupBarcode, setSmartLookupBarcode] = useState<string | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
   const [paidAmount, setPaidAmount] = useState('');
@@ -186,7 +188,7 @@ function PosDashboard() {
       const localMatch = medicines.find((m:any) =>
         m.barcode && String(m.barcode).trim() === trimmed
       );
-      if (localMatch) { handleAddToCart(localMatch); return; }
+      if (localMatch) { handleAddToCart(localMatch); setSearchTerm(''); return; }
 
       // 2. للباركودات الرقمية (8+ أرقام): استعلام قاعدة البيانات
       //     يشمل medicine_barcodes التي قد لا تكون محملة في الذاكرة
@@ -195,15 +197,28 @@ function PosDashboard() {
           const result = await invoke<any | null>('lookup_barcode_db', { barcode: trimmed });
           if (result && result.medicineId) {
             const med = medicines.find((m:any) => m.id === result.medicineId);
-            if (med) { handleAddToCart(med); return; }
+            if (med) { handleAddToCart(med); setSearchTerm(''); return; }
           }
         } catch (err) { console.error('Barcode lookup failed:', err); }
       }
 
       // 3. البحث بالاسم (يشمل الباركود الجزئي)
       const results = searchMedicines(searchTerm, medicines.filter((m:any) => !m.isDeleted));
-      if (results.length === 1) handleAddToCart(results[0]);
+      if (results.length === 1) { handleAddToCart(results[0]); setSearchTerm(''); return; }
+
+      // 4. لو الباركود رقمي وما لقيناه في أي مكان → افتح البحث الذكي
+      if (/^\d{8,}$/.test(trimmed) && results.length === 0) {
+        setSmartLookupBarcode(trimmed);
+      }
     }
+  };
+
+  // بعد إضافة دواء من SmartBarcodeLookup
+  const handleSmartLookupAdded = async (medicineId: string) => {
+    await fetchMedicines();
+    const newMed = (await invoke<any[]>('get_medicines_db')).find((m: any) => m.id === medicineId);
+    if (newMed) handleAddToCart(newMed);
+    setSmartLookupBarcode(null);
   };
   
   const handleAddToCart = (med: any) => {
@@ -617,7 +632,15 @@ function PosDashboard() {
       )}
 
       {keypadTarget && <TouchKeypad onConfirm={handleKeypadConfirm} onClose={() => setKeypadTarget(null)} />}
-      
+
+      {smartLookupBarcode && (
+        <SmartBarcodeLookup
+          barcode={smartLookupBarcode}
+          onClose={() => setSmartLookupBarcode(null)}
+          onMedicineAdded={handleSmartLookupAdded}
+        />
+      )}
+
       {showPayment && (
         <PaymentModal
           total={calculateTotal()}

@@ -28,6 +28,7 @@ mod pharmiq_commands;
 mod pharmiq_complete;
 mod pharmiq_enterprise_complete;
 mod invoices_commands;
+mod smart_barcode_commands;
 
 // --- نظام السجلات المنظمة (Structured Logging) ---
 fn init_logging() {
@@ -1408,7 +1409,13 @@ fn main() {
             invoices_commands::get_all_invoices_with_details_db,
             invoices_commands::delete_invoice_db,
             invoices_commands::mark_invoice_printed_db,
-            invoices_commands::get_daily_receipt_stats_db
+            invoices_commands::get_daily_receipt_stats_db,
+            // Smart barcode lookup commands
+            smart_barcode_commands::lookup_in_global_db,
+            smart_barcode_commands::lookup_in_openfoodfacts,
+            smart_barcode_commands::lookup_in_gs1,
+            smart_barcode_commands::smart_barcode_lookup,
+            smart_barcode_commands::add_medicine_from_global_db
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -33,6 +33,8 @@ obfstr = "0.4"
 subtle = "2.5"
 # Tauri Updater - نظام التحديثات التلقائية
 tauri-plugin-updater = "2"
+# reqwest - للبحث اللحظي في OpenFoodFacts و APIs خارجية
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
