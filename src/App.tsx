@@ -200,12 +200,32 @@ function PosDashboard() {
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); };
   
-  const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchKeyPress = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
+      const trimmed = searchTerm.trim();
+      if (!trimmed) return;
+
+      // 1. مطابقة محلية سريعة في medicines.barcode (المحملة في الذاكرة)
+      const localMatch = medicines.find((m:any) =>
+        m.barcode && String(m.barcode).trim() === trimmed
+      );
+      if (localMatch) { handleAddToCart(localMatch); return; }
+
+      // 2. للباركودات الرقمية (8+ أرقام): استعلام قاعدة البيانات
+      //     يشمل medicine_barcodes التي قد لا تكون محملة في الذاكرة
+      if (/^\d{8,}$/.test(trimmed)) {
+        try {
+          const result = await invoke<any | null>('lookup_barcode_db', { barcode: trimmed });
+          if (result && result.medicineId) {
+            const med = medicines.find((m:any) => m.id === result.medicineId);
+            if (med) { handleAddToCart(med); return; }
+          }
+        } catch (err) { console.error('Barcode lookup failed:', err); }
+      }
+
+      // 3. البحث بالاسم (يشمل الباركود الجزئي)
       const results = searchMedicines(searchTerm, medicines.filter((m:any) => !m.isDeleted));
-      const exactBarcode = medicines.find((m:any) => m.barcode === searchTerm.trim());
-      if (exactBarcode) handleAddToCart(exactBarcode);
-      else if (results.length === 1) handleAddToCart(results[0]);
+      if (results.length === 1) handleAddToCart(results[0]);
     }
   };
   
@@ -424,7 +444,7 @@ function PosDashboard() {
         </div>
         
         <div className="flex-1 overflow-auto">
-          {searchTerm && !medicines.find((m:any) => m.barcode === searchTerm.trim()) && (
+          {searchTerm && !medicines.find((m:any) => m.barcode && String(m.barcode).trim() === searchTerm.trim()) && (
             <div className="card overflow-hidden animate-slide-up">
               {results.length === 0 ? (
                 <div className="empty-state">

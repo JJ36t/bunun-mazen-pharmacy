@@ -46,20 +46,27 @@ export const levenshtein = (a: string, b: string): number => {
 
 export const searchMedicines = (query: string, items: any[]) => {
   if (!query.trim()) return [];
-  
-  const isBarcode = /^\d+$/.test(query);
+
+  const trimmedQuery = query.trim();
+  const isBarcode = /^\d+$/.test(trimmedQuery);
   const normalizedQuery = normalizeArabic(query);
   const transliteratedQuery = transliterate(query);
 
   return items.filter(item => {
-    if (isBarcode && item.barcode && item.barcode.includes(query)) return true;
-    
+    // مطابقة الباركود: تامة أو جزئية، مع إزالة الفراغات
+    if (isBarcode && item.barcode) {
+      const itemBarcode = String(item.barcode).trim();
+      if (itemBarcode === trimmedQuery) return true;
+      if (itemBarcode.includes(trimmedQuery)) return true;
+      if (trimmedQuery.length >= 8 && itemBarcode.endsWith(trimmedQuery)) return true;
+    }
+
     const normalizedNameAr = normalizeArabic(item.nameAr);
     const normalizedNameEn = item.nameEn ? item.nameEn.toLowerCase() : '';
-    
+
     if (
       normalizedNameAr.includes(normalizedQuery) ||
-      normalizedNameEn.includes(query.toLowerCase()) ||
+      normalizedNameEn.includes(trimmedQuery.toLowerCase()) ||
       normalizedNameAr.includes(transliteratedQuery)
     ) {
       return true;
@@ -72,4 +79,41 @@ export const searchMedicines = (query: string, items: any[]) => {
 
     return false;
   });
+};
+
+// ===== أدوات مساعدة لـ EAN-13 =====
+
+// حساب رقم التحقق EAN-13 (نفس خوارزمية GS1 الرسمية)
+export const computeEan13CheckDigit = (prefix12: string): number => {
+  if (!/^\d{12}$/.test(prefix12)) {
+    throw new Error('EAN-13 prefix must be exactly 12 digits');
+  }
+  let total = 0;
+  for (let i = 0; i < 12; i++) {
+    const digit = parseInt(prefix12[i], 10);
+    const weight = i % 2 === 0 ? 1 : 3; // position 1 (index 0) = weight 1
+    total += digit * weight;
+  }
+  return (10 - (total % 10)) % 10;
+};
+
+// توليد باركود EAN-13 كامل (13 رقم)
+export const generateEan13Barcode = (prefix12: string): string => {
+  const checkDigit = computeEan13CheckDigit(prefix12);
+  return `${prefix12}${checkDigit}`;
+};
+
+// توليد باركود داخلي بالصيغة الموحدة (200 prefix + 9 أرقام تسلسلية)
+export const generateInternalEan13 = (sequenceNumber: number): string => {
+  const prefix12 = `200${String(sequenceNumber).padStart(9, '0')}`;
+  return generateEan13Barcode(prefix12);
+};
+
+// التحقق من صحة باركود EAN-13
+export const isValidEan13 = (barcode: string): boolean => {
+  if (!/^\d{13}$/.test(barcode)) return false;
+  const prefix12 = barcode.substring(0, 12);
+  const actualCheck = parseInt(barcode[12], 10);
+  const expectedCheck = computeEan13CheckDigit(prefix12);
+  return actualCheck === expectedCheck;
 };

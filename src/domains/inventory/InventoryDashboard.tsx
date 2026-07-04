@@ -3,6 +3,7 @@ import { useInventoryStore, Medicine } from './inventory.store';
 import { useAuthStore } from '../security/auth.store';
 import { Plus, Pencil, Trash2, X, Package, AlertTriangle, Search, Barcode, TrendingUp, Boxes, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import { generateInternalEan13, isValidEan13 } from '../../lib/utils/search';
 
 export function InventoryDashboard() {
   const { medicines, addMedicine, updateMedicine, softDeleteMedicine } = useInventoryStore();
@@ -35,18 +36,35 @@ export function InventoryDashboard() {
   };
 
   const handleGenerateBarcode = () => {
-    const nextId = medicines.filter((m:any) => !m.isDeleted).length + 1;
-    const random = Math.floor(Math.random() * 900) + 100;
-    setForm({ ...form, barcode: `600${nextId.toString().padStart(5, '0')}${random}` });
-    toast.success('تم توليد باركود جديد.');
+    // توليد باركود EAN-13 صحيح (13 رقم مع checksum) — نفس صيغة الكاشيرات العالمية
+    // بادئة 200 = مخصصة للاستخدام الداخلي وفق GS1
+    const existingMax = medicines
+      .filter((m: any) => !m.isDeleted && m.barcode && String(m.barcode).startsWith('200') && String(m.barcode).length === 13)
+      .reduce((max: number, m: any) => {
+        const seq = parseInt(String(m.barcode).substring(3, 12), 10);
+        return isNaN(seq) ? max : Math.max(max, seq);
+      }, 0);
+    const nextSeq = existingMax + 1;
+    const barcode = generateInternalEan13(nextSeq);
+    setForm({ ...form, barcode });
+    toast.success(`تم توليد باركود EAN-13 صحيح: ${barcode}`);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => { 
-    e.preventDefault(); 
-    if (!form.nameAr || !form.barcode) { toast.error("الاسم والباركود مطلوبان."); return; }
-    if (editId) { await updateMedicine(editId, form); toast.success("تم تحديث الدواء بنجاح."); } 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.nameAr) { toast.error("الاسم العربي مطلوب."); return; }
+    // الباركود لم يعد إلزامياً — يُولّد تلقائياً في الـ backend إذا تُرك فارغاً
+    if (form.barcode) {
+      // التحقق من صحة EAN-13 إذا أُدخل يدوياً
+      const trimmedBarcode = String(form.barcode).trim();
+      if (/^\d{13}$/.test(trimmedBarcode) && !isValidEan13(trimmedBarcode)) {
+        toast.error(`باركود EAN-13 غير صالح (رقم التحقق خاطئ). اضغط "توليد" لإنشاء باركود صحيح.`);
+        return;
+      }
+    }
+    if (editId) { await updateMedicine(editId, form); toast.success("تم تحديث الدواء بنجاح."); }
     else { await addMedicine(form); toast.success("تمت إضافة الدواء بنجاح."); }
-    setShowForm(false); 
+    setShowForm(false);
   };
   
   const handleDelete = async (id: string, name: string) => {
@@ -56,7 +74,11 @@ export function InventoryDashboard() {
     }
   };
 
-  const filteredMeds = medicines.filter((m: any) => !m.isDeleted && (m.nameAr.includes(search) || m.barcode.includes(search) || m.nameEn.toLowerCase().includes(search.toLowerCase())));
+  const filteredMeds = medicines.filter((m: any) => !m.isDeleted && (
+    m.nameAr.includes(search) ||
+    (m.barcode && String(m.barcode).includes(search)) ||
+    (m.nameEn && m.nameEn.toLowerCase().includes(search.toLowerCase()))
+  ));
 
   // إحصائيات سريعة
   const totalItems = filteredMeds.length;
@@ -147,10 +169,10 @@ export function InventoryDashboard() {
             <div><label className="label">الاسم بالإنجليزي</label><input className="input" value={form.nameEn} onChange={e => setForm({...form, nameEn: e.target.value})} /></div>
             <div className="col-span-2"><label className="label">الاسم العلمي (لربط البدائل)</label><input className="input" value={form.scientificName} onChange={e => setForm({...form, scientificName: e.target.value})} placeholder="مثال: Paracetamol" /></div>
             <div>
-              <label className="label">الباركود *</label>
+              <label className="label">الباركود (EAN-13) — يُولّد تلقائياً إذا تُرك فارغاً</label>
               <div className="flex gap-2">
-                <input className="input" value={form.barcode} onChange={e => setForm({...form, barcode: e.target.value})} required />
-                <button type="button" onClick={handleGenerateBarcode} className="btn-ghost border border-slate-200" title="توليد باركود"><Barcode className="w-4 h-4" /></button>
+                <input className="input tabular font-mono" value={form.barcode} onChange={e => setForm({...form, barcode: e.target.value})} placeholder="2000000000017" maxLength={13} />
+                <button type="button" onClick={handleGenerateBarcode} className="btn-ghost border border-slate-200" title="توليد باركود EAN-13"><Barcode className="w-4 h-4" /></button>
               </div>
             </div>
             <div><label className="label">رقم الدفعة</label><input className="input" value={form.batchNumber} onChange={e => setForm({...form, batchNumber: e.target.value})} /></div>

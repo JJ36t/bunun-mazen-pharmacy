@@ -346,12 +346,37 @@ async fn get_medicines_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_j
 async fn add_medicine_db(state: tauri::State<'_, PgPool>, name_ar: String, name_en: Option<String>, scientific_name: Option<String>, barcode: Option<String>, price: f64, wholesale_price: f64, cost_price: f64, quantity: i32, batch_number: Option<String>, expiry_date: Option<String>) -> Result<String, String> {
     let expiry = expiry_date.and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
+
+    // توليد باركود EAN-13 تلقائياً إذا لم يُدخل المستخدم باركود
+    let final_barcode: String = match &barcode {
+        Some(b) if !b.trim().is_empty() => b.trim().to_string(),
+        _ => {
+            let max_seq: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(CAST(SUBSTRING(barcode FROM 4 FOR 9) AS BIGINT)), 0)
+                 FROM medicines WHERE barcode LIKE '200%' AND LENGTH(barcode) = 13"
+            ).fetch_one(&mut *tx).await.unwrap_or(0);
+            let base_12 = format!("200{:09}", max_seq + 1);
+            let check_digit: i32 = sqlx::query_scalar("SELECT compute_ean13_check_digit($1)")
+                .bind(&base_12).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+            format!("{}{}", base_12, check_digit)
+        }
+    };
+
     let row = sqlx::query("INSERT INTO medicines (name_ar, name_en, scientific_name, barcode, price, wholesale_price, cost_price, quantity, batch_number, expiry_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id")
-        .bind(&name_ar).bind(&name_en).bind(&scientific_name).bind(&barcode)
+        .bind(&name_ar).bind(&name_en).bind(&scientific_name).bind(&final_barcode)
         .bind(rust_decimal::Decimal::from_f64(price).ok_or("Err")?).bind(rust_decimal::Decimal::from_f64(wholesale_price).ok_or("Err")?).bind(rust_decimal::Decimal::from_f64(cost_price).ok_or("Err")?)
         .bind(0).bind(&batch_number).bind(expiry)
         .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let med_id: uuid::Uuid = row.get(0);
+
+    // إضافة الباركود إلى جدول medicine_barcodes الموحد
+    let _ = sqlx::query(
+        "INSERT INTO medicine_barcodes (medicine_id, barcode, barcode_type, barcode_scope, learned_at)
+         VALUES ($1, $2, 'EAN13', 'internal', NOW())
+         ON CONFLICT (barcode, barcode_type) DO NOTHING"
+    )
+    .bind(med_id).bind(&final_barcode)
+    .execute(&mut *tx).await;
 
     if quantity > 0 {
         sqlx::query("INSERT INTO medicine_batches (medicine_id, batch_number, expiry_date, quantity) VALUES ($1, $2, $3, $4)")

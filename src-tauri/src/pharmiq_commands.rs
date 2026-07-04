@@ -155,20 +155,44 @@ pub async fn check_drug_interactions_db(state: tauri::State<'_, PgPool>, drug_id
 
 #[tauri::command]
 pub async fn lookup_barcode_db(state: tauri::State<'_, PgPool>, barcode: String) -> Result<Option<serde_json::Value>, String> {
-    let row = sqlx::query("SELECT mb.id, mb.medicine_id, mb.barcode_type, mb.barcode_scope, mb.batch_number, mb.expiry_date, m.name_ar, m.price, m.quantity FROM medicine_barcodes mb LEFT JOIN medicines m ON mb.medicine_id = m.id WHERE mb.barcode = $1 AND mb.is_active = TRUE")
-        .bind(&barcode).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
-    
+    let trimmed = barcode.trim();
+    if trimmed.is_empty() { return Ok(None); }
+
+    // البحث في medicine_barcodes (الجدول الموحد) + medicines.barcode
+    // الأولوية: تطابق تام في medicine_barcodes ثم في medicines.barcode
+    let row = sqlx::query(
+        "SELECT m.id, m.name_ar, m.price, m.quantity, m.barcode,
+                mb.barcode_type, mb.barcode_scope, mb.batch_number, mb.expiry_date
+         FROM medicine_barcodes mb
+         JOIN medicines m ON mb.medicine_id = m.id
+         WHERE mb.barcode = $1 AND mb.is_active = TRUE AND m.is_deleted = FALSE
+         UNION ALL
+         SELECT m.id, m.name_ar, m.price, m.quantity, m.barcode,
+                NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::DATE
+         FROM medicines m
+         WHERE m.barcode = $1 AND m.is_deleted = FALSE
+           AND NOT EXISTS (
+             SELECT 1 FROM medicine_barcodes mb2
+             WHERE mb2.barcode = m.barcode AND mb2.is_active = TRUE
+           )
+         LIMIT 1"
+    )
+    .bind(trimmed)
+    .fetch_optional(state.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
     if let Some(r) = row {
         Ok(Some(serde_json::json!({
-            "barcodeId": r.get::<uuid::Uuid, _>(0).to_string(),
-            "medicineId": r.get::<Option<uuid::Uuid>, _>(1).map(|u| u.to_string()),
-            "barcodeType": r.get::<String, _>(2),
-            "barcodeScope": r.get::<String, _>(3),
-            "batchNumber": r.get::<Option<String>, _>(4),
-            "expiryDate": r.get::<Option<chrono::NaiveDate>, _>(5).map(|d| d.to_string()),
-            "medicineName": r.get::<Option<String>, _>(6),
-            "price": r.get::<Option<rust_decimal::Decimal>, _>(7).map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0),
-            "quantity": r.get::<Option<i32>, _>(8).unwrap_or(0),
+            "medicineId": r.get::<uuid::Uuid, _>(0).to_string(),
+            "medicineName": r.get::<String, _>(1),
+            "price": r.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
+            "quantity": r.get::<i32, _>(3),
+            "barcode": r.get::<String, _>(4),
+            "barcodeType": r.get::<Option<String>, _>(5).unwrap_or_else(|| "EAN13".to_string()),
+            "barcodeScope": r.get::<Option<String>, _>(6).unwrap_or_else(|| "internal".to_string()),
+            "batchNumber": r.get::<Option<String>, _>(7),
+            "expiryDate": r.get::<Option<chrono::NaiveDate>, _>(8).map(|d| d.to_string()),
         })))
     } else {
         Ok(None)
@@ -188,16 +212,46 @@ pub async fn bind_barcode_to_medicine_db(state: tauri::State<'_, PgPool>, barcod
 #[tauri::command]
 pub async fn generate_internal_barcode_db(state: tauri::State<'_, PgPool>, medicine_id: String) -> Result<String, String> {
     let med_uuid = uuid::Uuid::parse_str(&medicine_id).map_err(|e| e.to_string())?;
-    
-    // توليد باركود داخلي بصيغة BNN-0000001
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM medicine_barcodes WHERE barcode_scope = 'internal'")
-        .fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
-    let barcode = format!("BNN-{:07}", count + 1);
-    
-    sqlx::query("INSERT INTO medicine_barcodes (medicine_id, barcode, barcode_type, barcode_scope) VALUES ($1, $2, 'CODE128', 'internal')")
-        .bind(med_uuid).bind(&barcode)
-        .execute(state.inner()).await.map_err(|e| e.to_string())?;
-    
+    let pool = state.inner();
+
+    // 1. التحقق من وجود باركود سابق للدواء
+    let existing: Option<String> = sqlx::query_scalar(
+        "SELECT barcode FROM medicines WHERE id = $1 AND barcode IS NOT NULL AND barcode != ''"
+    )
+    .bind(med_uuid).fetch_optional(pool).await.map_err(|e| e.to_string())?;
+    if let Some(b) = existing {
+        return Ok(b);
+    }
+
+    // 2. توليد EAN-13: بادئة 200 (GS1 in-store) + 9 أرقام تسلسلية
+    let max_seq: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(barcode FROM 4 FOR 9) AS BIGINT)), 0)
+         FROM medicines
+         WHERE barcode LIKE '200%' AND LENGTH(barcode) = 13"
+    )
+    .fetch_one(pool).await.unwrap_or(0);
+
+    let base_12 = format!("200{:09}", max_seq + 1);
+
+    // 3. حساب رقم التحقق (EAN-13 checksum)
+    let check_digit: i32 = sqlx::query_scalar("SELECT compute_ean13_check_digit($1)")
+        .bind(&base_12).fetch_one(pool).await.map_err(|e| e.to_string())?;
+    let barcode = format!("{}{}", base_12, check_digit);
+
+    // 4. حفظ في medicines.barcode
+    sqlx::query("UPDATE medicines SET barcode = $1 WHERE id = $2")
+        .bind(&barcode).bind(med_uuid)
+        .execute(pool).await.map_err(|e| e.to_string())?;
+
+    // 5. حفظ في medicine_barcodes أيضاً
+    sqlx::query(
+        "INSERT INTO medicine_barcodes (medicine_id, barcode, barcode_type, barcode_scope, learned_at)
+         VALUES ($1, $2, 'EAN13', 'internal', NOW())
+         ON CONFLICT (barcode, barcode_type) DO NOTHING"
+    )
+    .bind(med_uuid).bind(&barcode)
+    .execute(pool).await.map_err(|e| e.to_string())?;
+
     Ok(barcode)
 }
 
