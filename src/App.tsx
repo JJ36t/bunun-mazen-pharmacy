@@ -142,12 +142,14 @@ function PosDashboard() {
         if (draft && draft.items && Array.isArray(draft.items) && draft.items.length > 0 && cart.length === 0) {
           draft.items.forEach((item: any) => addToCart(item));
           if (draft.discount) setDiscountPercentage(draft.discount);
+          toast.info('تم استرجاع السلة المحفوظة');
         }
       } catch (e) { console.error(e); }
     };
     loadDraft();
   }, []);
 
+  // حفظ السلة عند كل تغيير
   useEffect(() => {
     if (cart.length > 0) {
       invoke('save_draft_session_db', {
@@ -155,6 +157,8 @@ function PosDashboard() {
         sessionData: JSON.stringify({ items: cart, discount: discountPercentage }),
         userRole: username || 'Unknown',
       }).catch(() => {});
+    } else {
+      invoke('clear_draft_session_db', { sessionKey: 'pos_cart' }).catch(() => {});
     }
   }, [cart, discountPercentage]);
   const [showPayment, setShowPayment] = useState(false);
@@ -170,33 +174,6 @@ function PosDashboard() {
   useEffect(() => {
     invoke<any[]>('get_payment_methods_db').then(setPaymentMethods).catch(() => {});
   }, []);
-
-  // State Recovery - حفظ السلة تلقائياً
-  useEffect(() => {
-    const loadDraft = async () => {
-      try {
-        const draft = await invoke<any | null>('load_draft_session_db', { sessionKey: 'pos_cart' });
-        if (draft && draft.items && Array.isArray(draft.items) && draft.items.length > 0) {
-          draft.items.forEach((item: any) => addToCart(item));
-          toast.info('تم استرجاع السلة المحفوظة');
-        }
-      } catch (e) { console.error(e); }
-    };
-    loadDraft();
-  }, []);
-
-  // حفظ السلة عند كل تغيير
-  useEffect(() => {
-    if (cart.length > 0) {
-      invoke('save_draft_session_db', { 
-        sessionKey: 'pos_cart', 
-        sessionData: JSON.stringify({ items: cart, discount: discountPercentage }),
-        userRole: username || 'Unknown',
-      }).catch(() => {});
-    } else {
-      invoke('clear_draft_session_db', { sessionKey: 'pos_cart' }).catch(() => {});
-    }
-  }, [cart, discountPercentage]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); };
   
