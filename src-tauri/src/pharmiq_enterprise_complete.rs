@@ -344,7 +344,7 @@ pub async fn check_feature_flag_db(state: tauri::State<'_, PgPool>, flag_name: S
 #[tauri::command]
 pub async fn get_system_health_db(state: tauri::State<'_, PgPool>) -> Result<serde_json::Value, String> {
     // فحص صحة قاعدة البيانات
-    let db_check: Option<i64> = sqlx::query_scalar("SELECT 1").fetch_optional(state.inner()).await.ok().flatten();
+    let db_check: Option<i64> = sqlx::query_scalar("SELECT 1::BIGINT").fetch_optional(state.inner()).await.ok().flatten();
     let db_healthy = db_check.is_some();
     
     // عدد الجداول
