@@ -382,7 +382,16 @@ pub async fn seed_iraqi_medicines_db(state: tauri::State<'_, PgPool>) -> Result<
     ];
 
     let mut inserted: i64 = 0;
-    for (name_ar, name_en, scientific, strength, form, category, is_otc, is_rx) in iraqi_meds {
+    for (name_ar, name_en, scientific, _strength, _form, _category, _is_otc, _is_rx) in iraqi_meds {
+        // التحقق من عدم وجود الدواء مسبقاً (بالمطابقة على الاسم العربي)
+        let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM medicines WHERE name_ar = $1 AND is_deleted = FALSE")
+            .bind(name_ar).fetch_one(&mut *tx).await.unwrap_or(0);
+
+        if existing > 0 {
+            // الدواء موجود مسبقاً — تخطّاه (لا تكرار)
+            continue;
+        }
+
         // توليد باركود EAN-13 تلقائياً
         let max_seq: i64 = sqlx::query_scalar(
             "SELECT COALESCE(MAX(CAST(SUBSTRING(barcode FROM 4 FOR 9) AS BIGINT)), 0)
