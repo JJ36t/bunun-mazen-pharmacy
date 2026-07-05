@@ -31,6 +31,8 @@ import { MainDashboard } from './MainDashboard';
 import { searchMedicines } from './lib/utils/search';
 import { invoke } from '@tauri-apps/api/core';
 import { SmartBarcodeLookup } from './domains/pos/SmartBarcodeLookup';
+import { DrugInteractionChecker } from './domains/pos/DrugInteractionChecker';
+import { DailyChecksModal } from './domains/intelligence/DailyChecksModal';
 import { Toaster, toast } from 'sonner';
 import { parseISO, startOfDay, isBefore, isAfter, addDays } from 'date-fns';
 import { 
@@ -151,6 +153,9 @@ function PosDashboard() {
   }, [cart, discountPercentage]);
   const [showPayment, setShowPayment] = useState(false);
   const [smartLookupBarcode, setSmartLookupBarcode] = useState<string | null>(null);
+  const [showInteractionCheck, setShowInteractionCheck] = useState(false);
+  const [interactionOverrideGranted, setInteractionOverrideGranted] = useState(false);
+  const [showDailyChecks, setShowDailyChecks] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
   const [paidAmount, setPaidAmount] = useState('');
@@ -297,6 +302,29 @@ function PosDashboard() {
       return;
     }
 
+    // فحص تفاعلات الأدوية قبل إتمام البيع (لو لم يتم التجاوز مسبقاً)
+    if (!interactionOverrideGranted) {
+      // اجمع المواد الفعالة من السلة
+      const activeIngredients = currentItems
+        .map(item => {
+          const med = medicines.find((m: any) => m.id === item.id);
+          return med?.scientificName || med?.nameAr || '';
+        })
+        .filter(name => name && name.trim().length > 0);
+
+      if (activeIngredients.length >= 2) {
+        try {
+          const interactions = await invoke<any[]>('check_drug_interactions_db', {
+            drugNamesJson: JSON.stringify(activeIngredients),
+          });
+          if (interactions.length > 0) {
+            setShowInteractionCheck(true);
+            return; // أوقف البيع حتى يراجع الصيدلي
+          }
+        } catch (e) { console.error('Interaction check failed:', e); }
+      }
+    }
+
     try {
         await invoke('record_sale_db', {
           discountPercentage: discountPercentage,
@@ -319,12 +347,20 @@ function PosDashboard() {
         await fetchMedicines();
         await fetchSummary();
 
-        // طباعة مباشرة تلقائياً
+        // طباعة مباشرة تلقائياً (استخدم طابعة الإيصالات المحفوظة)
         try {
-          const printers = await invoke<string[]>('get_available_printers');
-          if (printers.length > 0) {
+          let printerName = '';
+          try {
+            const printerSettings = await invoke<any>('get_printer_settings_db');
+            printerName = printerSettings.receiptPrinter || '';
+          } catch {}
+          if (!printerName) {
+            const printers = await invoke<string[]>('get_available_printers');
+            printerName = printers[0] || '';
+          }
+          if (printerName) {
             await invoke('print_receipt_direct', {
-              printerName: printers[0],
+              printerName,
               pharmacyName,
               invoiceNum: newInvoiceNum,
               itemsJson: JSON.stringify(currentItems),
@@ -335,6 +371,7 @@ function PosDashboard() {
 
         clearCart();
         setShowPayment(false);
+        setInteractionOverrideGranted(false); // reset للفاتورة الجاية
         setPaidAmount(''); setMixedCash(''); setMixedCard(''); setChequeNumber(''); setCustomerName('');
         toast.success("تم تسجيل البيع والطباعة بنجاح.");
     } catch (e: any) {
@@ -628,6 +665,25 @@ function PosDashboard() {
         />
       )}
 
+      {showInteractionCheck && (
+        <DrugInteractionChecker
+          drugNames={cart.map(item => {
+            const med = medicines.find((m: any) => m.id === item.id);
+            return med?.scientificName || med?.nameAr || '';
+          }).filter(name => name && name.trim().length > 0)}
+          onOverride={() => {
+            setInteractionOverrideGranted(true);
+            setShowInteractionCheck(false);
+            toast.success('تم تجاوز التحذيرات. اضغط "تأكيد الدفع" مرة أخرى.');
+          }}
+          onClose={() => setShowInteractionCheck(false)}
+        />
+      )}
+
+      {showDailyChecks && (
+        <DailyChecksModal onClose={() => setShowDailyChecks(false)} />
+      )}
+
       {showPayment && (
         <PaymentModal
           total={calculateTotal()}
@@ -662,6 +718,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [shiftAmount, setShiftAmount] = useState('');
+  const [showDailyChecks, setShowDailyChecks] = useState(false);
 
   useEffect(() => { checkLicense(); }, [checkLicense]);
   
@@ -686,13 +743,16 @@ function App() {
       
       // نشر حدث تسجيل الدخول
       eventBus.emit(EventNames.USER_LOGGED_IN, { username, role });
-      
+
       // تحميل البيانات
       fetchMedicines(); fetchSummary(); fetchSettings(); fetchDebts(); fetchSuppliers();
       checkShift().then(() => {
         if (!useAuthStore.getState().shiftId) setShowShiftModal(true);
       });
-      
+
+      // فحص يومي للمخزون (تنبيهات الانتهاء والمخزون المنخفض)
+      setTimeout(() => setShowDailyChecks(true), 1500);
+
       // فحص النسخ الاحتياطي التلقائي
       invoke<boolean>('check_auto_backup').then(shouldBackup => {
         if (shouldBackup) {
@@ -743,7 +803,12 @@ function App() {
   return (
     <div dir="rtl" className="h-screen flex bg-slate-50 font-sans no-select overflow-hidden">
       <Toaster richColors position="bottom-left" />
-      
+
+      {/* ===== نافذة الفحص اليومي ===== */}
+      {showDailyChecks && (
+        <DailyChecksModal onClose={() => setShowDailyChecks(false)} />
+      )}
+
       {/* ===== الشريط الجانبي الأنيق ===== */}
       <aside className="w-72 bg-gradient-to-b from-brand-900 via-brand-900 to-brand-950 text-white flex flex-col shadow-2xl">
         {/* الشعار + الاسم */}
@@ -1022,3 +1087,7 @@ function PaymentModal({
 }
 
 export default App;
+
+// ===== Daily Checks Modal render =====
+// ملاحظة: showDailyChecks يُدار في كل من PosDashboard و App بشكل منفصل
+// النافذة تظهر في PosDashboard عند بدء التشغيل

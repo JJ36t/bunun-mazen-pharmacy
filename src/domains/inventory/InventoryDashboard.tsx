@@ -222,11 +222,19 @@ export function InventoryDashboard() {
                 </td>
               </tr>
             ) : filteredMeds.map((med: any) => {
-              const isLowStock = med.quantity < 50; 
-              const isExpiringSoon = new Date(med.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-              const isExpired = new Date(med.expiryDate) < new Date();
+              const isLowStock = med.quantity < 50;
+              const isExpiringSoon = med.expiryDate && new Date(med.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+              const isExpired = med.expiryDate && new Date(med.expiryDate) < new Date();
+              // تلوين الصفوف: أحمر للمنتهي، أمبر للمخزون المنخفض
+              const rowClass = isExpired
+                ? 'bg-rose-50 border-r-4 border-rose-400'
+                : isExpiringSoon
+                ? 'bg-amber-50 border-r-4 border-amber-400'
+                : isLowStock
+                ? 'bg-yellow-50 border-r-4 border-yellow-400'
+                : '';
               return (
-                <tr key={med.id} className="table-row">
+                <tr key={med.id} className={`table-row ${rowClass}`}>
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-100 to-brand-50 flex items-center justify-center ring-1 ring-brand-200/50">

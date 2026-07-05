@@ -148,6 +148,7 @@ export function UserManagementDashboard() {
               <th className="table-header text-right p-4">المستخدم</th>
               <th className="table-header text-right p-4">الصلاحية</th>
               <th className="table-header text-right p-4">الحالة</th>
+              <th className="table-header text-right p-4">آخر دخول</th>
               <th className="table-header text-right p-4">إجراءات</th>
             </tr>
           </thead>
@@ -174,9 +175,14 @@ export function UserManagementDashboard() {
                   </span>
                 </td>
                 <td className="p-4">
-                  {usr.isActive 
-                    ? <span className="badge-success"><Check className="w-3 h-3" />نشط</span> 
+                  {usr.isActive
+                    ? <span className="badge-success"><Check className="w-3 h-3" />نشط</span>
                     : <span className="badge-danger">موقوف</span>}
+                </td>
+                <td className="p-4">
+                  <span className="text-xs text-slate-500 tabular">
+                    {usr.lastLogin ? new Date(usr.lastLogin).toLocaleString('en-GB') : '— لم يدخل بعد'}
+                  </span>
                 </td>
                 <td className="p-4">
                   <div className="flex items-center gap-2">

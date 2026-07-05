@@ -40,6 +40,7 @@ export function MainDashboard() {
     { title: 'صافي الأرباح', value: totalProfits.toFixed(0), unit: 'د.ع', subtitle: 'أرباح تراكمية', icon: Wallet, iconBg: 'bg-emerald-50 text-emerald-600' },
     { title: 'النقدية المتوفرة', value: cashbox.toFixed(0), unit: 'د.ع', subtitle: 'صافي السيولة', icon: DollarSign, iconBg: 'bg-amber-50 text-amber-600' },
     { title: 'ديون غير مسددة', value: unpaidDebts.toFixed(0), unit: 'د.ع', subtitle: `${debts.filter(d => !d.isPaid).length} زبون`, icon: Clock, iconBg: 'bg-rose-50 text-rose-600' },
+    { title: 'قيمة المخزون', value: totalInventoryValue.toFixed(0), unit: 'د.ع', subtitle: `${totalMedicines.length} صنف`, icon: Package, iconBg: 'bg-purple-50 text-purple-600' },
   ];
 
   const quickActions = [

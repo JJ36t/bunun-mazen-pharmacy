@@ -31,6 +31,7 @@ mod pharmiq_complete;
 mod pharmiq_enterprise_complete;
 mod invoices_commands;
 mod smart_barcode_commands;
+mod pharmiq_features;
 
 // --- نظام السجلات المنظمة (Structured Logging) ---
 fn init_logging() {
@@ -163,13 +164,19 @@ async fn check_auto_backup(state: tauri::State<'_, PgPool>) -> Result<bool, Stri
 // --- أوامر المستخدمين والورديات ---
 #[tauri::command]
 async fn login(state: tauri::State<'_, PgPool>, username: String, password: String) -> Result<serde_json::Value, String> {
-    let row = sqlx::query("SELECT password, role FROM users WHERE username = $1 AND is_active = TRUE")
+    let row = sqlx::query("SELECT password, role FROM users WHERE username = $1 AND is_active = TRUE AND deleted_at IS NULL")
         .bind(&username).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
     match row {
         Some(r) => {
             let hashed_pass: String = r.get(0);
             let role: String = r.get(1);
             if bcrypt::verify(&password, &hashed_pass).unwrap_or(false) {
+                // تحديث آخر دخول
+                let _ = sqlx::query("UPDATE users SET last_login = NOW() WHERE username = $1")
+                    .bind(&username).execute(state.inner()).await;
+                // تسجيل في سجل التدقيق
+                let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN', 'تسجيل دخول ناجح')")
+                    .bind(&username).execute(state.inner()).await;
                 Ok(serde_json::json!({ "username": username, "role": role }))
             } else { Err("بيانات الدخول غير صحيحة".to_string()) }
         },
@@ -192,11 +199,17 @@ async fn verify_admin_password_db(state: tauri::State<'_, PgPool>, password: Str
 
 #[tauri::command]
 async fn get_users_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_json::Value>, String> {
-    let rows = sqlx::query("SELECT id, username, role, is_active FROM users WHERE deleted_at IS NULL ORDER BY username")
+    let rows = sqlx::query("SELECT id, username, role, is_active, last_login FROM users WHERE deleted_at IS NULL ORDER BY username")
         .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut users = Vec::new();
     for row in rows {
-        users.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "username": row.get::<String, _>(1), "role": row.get::<String, _>(2), "isActive": row.get::<bool, _>(3) }));
+        users.push(serde_json::json!({
+            "id": row.get::<uuid::Uuid, _>(0).to_string(),
+            "username": row.get::<String, _>(1),
+            "role": row.get::<String, _>(2),
+            "isActive": row.get::<bool, _>(3),
+            "lastLogin": row.get::<Option<chrono::NaiveDateTime>, _>(4).map(|d| d.to_string()),
+        }));
     }
     Ok(users)
 }
@@ -1385,7 +1398,18 @@ fn main() {
             smart_barcode_commands::lookup_in_openfoodfacts,
             smart_barcode_commands::lookup_in_gs1,
             smart_barcode_commands::smart_barcode_lookup,
-            smart_barcode_commands::add_medicine_from_global_db
+            smart_barcode_commands::add_medicine_from_global_db,
+            // PharmIQ Features (Drug Interactions + Daily Checks + Printers + Orders)
+            pharmiq_features::check_drug_interactions_db,
+            pharmiq_features::log_interaction_override_db,
+            pharmiq_features::get_all_drug_interactions_db,
+            pharmiq_features::get_daily_inventory_checks_db,
+            pharmiq_features::save_printer_settings_db,
+            pharmiq_features::get_printer_settings_db,
+            pharmiq_features::create_supplier_order_db,
+            pharmiq_features::get_supplier_orders_db,
+            pharmiq_features::update_supplier_order_status_db,
+            pharmiq_features::get_inventory_value_db
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
