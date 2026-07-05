@@ -15,15 +15,15 @@ CREATE TABLE IF NOT EXISTS global_medicines (
     name_ar VARCHAR(200),
     active_ingredient VARCHAR(100),
     brand_name VARCHAR(100),
-    dosage_form VARCHAR(50),
-    dosage_form_fr VARCHAR(80),
-    dosage_form_ar VARCHAR(50),
-    route VARCHAR(30),
-    strength VARCHAR(30),
+    dosage_form VARCHAR(100),
+    dosage_form_fr VARCHAR(100),
+    dosage_form_ar VARCHAR(100),
+    route VARCHAR(100),
+    strength VARCHAR(100),
     manufacturer VARCHAR(200),
-    category VARCHAR(50),
+    category VARCHAR(150),
     is_otc BOOLEAN DEFAULT FALSE,
-    source VARCHAR(30) DEFAULT 'fr_cis_cip',
+    source VARCHAR(50) DEFAULT 'fr_cis_cip',
     created_at TIMESTAMP DEFAULT NOW()
 );
 
