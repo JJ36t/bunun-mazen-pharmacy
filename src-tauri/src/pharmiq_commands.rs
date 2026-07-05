@@ -402,8 +402,22 @@ pub async fn seed_iraqi_medicines_db(state: tauri::State<'_, PgPool>) -> Result<
             .bind(&base_12).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
         let barcode = format!("{}{}", base_12, check_digit);
 
-        let result = sqlx::query("INSERT INTO medicines (name_ar, name_en, scientific_name, barcode, price, wholesale_price, cost_price, quantity) VALUES ($1, $2, $3, $4, 1000, 900, 700, 50)")
+        // توليد تاريخ انتهاء عشوائي (بين 1 و 3 سنوات من الآن)
+        let expiry = chrono::Local::now().date_naive()
+            + chrono::Duration::days(365 + (max_seq % 730)); // 1-3 سنوات
+
+        // توليد سعر متنوع (500-3000 د.ع)
+        let price = 500 + ((max_seq % 26) * 100) as i32; // 500, 600, 700, ..., 3000
+        let cost = price - 200;
+        let wholesale = price - 100;
+
+        let result = sqlx::query("INSERT INTO medicines (name_ar, name_en, scientific_name, barcode, price, wholesale_price, cost_price, quantity, batch_number, expiry_date) VALUES ($1, $2, $3, $4, $5, $6, $7, 50, $8, $9)")
             .bind(name_ar).bind(name_en).bind(scientific).bind(&barcode)
+            .bind(rust_decimal::Decimal::from(price))
+            .bind(rust_decimal::Decimal::from(wholesale))
+            .bind(rust_decimal::Decimal::from(cost))
+            .bind(format!("BATCH-{:04}", max_seq + 1))
+            .bind(expiry)
             .execute(&mut *tx).await;
 
         if result.is_ok() {
