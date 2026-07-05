@@ -354,16 +354,20 @@ pub async fn get_supplier_orders_db(
 
     let mut results = Vec::new();
     for r in rows {
+        let expected: Option<chrono::NaiveDate> = r.get(5);
+        let received: Option<chrono::NaiveDateTime> = r.get(6);
+        let notes: Option<String> = r.get(7);
+        let created_by: Option<String> = r.get(8);
         results.push(serde_json::json!({
             "id": r.get::<uuid::Uuid, _>(0).to_string(),
             "orderNumber": r.get::<String, _>(1),
             "supplierName": r.get::<Option<String>, _>(2).unwrap_or_default(),
             "status": r.get::<String, _>(3),
             "totalAmount": r.get::<rust_decimal::Decimal, _>(4).to_string().parse::<f64>().unwrap_or(0.0),
-            "expectedDelivery": r.get::<Option<chrono::NaiveDate>, _>(5).map(|d| d.to_string()),
-            "receivedDate": r.get::<Option<chrono::NaiveDateTime, _>(6).map(|d| d.to_string()),
-            "notes": r.get::<Option<String>, _>(7),
-            "createdBy": r.get::<Option<String>, _>(8),
+            "expectedDelivery": expected.map(|d| d.to_string()),
+            "receivedDate": received.map(|d| d.to_string()),
+            "notes": notes,
+            "createdBy": created_by,
             "createdAt": r.get::<chrono::NaiveDateTime, _>(9).to_string(),
         }));
     }
