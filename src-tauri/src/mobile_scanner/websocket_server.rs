@@ -2,7 +2,8 @@
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 use futures_util::{StreamExt, SinkExt};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
+use crate::mobile_scanner::barcode_parser;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

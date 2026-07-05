@@ -1,5 +1,6 @@
 // Scanner Events — معالجة أحداث المسح
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
+use crate::mobile_scanner::barcode_parser;
 
 /// فحص الباركود من الـ POS (استدعاء مباشر بدون WebSocket)
 #[tauri::command]
