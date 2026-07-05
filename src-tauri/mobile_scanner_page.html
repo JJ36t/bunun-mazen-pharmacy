@@ -41,14 +41,15 @@ body { background:#0f172a; color:#fff; min-height:100vh; display:flex; flex-dire
 <div class="scan-count" id="scanCount">0 عملية مسح</div>
 <div id="result"></div>
 
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
 let ws = null;
 let scanning = true;
 let scanCount = 0;
 let lastBarcode = '';
 let lastScanTime = 0;
-let html5Qr = null;
+let codeReader = null;
+let videoStream = null;
 let torchOn = false;
 
 // احصل على token من URL
@@ -94,29 +95,27 @@ function connectWS() {
 
 async function startScanner() {
   try {
-    html5Qr = new Html5Qrcode("reader");
+    // طلب الكاميرا الخلفية مباشرة (بدون HTTPS على LAN)
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } }
+    });
 
-    // طلب إذن الكاميرا أولاً
-    const devices = await Html5Qrcode.getCameras();
-    if (!devices || devices.length === 0) {
-      document.getElementById('reader').innerHTML = '<div style="padding:20px;text-align:center;color:#ef4444;">لا توجد كاميرا متاحة</div>';
-      return;
-    }
+    const video = document.createElement('video');
+    video.style.width = '100%';
+    video.style.borderRadius = '12px';
+    video.setAttribute('playsinline', 'true');
+    video.srcObject = videoStream;
+    video.play();
 
-    // ابحث عن الكاميرا الخلفية
-    let cameraId = devices[devices.length - 1].id; // آخر كاميرا عادة تكون الخلفية
-    for (let d of devices) {
-      if (d.label && (d.label.includes('back') || d.label.includes('environment') || d.label.includes('rear'))) {
-        cameraId = d.id;
-        break;
-      }
-    }
+    document.getElementById('reader').innerHTML = '';
+    document.getElementById('reader').appendChild(video);
 
-    await html5Qr.start(
-      cameraId,
-      { fps: 10, qrbox: { width: 250, height: 150 } },
-      (decodedText) => {
-        if (!scanning) return;
+    // استخدم ZXing لفك تشفير الباركود
+    codeReader = new ZXing.BrowserMultiFormatReader();
+
+    codeReader.decodeFromVideoElement(video, (result, err) => {
+      if (result && scanning) {
+        const decodedText = result.getText();
         const now = Date.now();
         if (decodedText === lastBarcode && (now - lastScanTime) < 1500) return;
         lastBarcode = decodedText;
@@ -128,33 +127,16 @@ async function startScanner() {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
         }
-      },
-      () => {}
-    );
+      }
+    });
+
   } catch (err) {
-    // لو فشل، جرّب facingMode
-    try {
-      html5Qr = new Html5Qrcode("reader");
-      await html5Qr.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 150 } },
-        (decodedText) => {
-          if (!scanning) return;
-          const now = Date.now();
-          if (decodedText === lastBarcode && (now - lastScanTime) < 1500) return;
-          lastBarcode = decodedText;
-          lastScanTime = now;
-          scanCount++;
-          document.getElementById('scanCount').textContent = scanCount + ' عملية مسح';
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
-          }
-        },
-        () => {}
-      );
-    } catch (err2) {
-      document.getElementById('reader').innerHTML = '<div style="padding:20px;text-align:center;color:#ef4444;">فشل تشغيل الكاميرا: ' + err2 + '<br><br>تأكد من السماح بالكاميرا في إعدادات المتصفح</div>';
-    }
+    document.getElementById('reader').innerHTML =
+      '<div style="padding:20px;text-align:center;color:#ef4444;">' +
+      'فشل تشغيل الكاميرا: ' + (err.message || err) + '<br><br>' +
+      'تأكد من السماح بالكاميرا في إعدادات المتصفح<br>' +
+      'ملاحظة: يجب فتح الصفحة في Chrome أو Firefox' +
+      '</div>';
   }
 }
 
@@ -214,8 +196,11 @@ function toggleMode() {
 
 function toggleTorch() {
   torchOn = !torchOn;
-  if (html5Qr) {
-    html5Qr.applyVideoConstraints({ advanced: [{ torch: torchOn }] }).catch(() => {});
+  if (videoStream) {
+    const track = videoStream.getVideoTracks()[0];
+    if (track) {
+      track.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(() => {});
+    }
   }
 }
 
