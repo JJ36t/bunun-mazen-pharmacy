@@ -27,7 +27,7 @@ import { QuickPurchaseDashboard } from './domains/suppliers/QuickPurchaseDashboa
 import { RefundDashboard } from './domains/pos/RefundDashboard';
 import { PatientsDashboard } from './domains/patients/PatientsDashboard';
 import { Receipt } from './domains/pos/Receipt';
-import { MainDashboard } from './MainDashboard';
+
 import { searchMedicines } from './lib/utils/search';
 import { invoke } from '@tauri-apps/api/core';
 import { SmartBarcodeLookup } from './domains/pos/SmartBarcodeLookup';
@@ -38,7 +38,7 @@ import { parseISO, startOfDay, isBefore, isAfter, addDays } from 'date-fns';
 import { 
   Search, LogOut, Calculator, LayoutDashboard, ShoppingCart, RotateCcw, 
   Package, Calculator as CalcIcon, Users, FileBarChart, ScrollText, Database, Settings, Truck, UserCog,
-  Pause, Play, Trash2, X, Hash, Tag, Receipt as ReceiptIcon
+  Pause, Play, Trash2, X, Hash, Tag, Receipt as ReceiptIcon, Shield
 } from 'lucide-react';
 
 // استيراد الأنظمة المؤسسية الجديدة
@@ -48,7 +48,7 @@ import { sessionManager } from './lib/core/sessionManager';
 import { fraudDetector } from './lib/core/fraudDetector';
 import { crashRecovery } from './lib/core/crashRecovery';
 import { cache } from './lib/cache/MemoryCache';
-import { registerAllPlugins, pluginRegistry } from './plugins';
+import { registerAllPlugins } from './plugins';
 
 // تهيئة الـ plugins مرة واحدة
 let pluginsInitialized = false;
@@ -775,15 +775,6 @@ function App() {
 
   if (!isLicensed || !isAuthenticated) return <><Login /><Toaster richColors position="bottom-left" /></>;
 
-  // فلترة القائمة حسب الصلاحيات (RBAC)
-  const items = navItems.filter(item => {
-    if (!item.permission) return true; // العناصر بدون صلاحية = للجميع
-    return hasPermission(role || 'cashier', item.permission);
-  });
-  
-  // تنظيم العناصر حسب المجموعة
-  const groups = Array.from(new Set(items.map(i => i.group)));
-
   const handleStartShift = () => {
     const amt = parseFloat(shiftAmount) || 0;
     startShift(amt);
@@ -801,7 +792,7 @@ function App() {
   };
 
   return (
-    <div dir="rtl" className="h-screen flex bg-slate-50 font-sans no-select overflow-hidden">
+    <div dir="rtl" className="h-screen flex flex-col bg-slate-50 font-sans no-select overflow-hidden">
       <Toaster richColors position="bottom-left" />
 
       {/* ===== نافذة الفحص اليومي ===== */}
@@ -809,124 +800,156 @@ function App() {
         <DailyChecksModal onClose={() => setShowDailyChecks(false)} />
       )}
 
-      {/* ===== الشريط الجانبي الأنيق ===== */}
-      <aside className="w-72 bg-gradient-to-b from-brand-900 via-brand-900 to-brand-950 text-white flex flex-col shadow-2xl">
-        {/* الشعار + الاسم */}
-        <div className="h-20 flex items-center gap-3 px-5 border-b border-white/10">
-          <div className="w-12 h-12 rounded-2xl bg-white/95 p-1 shadow-lg flex items-center justify-center">
+      {/* ===== الشريط العلوي ===== */}
+      <header className="bg-brand-900 text-white px-6 py-3 flex items-center justify-between shadow-md flex-shrink-0">
+        <div className="flex items-center gap-3">
+          {activeTab !== 'dashboard' && (
+            <button onClick={() => setActiveTab('dashboard')} className="btn-ghost text-white hover:bg-white/10 px-3 py-2">
+              <LayoutDashboard className="w-5 h-5" />
+              الرئيسية
+            </button>
+          )}
+          <div className="w-10 h-10 rounded-xl bg-white/95 p-1 flex items-center justify-center">
             <img src="/logo.png" alt="شعار الصيدلية" className="w-full h-full object-contain" />
           </div>
           <div>
-            <p className="text-base font-bold text-white">صيدلية بنين مازن</p>
-            <p className="text-xs text-brand-200">نظام الإدارة - v2.3</p>
+            <p className="text-sm font-bold">{pharmacyName || 'صيدلية بنين مازن'}</p>
+            <p className="text-[11px] text-brand-200">نظام الإدارة - v2.3</p>
           </div>
         </div>
-        
-        {/* قائمة التنقل */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
-          {groups.map(group => (
-            <div key={group}>
-              <p className="px-3 mb-2 text-[11px] font-bold text-brand-300 uppercase tracking-wider">{group}</p>
-              <div className="space-y-1">
-                {items.filter(i => i.group === group).map(item => { 
-                  const Icon = item.icon; 
-                  const isActive = activeTab === item.key; 
+
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={handleCloseShift} 
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
+              shiftId 
+                ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30' 
+                : 'bg-emerald-500/20 text-emerald-200'
+            }`}
+          >
+            {shiftId ? 'إغلاق الشفت' : 'شفت مغلق'}
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-full bg-brand-600 flex items-center justify-center">
+              <span className="text-white font-bold text-sm">{username?.charAt(0)}</span>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-semibold">{username}</p>
+              <p className="text-[11px] text-brand-200">{role}</p>
+            </div>
+          </div>
+          <button onClick={() => logout()} className="p-2 text-red-300 hover:bg-red-500/20 rounded-lg">
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
+      </header>
+
+      {/* ===== المحتوى الرئيسي ===== */}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'dashboard' ? (
+          /* ===== شبكة المربعات الرئيسية ===== */
+          <div className="h-full overflow-auto bg-gradient-to-b from-slate-50 to-slate-100">
+            <div className="max-w-6xl mx-auto px-6 py-8">
+              {/* عنوان */}
+              <div className="mb-6">
+                <h1 className="text-2xl font-bold text-slate-800">القائمة الرئيسية</h1>
+                <p className="text-sm text-slate-500 mt-1">اختر القسم الذي تريد العمل به</p>
+              </div>
+
+              {/* شبكة المربعات */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {navItems.filter(item => !item.permission || hasPermission(role || 'cashier', item.permission)).map(item => {
+                  const Icon = item.icon;
+                  const tileColors: Record<string, string> = {
+                    'العمليات': 'bg-brand-50 text-brand-700',
+                    'الإدارة': 'bg-emerald-50 text-emerald-700',
+                    'النظام': 'bg-amber-50 text-amber-700',
+                  };
+                  const iconColor = tileColors[item.group] || 'bg-brand-50 text-brand-700';
                   return (
-                    <button 
-                      key={item.key} 
-                      onClick={() => setActiveTab(item.key)} 
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                        isActive 
-                          ? 'bg-white text-brand-800 shadow-lg shadow-brand-950/30' 
-                          : 'text-brand-100 hover:bg-white/10 hover:text-white'
-                      }`}
+                    <button
+                      key={item.key}
+                      onClick={() => setActiveTab(item.key)}
+                      className="nav-tile h-36 p-4"
                     >
-                      <Icon className="w-[18px] h-[18px]" />
-                      <span>{item.label}</span>
+                      <div className={`nav-tile-icon ${iconColor}`}>
+                        <Icon className="w-7 h-7" />
+                      </div>
+                      <p className="nav-tile-label">{item.label}</p>
+                      <p className="nav-tile-sub">{item.group}</p>
                     </button>
-                  ); 
+                  );
                 })}
               </div>
-            </div>
-          ))}
-        </nav>
-        
-        {/* حالة النظام */}
-        <div className="p-4 border-t border-white/10">
-          <div className="flex items-center gap-2 text-xs text-brand-200 bg-white/5 rounded-lg px-3 py-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-            <span>النظام يعمل بشكل طبيعي</span>
-          </div>
-        </div>
-      </aside>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* ===== الهيدر العلوي ===== */}
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 print:hidden shadow-sm">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold text-slate-800">{pharmacyName}</h2>
-            <span className="px-3 py-1 rounded-lg bg-brand-50 text-brand-700 text-xs font-semibold border border-brand-100">النظام الإداري</span>
-          </div>
-          <div className="flex items-center gap-5">
-            <button 
-              onClick={handleCloseShift} 
-              className={`text-xs font-semibold px-4 py-2 rounded-xl transition-all ${
-                shiftId 
-                  ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' 
-                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              }`}
-            >
-              {shiftId ? 'إغلاق الشفت' : 'شفت مغلق'}
-            </button>
-            <div className="h-8 w-px bg-slate-200"></div>
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-md ring-2 ring-white">
-                <span className="text-white font-bold text-sm">{username?.charAt(0)}</span>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-700">{username}</p>
-                <p className="text-[11px] text-emerald-600 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  الشفت مفتوح
-                </p>
+              {/* إحصائيات سريعة */}
+              <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="card-elegant p-4 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center">
+                    <ShoppingCart className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">نقطة البيع</p>
+                    <p className="text-lg font-bold text-slate-800">جاهز</p>
+                  </div>
+                </div>
+                <div className="card-elegant p-4 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                    <Package className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">المخزون</p>
+                    <p className="text-lg font-bold text-slate-800">{useInventoryStore.getState().medicines.filter(m => !m.isDeleted).length} صنف</p>
+                  </div>
+                </div>
+                <div className="card-elegant p-4 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">قاعدة الأدوية</p>
+                    <p className="text-lg font-bold text-slate-800">9,375 دواء</p>
+                  </div>
+                </div>
+                <div className="card-elegant p-4 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+                    <Shield className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">تفاعلات دوائية</p>
+                    <p className="text-lg font-bold text-slate-800">1,051 تفاعل</p>
+                  </div>
+                </div>
               </div>
             </div>
-            <button onClick={() => logout()} className="btn-icon text-red-500 hover:bg-red-50">
-              <LogOut className="w-5 h-5" />
-            </button>
           </div>
-        </header>
-        
-        <main className="flex-1 overflow-hidden print:overflow-visible">
-          {activeTab === 'dashboard' && <MainDashboard />}
-          {activeTab === 'pos' && <PosDashboard />}
-          {activeTab === 'refund' && <RefundDashboard />}
-          {activeTab === 'inventory' && <InventoryDashboard />}
-          {hasPermission(role || 'cashier', 'accounting.view' as Permission) && activeTab === 'accounting' && <AccountingDashboard />}
-          {hasPermission(role || 'cashier', 'accounting.debts' as Permission) && activeTab === 'debts' && <DebtsDashboard />}
-          {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'suppliers' && <SuppliersDashboard />}
-          {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'quick_purchase' && <QuickPurchaseDashboard />}
-          {hasPermission(role || 'cashier', 'system.patients' as Permission) && activeTab === 'patients' && <PatientsDashboard />}
-          {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'reporting' && <ReportingDashboard />}
-          {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'invoices' && <InvoicesDashboard />}
-          {hasPermission(role || 'cashier', 'system.audit' as Permission) && activeTab === 'audit' && <AuditDashboard />}
-          {hasPermission(role || 'cashier', 'system.backup' as Permission) && activeTab === 'backup' && <BackupDashboard />}
-          {hasPermission(role || 'cashier', 'system.users' as Permission) && activeTab === 'users' && <UserManagementDashboard />}
-          {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'settings' && <SettingsDashboard />}
-          {activeTab === 'stock_count' && <StockCountDashboard />}
-          {activeTab === 'prescriptions' && <PrescriptionsDashboard />}
-          {activeTab === 'cash_drawer' && <CashDrawerDashboard />}
-          {activeTab === 'import' && <ImportDashboard />}
-          {activeTab === 'label_printing' && <LabelPrintingDashboard />}
-          {activeTab === 'enterprise' && <EnterpriseDashboard />}
-          
-          {/* عرض صفحات الـ plugins المفعّلة */}
-          {pluginRegistry.getWithDashboard().map(plugin => 
-            activeTab === `plugin-${plugin.name}` && plugin.dashboard 
-              ? <plugin.dashboard key={plugin.name} /> 
-              : null
-          )}
-        </main>
+        ) : (
+          /* ===== صفحة القسم المختار ===== */
+          <div className="h-full overflow-hidden">
+            <main className="h-full overflow-auto print:overflow-visible">
+              {activeTab === 'pos' && <PosDashboard />}
+              {activeTab === 'refund' && <RefundDashboard />}
+              {activeTab === 'inventory' && <InventoryDashboard />}
+              {hasPermission(role || 'cashier', 'accounting.view' as Permission) && activeTab === 'accounting' && <AccountingDashboard />}
+              {hasPermission(role || 'cashier', 'accounting.debts' as Permission) && activeTab === 'debts' && <DebtsDashboard />}
+              {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'suppliers' && <SuppliersDashboard />}
+              {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'quick_purchase' && <QuickPurchaseDashboard />}
+              {hasPermission(role || 'cashier', 'system.patients' as Permission) && activeTab === 'patients' && <PatientsDashboard />}
+              {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'reporting' && <ReportingDashboard />}
+              {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'invoices' && <InvoicesDashboard />}
+              {hasPermission(role || 'cashier', 'system.audit' as Permission) && activeTab === 'audit' && <AuditDashboard />}
+              {hasPermission(role || 'cashier', 'system.backup' as Permission) && activeTab === 'backup' && <BackupDashboard />}
+              {hasPermission(role || 'cashier', 'system.users' as Permission) && activeTab === 'users' && <UserManagementDashboard />}
+              {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'settings' && <SettingsDashboard />}
+              {activeTab === 'stock_count' && <StockCountDashboard />}
+              {activeTab === 'prescriptions' && <PrescriptionsDashboard />}
+              {activeTab === 'cash_drawer' && <CashDrawerDashboard />}
+              {activeTab === 'import' && <ImportDashboard />}
+              {activeTab === 'label_printing' && <LabelPrintingDashboard />}
+              {activeTab === 'enterprise' && <EnterpriseDashboard />}
+            </main>
+          </div>
+        )}
       </div>
 
       {showShiftModal && (

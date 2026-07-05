@@ -14,52 +14,63 @@
     @apply bg-slate-50 text-slate-800;
     font-feature-settings: "kern", "liga", "calt";
   }
-  /* تحسين شكل الأرقام بالعربي */
   .tabular { font-variant-numeric: tabular-nums; }
+  .no-select { -webkit-user-select: none; user-select: none; }
 }
 
 @layer components {
-  /* ===== Button System - أنيق واحترافي ===== */
+  /* ===== Button System ===== */
   .btn { 
-    @apply inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]; 
+    @apply inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed; 
   }
   .btn-primary { 
-    @apply btn bg-brand-600 text-white hover:bg-brand-700 px-5 py-2.5 text-sm shadow-sm hover:shadow-elegant; 
+    @apply btn bg-brand-800 text-white hover:bg-brand-900 px-5 py-2.5 text-sm; 
   }
   .btn-success { 
-    @apply btn bg-emerald-600 text-white hover:bg-emerald-700 px-5 py-2.5 text-sm shadow-sm hover:shadow-md; 
+    @apply btn bg-emerald-600 text-white hover:bg-emerald-700 px-5 py-2.5 text-sm; 
   }
   .btn-danger { 
-    @apply btn bg-red-600 text-white hover:bg-red-700 px-5 py-2.5 text-sm shadow-sm hover:shadow-md; 
+    @apply btn bg-red-600 text-white hover:bg-red-700 px-5 py-2.5 text-sm; 
   }
   .btn-warning {
-    @apply btn bg-amber-500 text-white hover:bg-amber-600 px-5 py-2.5 text-sm shadow-sm hover:shadow-md;
+    @apply btn bg-amber-500 text-white hover:bg-amber-600 px-5 py-2.5 text-sm;
   }
   .btn-ghost { 
     @apply btn text-slate-600 hover:bg-slate-100 hover:text-slate-800 px-5 py-2.5 text-sm; 
   }
   .btn-outline {
-    @apply btn bg-white text-brand-700 border-2 border-brand-200 hover:border-brand-400 hover:bg-brand-50 px-5 py-2.5 text-sm;
+    @apply btn bg-white text-brand-800 border-2 border-brand-200 hover:border-brand-400 hover:bg-brand-50 px-5 py-2.5 text-sm;
   }
   .btn-icon { 
     @apply btn p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 rounded-lg; 
   }
-  .btn-gold {
-    @apply btn bg-gradient-gold text-white hover:opacity-90 px-5 py-2.5 text-sm shadow-sm;
-  }
   
-  /* ===== Card System - بطاقات أنيقة ===== */
+  /* ===== Card System ===== */
   .card { 
     @apply bg-white rounded-2xl shadow-card border border-slate-200/60; 
   }
   .card-hover { 
-    @apply card hover:shadow-card-hover hover:border-brand-200 transition-all duration-200; 
+    @apply card hover:shadow-card-hover hover:border-brand-200 transition-all duration-150; 
   }
   .card-elegant {
     @apply bg-white rounded-2xl shadow-elegant border border-brand-100/40;
   }
   
-  /* ===== Input System - حقول إدخال راقية ===== */
+  /* ===== Tile System - مربعات القائمة الرئيسية ===== */
+  .nav-tile {
+    @apply bg-white rounded-2xl shadow-tile border border-brand-100/40 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-150 hover:shadow-tile-hover hover:border-brand-300 hover:-translate-y-0.5;
+  }
+  .nav-tile-icon {
+    @apply w-14 h-14 rounded-2xl flex items-center justify-center transition-colors duration-150;
+  }
+  .nav-tile-label {
+    @apply text-sm font-bold text-slate-700 text-center;
+  }
+  .nav-tile-sub {
+    @apply text-xs text-slate-400 text-center;
+  }
+  
+  /* ===== Input System ===== */
   .input { 
     @apply w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all; 
   }
@@ -73,7 +84,7 @@
     @apply block text-sm font-semibold text-slate-700 mb-2;
   }
   
-  /* ===== Badge System - شارات احترافية ===== */
+  /* ===== Badge System ===== */
   .badge { 
     @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold; 
   }
@@ -82,11 +93,10 @@
   .badge-warning { @apply badge bg-amber-50 text-amber-700 border border-amber-200/60; }
   .badge-info { @apply badge bg-brand-50 text-brand-700 border border-brand-200/60; }
   .badge-neutral { @apply badge bg-slate-100 text-slate-700 border border-slate-200/60; }
-  .badge-gold { @apply badge bg-gold-50 text-gold-700 border border-gold-200/60; }
   
-  /* ===== Table System - جداول راقية ===== */
+  /* ===== Table System ===== */
   .table-header { @apply text-xs font-semibold text-slate-500 uppercase tracking-wide; }
-  .table-row { @apply border-b border-slate-100 hover:bg-brand-50/30 transition-colors duration-150; }
+  .table-row { @apply border-b border-slate-100 hover:bg-brand-50/30 transition-colors duration-100; }
   
   /* ===== Section Title ===== */
   .section-title {
@@ -98,33 +108,20 @@
   
   /* ===== Empty State ===== */
   .empty-state {
-    @apply flex flex-col items-center justify-center py-16 text-center;
+    @apply flex flex-col items-center justify-center py-8 text-center;
   }
   .empty-state-icon {
-    @apply w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mb-4;
+    @apply w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mb-3;
+  }
+  
+  /* ===== Top Bar ===== */
+  .topbar {
+    @apply bg-brand-900 text-white px-6 py-3 flex items-center justify-between shadow-md;
   }
 }
 
-/* Print Support - للطابعة الحرارية */
-@media print {
-  @page { size: 80mm auto; margin: 0; }
-  body * { visibility: hidden; }
-  #receipt-print-area, #receipt-print-area * { visibility: visible; }
-  #receipt-print-area { 
-    position: absolute; left: 0; top: 0; width: 100%; padding: 5mm; 
-  }
-}
-
-/* Scrollbar Styling - شريط التمرير الأنيق */
+/* Scrollbar styling */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
-::-webkit-scrollbar-thumb:hover { @apply bg-brand-400; }
-
-/* No Select */
-.no-select { -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; }
-
-/* Smooth transitions on all interactive elements */
-button, a, input, select, textarea {
-  @apply transition-all duration-200;
-}
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
