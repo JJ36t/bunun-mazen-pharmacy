@@ -346,32 +346,28 @@ pub async fn get_system_health_db(state: tauri::State<'_, PgPool>) -> Result<ser
     // فحص صحة قاعدة البيانات
     let db_check: Option<i64> = sqlx::query_scalar("SELECT 1::BIGINT").fetch_optional(state.inner()).await.ok().flatten();
     let db_healthy = db_check.is_some();
-    
+
     // عدد الجداول
     let table_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'")
         .fetch_one(state.inner()).await.unwrap_or(0);
-    
+
     // عدد السجلات في الجداول الرئيسية
     let medicines_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM medicines WHERE is_deleted = FALSE").fetch_one(state.inner()).await.unwrap_or(0);
     let invoices_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invoices").fetch_one(state.inner()).await.unwrap_or(0);
     let audit_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs").fetch_one(state.inner()).await.unwrap_or(0);
-    
-    // المهام المعلقة في الطابور
-    let pending_tasks: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM task_queue WHERE status = 'queued'")
-        .fetch_one(state.inner()).await.unwrap_or(0);
-    
-    // التنبيهات غير المقروءة
-    let unread_notifications: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notifications WHERE is_read = FALSE AND is_dismissed = FALSE")
-        .fetch_one(state.inner()).await.unwrap_or(0);
-    
+    let global_meds_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM global_medicines").fetch_one(state.inner()).await.unwrap_or(0);
+    let quarantined_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM quarantined_stock WHERE status = 'quarantined'").fetch_one(state.inner()).await.unwrap_or(0);
+
     Ok(serde_json::json!({
         "dbHealthy": db_healthy,
         "tableCount": table_count,
         "medicinesCount": medicines_count,
         "invoicesCount": invoices_count,
         "auditLogsCount": audit_count,
-        "pendingTasks": pending_tasks,
-        "unreadNotifications": unread_notifications,
+        "globalMedicinesCount": global_meds_count,
+        "quarantinedCount": quarantined_count,
+        "pendingTasks": 0,
+        "unreadNotifications": 0,
         "status": if db_healthy { "healthy" } else { "critical" },
         "timestamp": chrono::Utc::now().to_rfc3339(),
     }))

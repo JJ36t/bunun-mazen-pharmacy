@@ -1,11 +1,11 @@
 // ========================================
-// PharmIQ Complete Services
+// PharmIQ Complete Services (Cleaned)
 // ========================================
-// خدمات الميزات الناقصة المكملة
+// خدمات أساسية فقط — كل الأوامر مسجّلة وتشتغل
 
 import { invoke } from '@tauri-apps/api/core';
 
-// ===== 1. Import Service =====
+// ===== 1. Import Service (استيراد CSV) =====
 export const importService = {
   async importCsv(csvData: string, userRole: string) {
     return invoke<any>('import_medicines_csv_db', { csvData, userRole });
@@ -73,52 +73,7 @@ export const expiryLossService = {
   },
 };
 
-// ===== 6. Expiry Transfer Service =====
-export const expiryTransferService = {
-  async getSuggestions() {
-    return invoke<any[]>('get_expiry_transfer_suggestions_db');
-  },
-};
-
-// ===== 7. Stop Purchase Service =====
-export const stopPurchaseService = {
-  async getSuggestions() {
-    return invoke<any[]>('get_stop_purchase_suggestions_db');
-  },
-};
-
-// ===== 8. Supplier Intelligence Extended =====
-export const supplierPricingHistoryService = {
-  async get(supplierId: string, medicineId?: string) {
-    return invoke<any[]>('get_supplier_pricing_history_db', { supplierId, medicineId: medicineId || null });
-  },
-};
-
-export const supplierReturnsService = {
-  async create(supplierId: string, totalAmount: number, reason: string, requestedBy: string) {
-    return invoke<string>('create_supplier_return_db', { supplierId, totalAmount, reason, requestedBy });
-  },
-
-  async get(supplierId?: string) {
-    return invoke<any[]>('get_supplier_returns_db', { supplierId: supplierId || null });
-  },
-};
-
-// ===== 9. Seasonal Demand Service =====
-export const seasonalDemandService = {
-  async analyze() {
-    return invoke<any>('get_seasonal_demand_analysis_db');
-  },
-};
-
-// ===== 10. Demand Forecast Service =====
-export const demandForecastService = {
-  async calculate(medicineId: string, horizonDays = 30) {
-    return invoke<any>('calculate_demand_forecast_db', { medicineId, horizonDays });
-  },
-};
-
-// ===== 11. Parent Drug Group Service =====
+// ===== 6. Parent Drug Group Service =====
 export const parentDrugGroupService = {
   async getAll() {
     return invoke<any[]>('get_parent_drug_groups_db');
@@ -133,64 +88,14 @@ export const parentDrugGroupService = {
   },
 };
 
-// ===== 12. Dosage Compatibility Service =====
-export const dosageCompatibilityService = {
-  async check(fromForm: string, toForm: string) {
-    return invoke<any>('check_dosage_compatibility_db', { fromForm, toForm });
-  },
-};
-
-// ===== 13. GS1 Parsing Service =====
-export const gs1Service = {
-  async parse(rawBarcode: string) {
-    return invoke<any>('parse_gs1_barcode_db', { rawBarcode });
-  },
-};
-
-// ===== 14. Multi-Pack Barcode Service =====
-export const multiPackBarcodeService = {
-  async get(medicineId: string) {
-    return invoke<any[]>('get_multi_pack_barcodes_db', { medicineId });
-  },
-
-  async add(medicineId: string, packType: string, barcode: string, unitsInPack: number, pricePerPack?: number) {
-    return invoke<string>('add_multi_pack_barcode_db', {
-      medicineId, packType, barcode, unitsInPack,
-      pricePerPack: pricePerPack || null,
-    });
-  },
-};
-
-// ===== 15. Smart Profit Service =====
+// ===== 7. Smart Profit Service =====
 export const smartProfitService = {
   async calculate(invoiceId: string) {
     return invoke<any>('calculate_smart_profit_db', { invoiceId });
   },
 };
 
-// ===== 16. Alias Service =====
-export const aliasService = {
-  async get(drugId: string) {
-    return invoke<any[]>('get_drug_aliases_db', { drugId });
-  },
-
-  async add(drugId: string, aliasName: string, aliasType: string) {
-    return invoke<string>('add_drug_alias_db', { drugId, aliasName, aliasType });
-  },
-};
-
-// ===== 17. Scan Mode Service =====
-export const scanModeService = {
-  async getAll() {
-    return invoke<any[]>('get_scan_modes_db');
-  },
-
-  async update(modeId: string, soundOnSuccess: boolean, soundOnFailure: boolean, autoAdd: boolean) {
-    return invoke('update_scan_mode_db', { modeId, soundOnSuccess, soundOnFailure, autoAdd });
-  },
-};
-
-// ===== 18. Scan Sounds (Frontend) =====
+// ===== 8. Scan Sounds (Frontend only — لا تحتاج backend) =====
 export const scanSoundService = {
   playSuccess() {
     try {

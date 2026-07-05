@@ -92,9 +92,9 @@ export function StockCountDashboard() {
   const handleSyncFromDrugMaster = async () => {
     setSyncing(true);
     try {
-      const count = await invoke<number>('sync_drug_master_to_medicines_db', { userRole: username || 'admin' });
+      const count = await invoke<number>('seed_iraqi_medicines_db');
       if (count > 0) {
-        toast.success(`تمت مزامنة ${count} دواء إلى المخزون`);
+        toast.success(`تمت إضافة ${count} دواء عراقي إلى المخزون`);
       } else {
         toast.info('جميع الأدوية موجودة مسبقاً');
       }

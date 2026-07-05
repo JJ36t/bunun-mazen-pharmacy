@@ -74,11 +74,11 @@ function SystemHealthTab() {
   const metrics = [
     { label: 'حالة قاعدة البيانات', value: health.dbHealthy ? 'سليم' : 'خطأ', icon: Database, color: health.dbHealthy ? 'emerald' : 'rose' },
     { label: 'عدد الجداول', value: health.tableCount, icon: Server, color: 'brand' },
-    { label: 'الأدوية', value: health.medicinesCount, icon: Activity, color: 'brand' },
+    { label: 'الأدوية (المخزون)', value: health.medicinesCount, icon: Activity, color: 'brand' },
     { label: 'الفواتير', value: health.invoicesCount, icon: Activity, color: 'amber' },
+    { label: 'الأدوية العالمية', value: health.globalMedicinesCount || 0, icon: Database, color: 'brand' },
     { label: 'سجلات التدقيق', value: health.auditLogsCount, icon: History, color: 'brand' },
-    { label: 'مهام معلقة', value: health.pendingTasks, icon: AlertTriangle, color: health.pendingTasks > 0 ? 'amber' : 'emerald' },
-    { label: 'تنبيهات غير مقروءة', value: health.unreadNotifications, icon: AlertTriangle, color: health.unreadNotifications > 0 ? 'rose' : 'emerald' },
+    { label: 'مخزون معزول', value: health.quarantinedCount || 0, icon: Lock, color: health.quarantinedCount > 0 ? 'amber' : 'emerald' },
   ];
 
   return (
