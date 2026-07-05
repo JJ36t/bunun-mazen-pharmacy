@@ -223,25 +223,21 @@ function PosDashboard() {
       return;
     }
 
-    // فحص تاريخ الانتهاء (لو موجود)
     const expiryDateStr = med.expiryDate ? String(med.expiryDate).split('T')[0] : null;
-    if (expiryDateStr) {
-      try {
-        const expDate = parseISO(expiryDateStr);
-        const today = startOfDay(new Date());
+    if (!expiryDateStr) return;
 
-        if (isBefore(expDate, today)) {
-          toast.error(`تنبيه: (${med.nameAr}) منتهي الصلاحية!`);
-          return;
-        }
+    const expDate = parseISO(expiryDateStr);
+    const today = startOfDay(new Date());
 
-        const ninetyDaysLater = addDays(today, 90);
-        if (isAfter(expDate, today) && isBefore(expDate, ninetyDaysLater)) {
-          toast.warning(`تنبيه: (${med.nameAr}) على وشك الانتهاء.`);
-        }
-      } catch (e) {
-        // تجاهل خطأ parseISO — أكمل الإضافة
-      }
+    if (isBefore(expDate, today)) {
+      toast.error(`تنبيه: (${med.nameAr}) منتهي الصلاحية!`);
+      return;
+    }
+
+    const ninetyDaysLater = addDays(today, 90);
+
+    if (isAfter(expDate, today) && isBefore(expDate, ninetyDaysLater)) {
+      toast.warning(`تنبيه: (${med.nameAr}) على وشك الانتهاء.`);
     }
 
     addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
