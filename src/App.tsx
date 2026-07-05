@@ -213,7 +213,7 @@ function PosDashboard() {
     setSmartLookupBarcode(null);
   };
   
-  const handleAddToCart = (med: any) => {
+  const handleAddToCart = async (med: any) => {
     if (med.quantity <= 0) {
       if (med.scientificName) {
         const substitutes = medicines.filter((m:any) => !m.isDeleted && m.scientificName === med.scientificName && m.quantity > 0 && m.id !== med.id);
@@ -238,6 +238,31 @@ function PosDashboard() {
 
     if (isAfter(expDate, today) && isBefore(expDate, ninetyDaysLater)) {
       toast.warning(`تنبيه: (${med.nameAr}) على وشك الانتهاء.`);
+    }
+
+    // ===== فحص التفاعلات الدوائية عند الإضافة للسلة =====
+    const newCartItems = [...cart, { id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price }];
+    const activeIngredients = newCartItems
+      .map(item => {
+        const m = medicines.find((med: any) => med.id === item.id);
+        return m?.scientificName || '';
+      })
+      .filter(name => name && name.trim().length > 0);
+
+    if (activeIngredients.length >= 2) {
+      try {
+        const interactions = await invoke<any[]>('check_drug_interactions_db', {
+          drugNamesJson: JSON.stringify(activeIngredients),
+        });
+        if (interactions.length > 0) {
+          // أضف الدواء للسلة أولاً
+          addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
+          setSearchTerm('');
+          // ثم اعرض نافذة التفاعلات
+          setShowInteractionCheck(true);
+          return;
+        }
+      } catch (e) { console.error('Interaction check failed:', e); }
     }
 
     addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
