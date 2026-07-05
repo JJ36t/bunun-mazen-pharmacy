@@ -9,23 +9,45 @@ use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub async fn run_server(port: usize, pool: PgPool) -> Result<(), String> {
-    let addr = format!("0.0.0.0:{}", port);
-    let listener = TcpListener::bind(&addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] WebSocket server listening on ws://0.0.0.0:{}", port);
+    // HTTP server على port المحدد
+    let http_addr = format!("0.0.0.0:{}", port);
+    let http_listener = TcpListener::bind(&http_addr).await.map_err(|e| e.to_string())?;
+    println!("[MobileScanner] HTTP server listening on http://0.0.0.0:{}", port);
 
-    // ابدأ HTTP server للموبايل في نفس الوقت
-    let http_pool = pool.clone();
+    // WebSocket server على port + 1
+    let ws_port = port + 1;
+    let ws_addr = format!("0.0.0.0:{}", ws_port);
+    let ws_listener = TcpListener::bind(&ws_addr).await.map_err(|e| e.to_string())?;
+    println!("[MobileScanner] WebSocket server listening on ws://0.0.0.0:{}", ws_port);
+
+    // ابدأ HTTP server في background
     tokio::spawn(async move {
-        let _ = run_http_server(port, http_pool).await;
+        loop {
+            if let Ok((stream, _)) = http_listener.accept().await {
+                tokio::spawn(async move {
+                    let _ = handle_http_request(stream).await;
+                });
+            }
+        }
     });
 
-    while let Ok((stream, addr)) = listener.accept().await {
-        let pool_clone = pool.clone();
-        tokio::spawn(async move {
-            let _ = handle_ws_connection(stream, addr, pool_clone).await;
-        });
+    // ابدأ WebSocket server في background
+    let pool_clone = pool.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Ok((stream, addr)) = ws_listener.accept().await {
+                let p = pool_clone.clone();
+                tokio::spawn(async move {
+                    let _ = handle_ws_connection(stream, addr, p).await;
+                });
+            }
+        }
+    });
+
+    // ابقى السيرفر يعمل
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
     }
-    Ok(())
 }
 
 async fn handle_ws_connection(
