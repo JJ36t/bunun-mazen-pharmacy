@@ -10,7 +10,8 @@ body { background:#0f172a; color:#fff; min-height:100vh; display:flex; flex-dire
 .header { background:#1e3a8a; padding:16px 20px; width:100%; text-align:center; position:sticky; top:0; z-index:100; }
 .header h1 { font-size:18px; font-weight:700; }
 .header .status { font-size:12px; margin-top:4px; opacity:0.8; }
-#reader { width:100%; max-width:500px; margin:20px auto; border-radius:16px; overflow:hidden; }
+#reader { width:100%; max-width:500px; margin:20px auto; border-radius:16px; overflow:hidden; min-height:200px; }
+#reader video { width:100%; border-radius:12px; }
 #result { padding:16px; width:100%; max-width:500px; }
 .card { background:#1e293b; border-radius:12px; padding:16px; margin-bottom:12px; }
 .card.found { border:2px solid #10b981; }
@@ -41,22 +42,22 @@ body { background:#0f172a; color:#fff; min-height:100vh; display:flex; flex-dire
 <div class="scan-count" id="scanCount">0 عملية مسح</div>
 <div id="result"></div>
 
-<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
 let ws = null;
 let scanning = true;
 let scanCount = 0;
 let lastBarcode = '';
 let lastScanTime = 0;
-let codeReader = null;
 let videoStream = null;
+let videoEl = null;
+let canvasEl = null;
+let canvasCtx = null;
+let scanInterval = null;
 let torchOn = false;
 
-// احصل على token من URL
 const params = new URLSearchParams(window.location.search);
 const token = params.get('token') || '';
-
-// احصل على IP السيرفر من URL
 const serverHost = window.location.hostname;
 const serverPort = parseInt(window.location.port) || 8080;
 const wsUrl = `ws://${serverHost}:${serverPort + 1}`;
@@ -70,8 +71,6 @@ function connectWS() {
   ws.onopen = () => {
     document.getElementById('connStatus').textContent = '✓ متصل';
     document.getElementById('connStatus').className = 'status connected';
-
-    // أرسل token الإقتران
     if (token) {
       ws.send(JSON.stringify({ type: 'pair', token: token, deviceName: navigator.userAgent }));
     }
@@ -87,7 +86,7 @@ function connectWS() {
   };
 
   ws.onclose = () => {
-    document.getElementById('connStatus').textContent = '✗ انقطع الاتصال — إعادة المحاولة...';
+    document.getElementById('connStatus').textContent = '✗ انقطع — إعادة...';
     document.getElementById('connStatus').className = 'status disconnected';
     setTimeout(connectWS, 2000);
   };
@@ -95,27 +94,36 @@ function connectWS() {
 
 async function startScanner() {
   try {
-    // طلب الكاميرا الخلفية مباشرة (بدون HTTPS على LAN)
     videoStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' } }
     });
 
-    const video = document.createElement('video');
-    video.style.width = '100%';
-    video.style.borderRadius = '12px';
-    video.setAttribute('playsinline', 'true');
-    video.srcObject = videoStream;
-    video.play();
+    videoEl = document.createElement('video');
+    videoEl.style.width = '100%';
+    videoEl.style.borderRadius = '12px';
+    videoEl.setAttribute('playsinline', 'true');
+    videoEl.setAttribute('muted', 'true');
+    videoEl.srcObject = videoStream;
+    videoEl.play();
 
     document.getElementById('reader').innerHTML = '';
-    document.getElementById('reader').appendChild(video);
+    document.getElementById('reader').appendChild(videoEl);
 
-    // استخدم ZXing لفك تشفير الباركود
-    codeReader = new ZXing.BrowserMultiFormatReader();
+    canvasEl = document.createElement('canvas');
+    canvasCtx = canvasEl.getContext('2d', { willReadFrequently: true });
 
-    codeReader.decodeFromVideoElement(video, (result, err) => {
-      if (result && scanning) {
-        const decodedText = result.getText();
+    scanInterval = setInterval(() => {
+      if (!scanning || !videoEl.videoWidth) return;
+
+      canvasEl.width = videoEl.videoWidth;
+      canvasEl.height = videoEl.videoHeight;
+      canvasCtx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+
+      const imageData = canvasCtx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+      if (code) {
+        const decodedText = code.data;
         const now = Date.now();
         if (decodedText === lastBarcode && (now - lastScanTime) < 1500) return;
         lastBarcode = decodedText;
@@ -128,14 +136,14 @@ async function startScanner() {
           ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
         }
       }
-    });
+    }, 200);
 
   } catch (err) {
     document.getElementById('reader').innerHTML =
       '<div style="padding:20px;text-align:center;color:#ef4444;">' +
       'فشل تشغيل الكاميرا: ' + (err.message || err) + '<br><br>' +
-      'تأكد من السماح بالكاميرا في إعدادات المتصفح<br>' +
-      'ملاحظة: يجب فتح الصفحة في Chrome أو Firefox' +
+      'تأكد من السماح بالكاميرا<br>' +
+      'افتح إعدادات المتصفح ← الخصوصية ← الكاميرا ← اسمح لهذا الموقع' +
       '</div>';
   }
 }
@@ -204,7 +212,6 @@ function toggleTorch() {
   }
 }
 
-// ابدأ
 connectWS();
 startScanner();
 </script>
