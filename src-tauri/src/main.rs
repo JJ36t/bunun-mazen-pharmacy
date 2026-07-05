@@ -2,6 +2,8 @@
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
 )]
+#![allow(dead_code)]
+
 
 use sysinfo::{System, SystemExt, CpuExt};
 use std::fs;
@@ -1325,34 +1327,14 @@ fn main() {
             suspend_invoice_db, get_suspended_invoices_db, delete_suspended_invoice_db,
             add_patient_db, get_patients_db,
             get_available_printers, print_receipt_direct,
-            // أوامر الإضافات المؤسسية الجديدة
-            start_session_db, end_session_db, update_session_activity_db, get_active_sessions_db,
-            create_fraud_alert_db, get_fraud_alerts_db, resolve_fraud_alert_db,
-            get_plugins_db, toggle_plugin_db,
-            create_journal_entry_db, complete_journal_entry_db, fail_journal_entry_db, get_pending_journal_entries_db,
-            create_print_job_db, get_print_jobs_db,
+            // أوامر النسخ الاحتياطي والصلاحيات
             get_backup_history_db, record_backup_history_db, create_auto_backup_db,
             get_roles_db, get_permissions_db, get_role_permissions_db, check_permission_db,
-            record_performance_metric_db, get_performance_metrics_db,
             get_inventory_movement_report_db, get_supplier_report_db, get_cashier_report_db,
             // أوامر PharmIQ Intelligence الجديدة
-            pharmiq_commands::get_drug_master_db, pharmiq_commands::add_drug_master_db,
-            pharmiq_commands::search_drug_master_db, pharmiq_commands::get_drug_substitutes_db,
-            pharmiq_commands::check_drug_interactions_db,
             pharmiq_commands::lookup_barcode_db, pharmiq_commands::bind_barcode_to_medicine_db,
             pharmiq_commands::generate_internal_barcode_db, pharmiq_commands::log_barcode_scan_db,
             pharmiq_commands::get_barcode_analytics_db,
-            pharmiq_commands::get_pricing_tiers_db, pharmiq_commands::get_medicine_pricing_db,
-            pharmiq_commands::get_supplier_intelligence_db,
-            pharmiq_commands::get_purchase_suggestions_db,
-            pharmiq_commands::analyze_dead_stock_db, pharmiq_commands::get_expiry_risk_assessment_db,
-            pharmiq_commands::get_hardware_devices_db, pharmiq_commands::add_hardware_device_db,
-            pharmiq_commands::set_default_hardware_device_db,
-            pharmiq_commands::get_branches_db, pharmiq_commands::add_branch_db,
-            pharmiq_commands::enqueue_task_db, pharmiq_commands::get_task_queue_db,
-            pharmiq_commands::update_task_status_db,
-            pharmiq_commands::get_notifications_db, pharmiq_commands::create_notification_db,
-            pharmiq_commands::mark_notification_read_db, pharmiq_commands::dismiss_notification_db,
             pharmiq_commands::get_payment_methods_db, pharmiq_commands::record_invoice_payment_db,
             pharmiq_commands::add_prescription_db, pharmiq_commands::get_prescriptions_db,
             pharmiq_commands::get_patient_loyalty_db, pharmiq_commands::redeem_loyalty_points_db,
@@ -1361,7 +1343,6 @@ fn main() {
             pharmiq_commands::check_controlled_medicine_db,
             pharmiq_commands::seed_iraqi_medicines_db,
             pharmiq_commands::convert_currency_db, pharmiq_commands::update_exchange_rate_db,
-            pharmiq_commands::sync_drug_master_to_medicines_db,
             // أوامر PharmIQ Complete الجديدة
             pharmiq_complete::import_medicines_csv_db,
             pharmiq_complete::create_label_print_job_db, pharmiq_complete::get_label_print_jobs_db,
@@ -1370,20 +1351,9 @@ fn main() {
             pharmiq_complete::get_cash_drawer_events_db, pharmiq_complete::record_cash_drawer_event_db,
             pharmiq_complete::balance_cash_drawer_db,
             pharmiq_complete::get_expiry_losses_db, pharmiq_complete::record_expiry_loss_db,
-            pharmiq_complete::get_expiry_transfer_suggestions_db,
-            pharmiq_complete::get_stop_purchase_suggestions_db,
-            pharmiq_complete::get_supplier_pricing_history_db,
-            pharmiq_complete::create_supplier_return_db, pharmiq_complete::get_supplier_returns_db,
-            pharmiq_complete::get_seasonal_demand_analysis_db,
-            pharmiq_complete::calculate_demand_forecast_db,
             pharmiq_complete::get_parent_drug_groups_db, pharmiq_complete::create_parent_drug_group_db,
             pharmiq_complete::assign_drug_to_parent_group_db,
-            pharmiq_complete::check_dosage_compatibility_db,
-            pharmiq_complete::parse_gs1_barcode_db,
-            pharmiq_complete::get_multi_pack_barcodes_db, pharmiq_complete::add_multi_pack_barcode_db,
             pharmiq_complete::calculate_smart_profit_db,
-            pharmiq_complete::get_drug_aliases_db, pharmiq_complete::add_drug_alias_db,
-            pharmiq_complete::get_scan_modes_db, pharmiq_complete::update_scan_mode_db,
             // أوامر Enterprise Complete الجديدة
             pharmiq_enterprise_complete::record_ledger_entry_db,
             pharmiq_enterprise_complete::record_sale_ledger_db,

@@ -15,22 +15,15 @@ import { ReportingDashboard } from './domains/reporting/ReportingDashboard';
 import { BackupDashboard } from './domains/settings/BackupDashboard';
 import { SettingsDashboard } from './domains/settings/SettingsDashboard';
 import { UserManagementDashboard } from './domains/settings/UserManagementDashboard';
-import { AdvancedSettingsDashboard } from './domains/settings/AdvancedSettingsDashboard';
-import { PluginsDashboard } from './domains/settings/PluginsDashboard';
 import { AuditDashboard } from './domains/security/AuditDashboard';
-import { DrugIntelligenceDashboard } from './domains/intelligence/DrugIntelligenceDashboard';
-import { BarcodeIntelligenceDashboard } from './domains/intelligence/BarcodeIntelligenceDashboard';
 import { StockCountDashboard } from './domains/intelligence/StockCountDashboard';
 import { PrescriptionsDashboard } from './domains/intelligence/PrescriptionsDashboard';
 import { ImportDashboard } from './domains/intelligence/ImportDashboard';
 import { CashDrawerDashboard } from './domains/intelligence/CashDrawerDashboard';
-import { IntelligenceAnalyticsDashboard } from './domains/intelligence/IntelligenceAnalyticsDashboard';
 import { LabelPrintingDashboard } from './domains/intelligence/LabelPrintingDashboard';
-import { ParentDrugGroupsDashboard } from './domains/intelligence/ParentDrugGroupsDashboard';
 import { EnterpriseDashboard } from './domains/intelligence/EnterpriseDashboard';
 import { InvoicesDashboard } from './domains/reporting/InvoicesDashboard';
 import { QuickPurchaseDashboard } from './domains/suppliers/QuickPurchaseDashboard';
-import { B2BIntegrationDashboard } from './domains/suppliers/B2BIntegrationDashboard';
 import { RefundDashboard } from './domains/pos/RefundDashboard';
 import { PatientsDashboard } from './domains/patients/PatientsDashboard';
 import { Receipt } from './domains/pos/Receipt';
@@ -64,7 +57,7 @@ function ensurePluginsInitialized() {
   }
 }
 
-type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'quick_purchase' | 'b2b' | 'patients' | 'reporting' | 'invoices' | 'audit' | 'backup' | 'settings' | 'users' | 'advanced_settings' | 'plugins' | 'drug_intelligence' | 'barcode_intelligence' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'intelligence_analytics' | 'label_printing' | 'parent_drug_groups' | 'enterprise';
+type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'quick_purchase' | 'patients' | 'reporting' | 'invoices' | 'audit' | 'backup' | 'settings' | 'users' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'label_printing' | 'enterprise';
 
 const navItems: { key: TabKey; label: string; icon: any; group: string; permission?: Permission }[] = [
   { key: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard, group: 'العمليات' },
@@ -73,19 +66,14 @@ const navItems: { key: TabKey; label: string; icon: any; group: string; permissi
   { key: 'prescriptions', label: 'الوصفات الطبية', icon: ScrollText, group: 'العمليات', permission: 'pos.use' as Permission },
   { key: 'cash_drawer', label: 'موازنة الصندوق', icon: CalcIcon, group: 'العمليات', permission: 'pos.use' as Permission },
   { key: 'inventory', label: 'المخزون', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
-  { key: 'drug_intelligence', label: 'ذكاء الأدوية', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
-  { key: 'parent_drug_groups', label: 'مجموعات الأدوية', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
-  { key: 'barcode_intelligence', label: 'ذكاء الباركود', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
   { key: 'label_printing', label: 'طباعة الملصقات', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
   { key: 'stock_count', label: 'الجرد', icon: Package, group: 'الإدارة', permission: 'inventory.adjust' as Permission },
   { key: 'import', label: 'استيراد الأدوية', icon: Package, group: 'الإدارة', permission: 'inventory.add' as Permission },
-  { key: 'intelligence_analytics', label: 'التحليلات الذكية', icon: FileBarChart, group: 'النظام', permission: 'reports.view' as Permission },
   { key: 'enterprise', label: 'الإدارة المؤسسية', icon: Database, group: 'النظام', permission: 'system.settings' as Permission },
   { key: 'accounting', label: 'المحاسبة', icon: CalcIcon, group: 'الإدارة', permission: 'accounting.view' as Permission },
   { key: 'debts', label: 'الديون', icon: Users, group: 'الإدارة', permission: 'accounting.debts' as Permission },
   { key: 'suppliers', label: 'الموردون', icon: Truck, group: 'الإدارة', permission: 'accounting.suppliers' as Permission },
   { key: 'quick_purchase', label: 'الشراء السريع', icon: Truck, group: 'الإدارة', permission: 'accounting.suppliers' as Permission },
-  { key: 'b2b', label: 'ربط المستودعات', icon: Truck, group: 'الإدارة', permission: 'accounting.suppliers' as Permission },
   { key: 'patients', label: 'المرضى', icon: UserCog, group: 'الإدارة', permission: 'system.patients' as Permission },
   { key: 'reporting', label: 'التقارير', icon: FileBarChart, group: 'النظام', permission: 'reports.view' as Permission },
   { key: 'invoices', label: 'الفواتير الشاملة', icon: FileBarChart, group: 'النظام', permission: 'reports.view' as Permission },
@@ -93,8 +81,7 @@ const navItems: { key: TabKey; label: string; icon: any; group: string; permissi
   { key: 'backup', label: 'النسخ الاحتياطي', icon: Database, group: 'النظام', permission: 'system.backup' as Permission },
   { key: 'users', label: 'المستخدمون', icon: UserCog, group: 'النظام', permission: 'system.users' as Permission },
   { key: 'settings', label: 'الإعدادات', icon: Settings, group: 'النظام', permission: 'system.settings' as Permission },
-  { key: 'advanced_settings', label: 'الإعدادات المتقدمة', icon: Settings, group: 'النظام', permission: 'system.settings' as Permission },
-  { key: 'plugins', label: 'الإضافات', icon: Settings, group: 'النظام', permission: 'system.settings' as Permission },
+
 ];
 
 function TouchKeypad({ onConfirm, onClose }: { onConfirm: (val: string) => void; onClose: () => void }) {
@@ -854,7 +841,6 @@ function App() {
           {hasPermission(role || 'cashier', 'accounting.debts' as Permission) && activeTab === 'debts' && <DebtsDashboard />}
           {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'suppliers' && <SuppliersDashboard />}
           {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'quick_purchase' && <QuickPurchaseDashboard />}
-          {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'b2b' && <B2BIntegrationDashboard />}
           {hasPermission(role || 'cashier', 'system.patients' as Permission) && activeTab === 'patients' && <PatientsDashboard />}
           {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'reporting' && <ReportingDashboard />}
           {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'invoices' && <InvoicesDashboard />}
@@ -862,19 +848,11 @@ function App() {
           {hasPermission(role || 'cashier', 'system.backup' as Permission) && activeTab === 'backup' && <BackupDashboard />}
           {hasPermission(role || 'cashier', 'system.users' as Permission) && activeTab === 'users' && <UserManagementDashboard />}
           {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'settings' && <SettingsDashboard />}
-          {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'advanced_settings' && <AdvancedSettingsDashboard />}
-          {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'plugins' && <PluginsDashboard />}
-          
-          {/* صفحات PharmIQ Intelligence الجديدة */}
-          {activeTab === 'drug_intelligence' && <DrugIntelligenceDashboard />}
-          {activeTab === 'barcode_intelligence' && <BarcodeIntelligenceDashboard />}
           {activeTab === 'stock_count' && <StockCountDashboard />}
           {activeTab === 'prescriptions' && <PrescriptionsDashboard />}
           {activeTab === 'cash_drawer' && <CashDrawerDashboard />}
           {activeTab === 'import' && <ImportDashboard />}
-          {activeTab === 'intelligence_analytics' && <IntelligenceAnalyticsDashboard />}
           {activeTab === 'label_printing' && <LabelPrintingDashboard />}
-          {activeTab === 'parent_drug_groups' && <ParentDrugGroupsDashboard />}
           {activeTab === 'enterprise' && <EnterpriseDashboard />}
           
           {/* عرض صفحات الـ plugins المفعّلة */}
