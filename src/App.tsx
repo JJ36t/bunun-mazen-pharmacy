@@ -502,35 +502,35 @@ function PosDashboard() {
     <div className="flex-1 flex overflow-hidden animate-fade-in">
       {/* القسم الأيمن - البحث والنتائج */}
       <div className="flex-1 flex flex-col p-6 overflow-hidden">
-        <div className="flex gap-3 mb-5">
-          <div className="relative flex-1">
+        <div className="flex gap-2 mb-5 items-center">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input 
-              type="text" 
-              value={searchTerm} 
-              onChange={handleSearch} 
-              onKeyPress={handleSearchKeyPress} 
-              placeholder="ابحث أو امسح الباركود... (F1 للدفع، F2 للتعليق)" 
-              className="input-lg pr-12 pl-4 shadow-sm" 
-              autoFocus 
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={handleSearch}
+              onKeyPress={handleSearchKeyPress}
+              placeholder="ابحث أو امسح الباركود... (F1 للدفع، F2 للتعليق)"
+              className="input-lg pr-12 pl-4 shadow-sm"
+              autoFocus
             />
           </div>
           <button
             onClick={() => { fetchSuspended(); setShowSuspended(true); }}
-            className="btn-ghost bg-white border border-slate-200"
+            className="btn-ghost bg-white border border-slate-200 flex-shrink-0"
           >
             <Pause className="w-4 h-4" />
-            <span>الفواتير المعلقة</span>
+            <span className="hidden lg:inline">الفواتير المعلقة</span>
             {suspendedInvs.length > 0 && (
               <span className="badge-warning">{suspendedInvs.length}</span>
             )}
           </button>
           <button
             onClick={() => setShowMobileScanner(true)}
-            className="btn-ghost bg-white border border-slate-200"
+            className="btn-primary flex-shrink-0"
             title="الماسح اللاسلكي"
           >
-            <Smartphone className="w-4 h-4" />
+            <Smartphone className="w-5 h-5" />
             <span>ماسح لاسلكي</span>
           </button>
         </div>
