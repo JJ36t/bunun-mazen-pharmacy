@@ -33,10 +33,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { SmartBarcodeLookup } from './domains/pos/SmartBarcodeLookup';
 import { DrugInteractionChecker } from './domains/pos/DrugInteractionChecker';
 import { DailyChecksModal } from './domains/intelligence/DailyChecksModal';
+import { MobileScannerModal } from './domains/mobile-scanner';
 import { Toaster, toast } from 'sonner';
 import { parseISO, startOfDay, isBefore, isAfter, addDays } from 'date-fns';
 import {
-  Search, LogOut, Calculator, ShoppingCart, RotateCcw, Home,
+  Search, LogOut, Calculator, ShoppingCart, RotateCcw, Home, Smartphone,
   Package, Calculator as CalcIcon, Users, FileBarChart, ScrollText, Database, Settings, Truck, UserCog,
   Pause, Play, Trash2, X, Hash, Tag, Receipt as ReceiptIcon, Shield
 } from 'lucide-react';
@@ -156,6 +157,7 @@ function PosDashboard() {
   const [showInteractionCheck, setShowInteractionCheck] = useState(false);
   const [interactionOverrideGranted, setInteractionOverrideGranted] = useState(false);
   const [showDailyChecks, setShowDailyChecks] = useState(false);
+  const [showMobileScanner, setShowMobileScanner] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
   const [paidAmount, setPaidAmount] = useState('');
@@ -513,15 +515,23 @@ function PosDashboard() {
               autoFocus 
             />
           </div>
-          <button 
-            onClick={() => { fetchSuspended(); setShowSuspended(true); }} 
+          <button
+            onClick={() => { fetchSuspended(); setShowSuspended(true); }}
             className="btn-ghost bg-white border border-slate-200"
           >
-            <Pause className="w-4 h-4" /> 
+            <Pause className="w-4 h-4" />
             <span>الفواتير المعلقة</span>
             {suspendedInvs.length > 0 && (
               <span className="badge-warning">{suspendedInvs.length}</span>
             )}
+          </button>
+          <button
+            onClick={() => setShowMobileScanner(true)}
+            className="btn-ghost bg-white border border-slate-200"
+            title="الماسح اللاسلكي"
+          >
+            <Smartphone className="w-4 h-4" />
+            <span>ماسح لاسلكي</span>
           </button>
         </div>
         
@@ -754,6 +764,10 @@ function PosDashboard() {
 
       {showDailyChecks && (
         <DailyChecksModal onClose={() => setShowDailyChecks(false)} />
+      )}
+
+      {showMobileScanner && (
+        <MobileScannerModal onClose={() => setShowMobileScanner(false)} />
       )}
 
       {showPayment && (

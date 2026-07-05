@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>صيدلية بنين مازن — الماسح اللاسلكي</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',Tahoma,sans-serif; }
+body { background:#0f172a; color:#fff; min-height:100vh; display:flex; flex-direction:column; align-items:center; }
+.header { background:#1e3a8a; padding:16px 20px; width:100%; text-align:center; position:sticky; top:0; z-index:100; }
+.header h1 { font-size:18px; font-weight:700; }
+.header .status { font-size:12px; margin-top:4px; opacity:0.8; }
+#reader { width:100%; max-width:500px; margin:20px auto; border-radius:16px; overflow:hidden; }
+#result { padding:16px; width:100%; max-width:500px; }
+.card { background:#1e293b; border-radius:12px; padding:16px; margin-bottom:12px; }
+.card.found { border:2px solid #10b981; }
+.card.notfound { border:2px solid #ef4444; }
+.card.global { border:2px solid #f59e0b; }
+.card h3 { font-size:16px; margin-bottom:8px; }
+.card p { font-size:14px; color:#94a3b8; margin-bottom:4px; }
+.card .price { font-size:24px; font-weight:700; color:#10b981; }
+.btn { background:#1e3a8a; color:#fff; border:none; padding:12px 24px; border-radius:10px; font-size:16px; cursor:pointer; width:100%; margin-top:8px; }
+.btn:active { background:#1e40af; }
+.controls { display:flex; gap:8px; padding:12px; max-width:500px; width:100%; }
+.controls .btn { flex:1; font-size:14px; padding:10px; }
+.scan-count { font-size:12px; color:#64748b; text-align:center; padding:8px; }
+.connected { color:#10b981; }
+.disconnected { color:#ef4444; }
+</style>
+</head>
+<body>
+<div class="header">
+<h1>💊 صيدلية بنين مازن</h1>
+<div class="status" id="connStatus">جاري الاتصال...</div>
+</div>
+<div id="reader"></div>
+<div class="controls">
+<button class="btn" id="torchBtn" onclick="toggleTorch()">🔦 الفلاش</button>
+<button class="btn" id="modeBtn" onclick="toggleMode()">⏸ إيقاف</button>
+</div>
+<div class="scan-count" id="scanCount">0 عملية مسح</div>
+<div id="result"></div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+let ws = null;
+let scanning = true;
+let scanCount = 0;
+let lastBarcode = '';
+let lastScanTime = 0;
+let html5Qr = null;
+let torchOn = false;
+
+// احصل على token من URL
+const params = new URLSearchParams(window.location.search);
+const token = params.get('token') || '';
+
+// احصل على IP السيرفر من URL
+const serverHost = window.location.hostname;
+const wsUrl = `ws://${serverHost}:8080`;
+
+function connectWS() {
+  document.getElementById('connStatus').textContent = 'جاري الاتصال...';
+  document.getElementById('connStatus').className = 'status';
+
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    document.getElementById('connStatus').textContent = '✓ متصل';
+    document.getElementById('connStatus').className = 'status connected';
+
+    // أرسل token الإقتران
+    if (token) {
+      ws.send(JSON.stringify({ type: 'pair', token: token, deviceName: navigator.userAgent }));
+    }
+  };
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === 'scan_result') {
+      displayResult(data.result);
+      vibrate();
+      playSound(data.result.status);
+    }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('connStatus').textContent = '✗ انقطع الاتصال — إعادة المحاولة...';
+    document.getElementById('connStatus').className = 'status disconnected';
+    setTimeout(connectWS, 2000);
+  };
+}
+
+function startScanner() {
+  html5Qr = new Html5Qrcode("reader");
+  html5Qr.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 250, height: 150 } },
+    (decodedText) => {
+      if (!scanning) return;
+      const now = Date.now();
+      // Debounce — منع المسح المتكرر خلال 1.5 ثانية
+      if (decodedText === lastBarcode && (now - lastScanTime) < 1500) return;
+      lastBarcode = decodedText;
+      lastScanTime = now;
+
+      scanCount++;
+      document.getElementById('scanCount').textContent = scanCount + ' عملية مسح';
+
+      // أرسل للسيرفر
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
+      }
+    },
+    () => {}
+  ).catch(() => {});
+}
+
+function displayResult(result) {
+  const el = document.getElementById('result');
+  let html = '';
+
+  if (result.status === 'found') {
+    html = `<div class="card found">
+      <h3>✅ ${result.nameAr}</h3>
+      <p>الباركود: ${result.barcodeType || ''}</p>
+      <p>الكمية: ${result.quantity}</p>
+      <p class="price">${result.price} د.ع</p>
+    </div>`;
+  } else if (result.status === 'global_found') {
+    html = `<div class="card global">
+      <h3>🌍 ${result.name || ''}</h3>
+      <p>${result.activeIngredient || ''}</p>
+      <p>${result.brandName || ''} • ${result.strength || ''}</p>
+      <p>النوع: ${result.barcodeType || ''}</p>
+      <p style="color:#f59e0b;">دواء عالمي — غير موجود في المخزون</p>
+    </div>`;
+  } else {
+    html = `<div class="card notfound">
+      <h3>❌ غير موجود</h3>
+      <p>الباركود: ${result.barcode}</p>
+      <p>النوع: ${result.barcodeType}</p>
+    </div>`;
+  }
+
+  el.innerHTML = html + el.innerHTML;
+  if (el.children.length > 10) el.lastChild.remove();
+}
+
+function vibrate() {
+  if (navigator.vibrate) navigator.vibrate(100);
+}
+
+function playSound(status) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = status === 'found' ? 800 : status === 'global_found' ? 600 : 300;
+    osc.type = status === 'found' ? 'sine' : 'square';
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.2);
+  } catch(e) {}
+}
+
+function toggleMode() {
+  scanning = !scanning;
+  document.getElementById('modeBtn').textContent = scanning ? '⏸ إيقاف' : '▶ استئناف';
+}
+
+function toggleTorch() {
+  torchOn = !torchOn;
+  if (html5Qr) {
+    html5Qr.applyVideoConstraints({ advanced: [{ torch: torchOn }] }).catch(() => {});
+  }
+}
+
+// ابدأ
+connectWS();
+startScanner();
+</script>
+</body>
+</html>

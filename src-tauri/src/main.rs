@@ -33,6 +33,7 @@ mod invoices_commands;
 mod smart_barcode_commands;
 mod pharmiq_features;
 mod pharmiq_new_features;
+mod mobile_scanner;
 
 // --- نظام السجلات المنظمة (Structured Logging) ---
 fn init_logging() {
@@ -1426,7 +1427,15 @@ fn main() {
             pharmiq_new_features::create_partial_stock_count_db,
             pharmiq_new_features::get_stock_count_items_db,
             pharmiq_new_features::set_stock_count_item_reason_db,
-            pharmiq_new_features::get_stock_count_report_db
+            pharmiq_new_features::get_stock_count_report_db,
+            // Mobile Scanner
+            mobile_scanner::start_scanner_server,
+            mobile_scanner::stop_scanner_server,
+            mobile_scanner::get_scanner_server_status,
+            mobile_scanner::generate_pairing_qr,
+            mobile_scanner::get_connected_devices,
+            mobile_scanner::get_scan_audit_logs,
+            mobile_scanner::scanner_events::scan_barcode_direct
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
