@@ -10,9 +10,10 @@ pub mod scanner_events;
 pub mod barcode_parser;
 pub mod rate_limiter;
 
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use base64::Engine;
 
 /// حالة السيرفر المشتركة
 pub struct ScannerState {
