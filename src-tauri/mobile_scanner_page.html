@@ -92,29 +92,70 @@ function connectWS() {
   };
 }
 
-function startScanner() {
-  html5Qr = new Html5Qrcode("reader");
-  html5Qr.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: { width: 250, height: 150 } },
-    (decodedText) => {
-      if (!scanning) return;
-      const now = Date.now();
-      // Debounce — منع المسح المتكرر خلال 1.5 ثانية
-      if (decodedText === lastBarcode && (now - lastScanTime) < 1500) return;
-      lastBarcode = decodedText;
-      lastScanTime = now;
+async function startScanner() {
+  try {
+    html5Qr = new Html5Qrcode("reader");
 
-      scanCount++;
-      document.getElementById('scanCount').textContent = scanCount + ' عملية مسح';
+    // طلب إذن الكاميرا أولاً
+    const devices = await Html5Qrcode.getCameras();
+    if (!devices || devices.length === 0) {
+      document.getElementById('reader').innerHTML = '<div style="padding:20px;text-align:center;color:#ef4444;">لا توجد كاميرا متاحة</div>';
+      return;
+    }
 
-      // أرسل للسيرفر
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
+    // ابحث عن الكاميرا الخلفية
+    let cameraId = devices[devices.length - 1].id; // آخر كاميرا عادة تكون الخلفية
+    for (let d of devices) {
+      if (d.label && (d.label.includes('back') || d.label.includes('environment') || d.label.includes('rear'))) {
+        cameraId = d.id;
+        break;
       }
-    },
-    () => {}
-  ).catch(() => {});
+    }
+
+    await html5Qr.start(
+      cameraId,
+      { fps: 10, qrbox: { width: 250, height: 150 } },
+      (decodedText) => {
+        if (!scanning) return;
+        const now = Date.now();
+        if (decodedText === lastBarcode && (now - lastScanTime) < 1500) return;
+        lastBarcode = decodedText;
+        lastScanTime = now;
+
+        scanCount++;
+        document.getElementById('scanCount').textContent = scanCount + ' عملية مسح';
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
+        }
+      },
+      () => {}
+    );
+  } catch (err) {
+    // لو فشل، جرّب facingMode
+    try {
+      html5Qr = new Html5Qrcode("reader");
+      await html5Qr.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 150 } },
+        (decodedText) => {
+          if (!scanning) return;
+          const now = Date.now();
+          if (decodedText === lastBarcode && (now - lastScanTime) < 1500) return;
+          lastBarcode = decodedText;
+          lastScanTime = now;
+          scanCount++;
+          document.getElementById('scanCount').textContent = scanCount + ' عملية مسح';
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
+          }
+        },
+        () => {}
+      );
+    } catch (err2) {
+      document.getElementById('reader').innerHTML = '<div style="padding:20px;text-align:center;color:#ef4444;">فشل تشغيل الكاميرا: ' + err2 + '<br><br>تأكد من السماح بالكاميرا في إعدادات المتصفح</div>';
+    }
+  }
 }
 
 function displayResult(result) {
