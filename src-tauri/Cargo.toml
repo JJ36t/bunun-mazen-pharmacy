@@ -39,6 +39,8 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 tokio-tungstenite = "0.24"
 # qrcode - توليد QR code للإقتران
 qrcode = "0.14"
+# futures-util - for WebSocket stream splitting
+futures-util = "0.3"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

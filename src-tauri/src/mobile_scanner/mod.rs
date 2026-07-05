@@ -108,12 +108,10 @@ pub async fn generate_pairing_qr(
 
     let mobile_url = format!("http://{}:{}/mobile?token={}", local_ip, port, token);
 
-    // توليد QR code كـ base64
+    // توليد QR code كـ SVG string
     let qr = qrcode::QrCode::new(&mobile_url).map_err(|e| e.to_string())?;
-    let image = qr.render::<image::Luma<u8>>().min_dimensions(300, 300).build();
-    let mut buf = Vec::new();
-    image::DynamicImage::ImageLuma8(image).write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).map_err(|e| e.to_string())?;
-    let qr_base64 = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&buf));
+    let svg = qr.render::<qrcode::render::svg::Color>().min_dimensions(300, 300).build();
+    let qr_base64 = format!("data:image/svg+xml;base64,{}", base64::engine::general_purpose::STANDARD.encode(svg.as_bytes()));
 
     Ok(serde_json::json!({
         "token": token,

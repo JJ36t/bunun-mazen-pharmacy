@@ -5,6 +5,7 @@ use futures_util::{StreamExt, SinkExt};
 use sqlx::PgPool;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub async fn run_server(port: usize, pool: PgPool) -> Result<(), String> {
     let addr = format!("0.0.0.0:{}", port);
@@ -31,8 +32,7 @@ async fn handle_ws_connection(
     addr: SocketAddr,
     pool: PgPool,
 ) -> Result<(), String> {
-    let ws_stream = accept_async(stream).await.map_err(|e| e.to_string())?;
-    let (mut write, mut read) = ws_stream.split();
+    let mut ws_stream = accept_async(stream).await.map_err(|e| e.to_string())?;
 
     println!("[MobileScanner] Device connected: {}", addr);
 
@@ -42,9 +42,9 @@ async fn handle_ws_connection(
         "message": "مرحباً بك في نظام المسح اللاسلكي",
         "serverTime": chrono::Utc::now().to_rfc3339(),
     });
-    write.send(Message::Text(welcome.to_string())).await.map_err(|e| e.to_string())?;
+    ws_stream.send(Message::Text(welcome.to_string())).await.map_err(|e| e.to_string())?;
 
-    while let Some(msg) = read.next().await {
+    while let Some(msg) = ws_stream.next().await {
         match msg {
             Ok(Message::Text(text)) => {
                 if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -63,10 +63,10 @@ async fn handle_ws_connection(
                                 "barcode": barcode,
                                 "result": result,
                             });
-                            write.send(Message::Text(response.to_string())).await.map_err(|e| e.to_string())?;
+                            ws_stream.send(Message::Text(response.to_string())).await.map_err(|e| e.to_string())?;
                         }
                         "ping" => {
-                            write.send(Message::Text(serde::json!({"type": "pong"}).to_string())).await.map_err(|e| e.to_string())?;
+                            ws_stream.send(Message::Text(serde_json::json!({"type": "pong"}).to_string())).await.map_err(|e| e.to_string())?;
                         }
                         "pair" => {
                             let token = data.get("token").and_then(|t| t.as_str()).unwrap_or("");
@@ -78,7 +78,7 @@ async fn handle_ws_connection(
                                 "success": valid,
                                 "message": if valid { "تم الإقتران بنجاح" } else { "رمز الإقتران غير صالح" },
                             });
-                            write.send(Message::Text(response.to_string())).await.map_err(|e| e.to_string())?;
+                            ws_stream.send(Message::Text(response.to_string())).await.map_err(|e| e.to_string())?;
 
                             if valid {
                                 sqlx::query("UPDATE mobile_pairing_sessions SET is_active = TRUE, device_name = $1, device_ip = $2, last_seen = NOW() WHERE pairing_token = $3")
