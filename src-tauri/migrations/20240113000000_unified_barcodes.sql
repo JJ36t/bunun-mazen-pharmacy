@@ -69,13 +69,13 @@ BEGIN
     -- الحصول على أعلى رقم تسلسلي موجود
     seq_num := 0;
     FOR med IN
-        SELECT id FROM medicines
+        SELECT id, barcode FROM medicines
         WHERE barcode LIKE '200%'
           AND LENGTH(barcode) = 13
           AND is_deleted = FALSE
         ORDER BY barcode DESC
     LOOP
-        seq_num := GREATEST(seq_num, CAST(SUBSTRING(barcode FROM 4 FOR 9) AS INTEGER));
+        seq_num := GREATEST(seq_num, CAST(SUBSTRING(med.barcode FROM 4 FOR 9) AS INTEGER));
     END LOOP;
 
     FOR med IN
