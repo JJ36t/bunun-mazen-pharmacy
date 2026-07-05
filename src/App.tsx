@@ -545,13 +545,13 @@ function PosDashboard() {
             </h3>
             <div className="flex gap-2">
               {cart.length > 0 && (
-                <button onClick={handleSuspend} className="text-xs text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-amber-50">
-                  <Pause className="w-3 h-3" />تعليق
+                <button onClick={handleSuspend} className="btn-warning px-4 py-2 text-sm">
+                  <Pause className="w-4 h-4" /> تعليق الفاتورة
                 </button>
               )}
               {cart.length > 0 && (
-                <button onClick={clearCart} className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded-lg hover:bg-red-50">
-                  إفراغ
+                <button onClick={clearCart} className="btn-danger px-4 py-2 text-sm">
+                  <Trash2 className="w-4 h-4" /> إفراغ السلة
                 </button>
               )}
             </div>
@@ -875,7 +875,7 @@ function App() {
         {activeTab === 'dashboard' ? (
           /* ===== الصفحة الرئيسية المحسّنة ===== */
           <div className="h-full overflow-auto bg-gradient-to-br from-slate-50 via-brand-50/30 to-slate-50">
-            <div className="max-w-7xl mx-auto px-6 py-6">
+            <div className="max-w-6xl mx-auto px-6 py-6">
 
               {/* ===== ترحيب + تاريخ ===== */}
               <div className="flex items-center justify-between mb-6">
@@ -885,69 +885,27 @@ function App() {
                     {new Date().toLocaleDateString('ar-IQ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className={`px-4 py-2 rounded-xl text-sm font-semibold ${shiftId ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                    {shiftId ? '✓ الشفت مفتوح' : '⚠ الشفت مغلق'}
-                  </div>
-                </div>
-              </div>
-
-              {/* ===== الإحصائيات السريعة ===== */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center">
-                    <ShoppingCart className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">مبيعات اليوم</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">{useAccountingStore.getState().totalSales.toLocaleString('en-US')} د.ع</p>
-                  </div>
-                </div>
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                    <Package className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">الأصناف في المخزون</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">{useInventoryStore.getState().medicines.filter(m => !m.isDeleted).length} صنف</p>
-                  </div>
-                </div>
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-                    <Database className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">قاعدة الأدوية العالمية</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">9,375 دواء</p>
-                  </div>
-                </div>
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-                    <Shield className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">تفاعلات دوائية</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">1,051 تفاعل</p>
-                  </div>
+                <div className={`px-4 py-2 rounded-xl text-sm font-semibold ${shiftId ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                  {shiftId ? '✓ الشفت مفتوح' : '⚠ الشفت مغلق'}
                 </div>
               </div>
 
               {/* ===== قسم العمليات ===== */}
-              <div className="mb-5">
+              <div className="mb-6">
                 <h2 className="text-sm font-bold text-slate-600 mb-3 px-1">العمليات</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {navItems.filter(item => (!item.permission || hasPermission(role || 'cashier', item.permission)) && item.group === 'العمليات').map(item => {
                     const Icon = item.icon;
                     return (
                       <button
                         key={item.key}
                         onClick={() => setActiveTab(item.key)}
-                        className="nav-tile h-32 p-3"
+                        className="nav-tile h-40 p-4"
                       >
-                        <div className="nav-tile-icon bg-brand-50 text-brand-700">
-                          <Icon className="w-7 h-7" />
+                        <div className="nav-tile-icon bg-brand-50 text-brand-700 w-16 h-16">
+                          <Icon className="w-8 h-8" />
                         </div>
-                        <p className="nav-tile-label">{item.label}</p>
+                        <p className="nav-tile-label text-base">{item.label}</p>
                       </button>
                     );
                   })}
@@ -955,21 +913,21 @@ function App() {
               </div>
 
               {/* ===== قسم الإدارة ===== */}
-              <div className="mb-5">
+              <div className="mb-6">
                 <h2 className="text-sm font-bold text-slate-600 mb-3 px-1">الإدارة</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {navItems.filter(item => (!item.permission || hasPermission(role || 'cashier', item.permission)) && item.group === 'الإدارة').map(item => {
                     const Icon = item.icon;
                     return (
                       <button
                         key={item.key}
                         onClick={() => setActiveTab(item.key)}
-                        className="nav-tile h-32 p-3"
+                        className="nav-tile h-40 p-4"
                       >
-                        <div className="nav-tile-icon bg-emerald-50 text-emerald-700">
-                          <Icon className="w-7 h-7" />
+                        <div className="nav-tile-icon bg-emerald-50 text-emerald-700 w-16 h-16">
+                          <Icon className="w-8 h-8" />
                         </div>
-                        <p className="nav-tile-label">{item.label}</p>
+                        <p className="nav-tile-label text-base">{item.label}</p>
                       </button>
                     );
                   })}
@@ -977,24 +935,64 @@ function App() {
               </div>
 
               {/* ===== قسم النظام ===== */}
-              <div className="mb-5">
+              <div className="mb-6">
                 <h2 className="text-sm font-bold text-slate-600 mb-3 px-1">النظام</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {navItems.filter(item => (!item.permission || hasPermission(role || 'cashier', item.permission)) && item.group === 'النظام').map(item => {
                     const Icon = item.icon;
                     return (
                       <button
                         key={item.key}
                         onClick={() => setActiveTab(item.key)}
-                        className="nav-tile h-32 p-3"
+                        className="nav-tile h-40 p-4"
                       >
-                        <div className="nav-tile-icon bg-amber-50 text-amber-700">
-                          <Icon className="w-7 h-7" />
+                        <div className="nav-tile-icon bg-amber-50 text-amber-700 w-16 h-16">
+                          <Icon className="w-8 h-8" />
                         </div>
-                        <p className="nav-tile-label">{item.label}</p>
+                        <p className="nav-tile-label text-base">{item.label}</p>
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* ===== الإحصائيات السريعة (في الأسفل) ===== */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-8 pt-6 border-t border-slate-200">
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center">
+                    <ShoppingCart className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">مبيعات اليوم</p>
+                    <p className="text-lg font-bold text-slate-800 tabular">{useAccountingStore.getState().totalSales.toLocaleString('en-US')} د.ع</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                    <Package className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">الأصناف في المخزون</p>
+                    <p className="text-lg font-bold text-slate-800 tabular">{useInventoryStore.getState().medicines.filter(m => !m.isDeleted).length} صنف</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">قاعدة الأدوية العالمية</p>
+                    <p className="text-lg font-bold text-slate-800 tabular">9,375 دواء</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+                    <Shield className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">تفاعلات دوائية</p>
+                    <p className="text-lg font-bold text-slate-800 tabular">1,051 تفاعل</p>
+                  </div>
                 </div>
               </div>
             </div>
