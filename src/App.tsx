@@ -34,6 +34,7 @@ import { SmartBarcodeLookup } from './domains/pos/SmartBarcodeLookup';
 import { DrugInteractionChecker } from './domains/pos/DrugInteractionChecker';
 import { DailyChecksModal } from './domains/intelligence/DailyChecksModal';
 import { MobileScannerModal } from './domains/mobile-scanner';
+
 import { Toaster, toast } from 'sonner';
 import { parseISO, startOfDay, isBefore, isAfter, addDays } from 'date-fns';
 import {
@@ -158,6 +159,7 @@ function PosDashboard() {
   const [interactionOverrideGranted, setInteractionOverrideGranted] = useState(false);
   const [showDailyChecks, setShowDailyChecks] = useState(false);
   const [showMobileScanner, setShowMobileScanner] = useState(false);
+
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
   const [paidAmount, setPaidAmount] = useState('');
@@ -526,9 +528,8 @@ function PosDashboard() {
             )}
           </button>
           <button
-            onClick={() => setShowMobileScanner(true)}
-            className="btn-primary flex-shrink-0"
-            title="الماسح اللاسلكي"
+            onClick={() => { setShowMobileScanner(true); }}
+            className="btn-primary flex-shrink-0 px-4 py-2.5"
           >
             <Smartphone className="w-5 h-5" />
             <span>ماسح لاسلكي</span>
