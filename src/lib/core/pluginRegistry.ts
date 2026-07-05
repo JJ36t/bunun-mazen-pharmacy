@@ -3,6 +3,7 @@
 // ========================================
 // يسمح بإضافة ميزات جديدة دون تعديل الكود الأساسي
 
+import type { ComponentType } from 'react';
 import { LucideIcon } from 'lucide-react';
 import { eventBus } from './eventBus';
 
@@ -16,7 +17,7 @@ export interface PharmacyPlugin {
   author?: string;
   
   // صفحة في الواجهة (اختياري)
-  dashboard?: React.ComponentType;
+  dashboard?: ComponentType;
   navLabel?: string;
   navOrder?: number;               // ترتيب في القائمة
   

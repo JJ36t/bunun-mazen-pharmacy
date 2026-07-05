@@ -8,7 +8,7 @@
 
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { X, Search, Package, Loader, Plus, AlertCircle, CheckCircle, Globe } from 'lucide-react';
+import { X, Search, Loader, Plus, AlertCircle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface SmartBarcodeLookupProps {
@@ -221,7 +221,7 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
 }
 
 // Manual add form (when barcode not found anywhere)
-function ManualAddForm({ barcode, onSave, saving, price, setPrice, costPrice, setCostPrice, quantity, setQuantity, batchNumber, setBatchNumber, expiryDate, setExpiryDate }: any) {
+function ManualAddForm({ onSave, saving, price, setPrice, costPrice, setCostPrice, quantity, setQuantity, batchNumber, setBatchNumber, expiryDate, setExpiryDate }: any) {
   const [name, setName] = useState('');
   const [activeIngredient, setActiveIngredient] = useState('');
   const [form, setForm] = useState('tablet');

@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useInventoryStore } from '../inventory/inventory.store';
-import { Shield, Activity, Flag, History, Lock, AlertTriangle, TrendingDown, RotateCcw, RefreshCw, Heart, Database, Server } from 'lucide-react';
+import { Shield, Activity, Flag, History, Lock, TrendingDown, RotateCcw, RefreshCw, Heart, Database, Server } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function EnterpriseDashboard() {
