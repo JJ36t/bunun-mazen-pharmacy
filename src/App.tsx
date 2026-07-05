@@ -318,6 +318,7 @@ function PosDashboard() {
             drugNamesJson: JSON.stringify(activeIngredients),
           });
           if (interactions.length > 0) {
+            setShowPayment(false); // أغلق نافذة الدفع أولاً
             setShowInteractionCheck(true);
             return; // أوقف البيع حتى يراجع الصيدلي
           }
