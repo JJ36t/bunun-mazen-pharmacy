@@ -148,7 +148,7 @@ pub async fn get_daily_inventory_checks_db(state: tauri::State<'_, PgPool>) -> R
 
     // قارب الانتهاء (خلال X يوم)
     let expiring_soon = sqlx::query(&format!(
-        "SELECT id, name_ar, barcode, expiry_date, quantity, (expiry_date - CURRENT_DATE) as days_left
+        "SELECT id, name_ar, barcode, expiry_date, quantity, CAST((expiry_date - CURRENT_DATE) AS BIGINT) as days_left
          FROM medicines
          WHERE is_deleted = FALSE AND expiry_date IS NOT NULL
            AND expiry_date >= CURRENT_DATE
