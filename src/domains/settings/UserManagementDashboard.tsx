@@ -27,7 +27,7 @@ export function UserManagementDashboard() {
   };
 
   const fetchUsers = async () => {
-    try { setUsers(await invoke<any[]>('get_users_db')); } catch (e) { console.error(e); }
+    try { setUsers(await invoke<any[]>('get_users_db', { requesterRole: role || 'cashier' })); } catch (e) { console.error(e); }
   };
 
   useEffect(() => { fetchUsers(); }, []);

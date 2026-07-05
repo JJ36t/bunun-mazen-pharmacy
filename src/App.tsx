@@ -35,8 +35,8 @@ import { DrugInteractionChecker } from './domains/pos/DrugInteractionChecker';
 import { DailyChecksModal } from './domains/intelligence/DailyChecksModal';
 import { Toaster, toast } from 'sonner';
 import { parseISO, startOfDay, isBefore, isAfter, addDays } from 'date-fns';
-import { 
-  Search, LogOut, Calculator, LayoutDashboard, ShoppingCart, RotateCcw, 
+import {
+  Search, LogOut, Calculator, ShoppingCart, RotateCcw,
   Package, Calculator as CalcIcon, Users, FileBarChart, ScrollText, Database, Settings, Truck, UserCog,
   Pause, Play, Trash2, X, Hash, Tag, Receipt as ReceiptIcon, Shield
 } from 'lucide-react';
@@ -62,7 +62,7 @@ function ensurePluginsInitialized() {
 type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'quick_purchase' | 'patients' | 'reporting' | 'invoices' | 'audit' | 'backup' | 'settings' | 'users' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'label_printing' | 'enterprise';
 
 const navItems: { key: TabKey; label: string; icon: any; group: string; permission?: Permission }[] = [
-  { key: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard, group: 'العمليات' },
+  // 'dashboard' تم إزالته من القائمة — الشاشة الرئيسية تظهر افتراضياً
   { key: 'pos', label: 'نقاط البيع', icon: ShoppingCart, group: 'العمليات', permission: 'pos.use' as Permission },
   { key: 'refund', label: 'مرتجع المبيعات', icon: RotateCcw, group: 'العمليات', permission: 'pos.refund' as Permission },
   { key: 'prescriptions', label: 'الوصفات الطبية', icon: ScrollText, group: 'العمليات', permission: 'pos.use' as Permission },
