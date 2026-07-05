@@ -62,8 +62,8 @@ ON CONFLICT DO NOTHING;
 -- ========================================
 -- كلمات المرور: admin123, cashier123 (مشفرة بـ bcrypt)
 INSERT INTO users (username, password, role, is_active) VALUES
-    ('admin', '$2b$08$VrLqHxQXLPaQ5pKfVZGjQO8Q5wYz3qLxJy8K5pNq3mFqWxYz1VqHa', 'Super Admin', TRUE),
-    ('cashier', '$2b$08$NkP2sM5qLxJy8K5pNq3mFqWxYz1VqHaVrLqHxQXLPaQ5pKfVZGjQO8Q5wYz3q', 'Cashier', TRUE)
+    ('admin', '$2b$08$QzjWMoWhJvXEAuQiVlzllOdysTgwfMdGoXMzoESKPtOWoIkU.jCoe', 'Super Admin', TRUE),
+    ('cashier', '$2b$08$15JmBd5K2RAW0XU1Jd2JRuKRG.LAg7Ic70YYDrxriENcOh4ji241.', 'Cashier', TRUE)
 ON CONFLICT (username) DO NOTHING;
 
 -- ========================================
