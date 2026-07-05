@@ -36,7 +36,7 @@ import { DailyChecksModal } from './domains/intelligence/DailyChecksModal';
 import { Toaster, toast } from 'sonner';
 import { parseISO, startOfDay, isBefore, isAfter, addDays } from 'date-fns';
 import {
-  Search, LogOut, Calculator, ShoppingCart, RotateCcw,
+  Search, LogOut, Calculator, ShoppingCart, RotateCcw, Home,
   Package, Calculator as CalcIcon, Users, FileBarChart, ScrollText, Database, Settings, Truck, UserCog,
   Pause, Play, Trash2, X, Hash, Tag, Receipt as ReceiptIcon, Shield
 } from 'lucide-react';
@@ -115,7 +115,7 @@ function PosDashboard() {
   const { medicines, fetchMedicines } = useInventoryStore();
   const { fetchSummary } = useAccountingStore();
   const { username } = useAuthStore();
-  const { pharmacyName, maxDiscount } = useSettingsStore();
+  const { pharmacyName } = useSettingsStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [invoiceData, setInvoiceData] = useState<{ items: any[], total: number, invoiceNumber: string } | null>(null);
   const [suspendedInvs, setSuspendedInvs] = useState<any[]>([]);
@@ -298,17 +298,57 @@ function PosDashboard() {
     setKeypadTarget(null);
   };
 
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [discountLimit, setDiscountLimit] = useState<any>(null);
+  const [showAdminDiscount, setShowAdminDiscount] = useState(false);
+  const [adminDiscountPass, setAdminDiscountPass] = useState('');
+  const [pendingDiscount, setPendingDiscount] = useState(0);
+
+  // تحميل حد الخصم عند الدخول
+  useEffect(() => {
+    invoke<any>('get_discount_limit_db', { userRole: username || 'cashier' })
+      .then(setDiscountLimit).catch(() => {});
+  }, [username]);
+
   const handleDiscountChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value) || 0;
-    if (val > maxDiscount) {
-      const adminPass = prompt(`تجاوزت الحد الأقصى (${maxDiscount}%). أدخل كلمة مرور المدير:`);
-      if (adminPass) {
-        const isValid = await invoke<boolean>('verify_admin_password_db', { password: adminPass });
-        if (isValid) setDiscountPercentage(val);
-        else { toast.error("كلمة المرور خاطئة. تم رفض الخصم."); setDiscountPercentage(0);
-        }
-      } else setDiscountPercentage(0);
-    } else setDiscountPercentage(val);
+    setDiscountAmount(val);
+    setDiscountPercentage(0); // صفر النسبة القديمة، نستخدم المبلغ
+
+    if (val > 0 && discountLimit) {
+      const remaining = discountLimit.remaining || 0;
+      if (val > remaining) {
+        // تجاوز الحد — اطلب كلمة مرور المدير
+        setPendingDiscount(val);
+        setShowAdminDiscount(true);
+        return;
+      }
+      // ضمن الحد — سجل الاستخدام
+      try {
+        await invoke('record_discount_usage_db', { userRole: username || 'cashier', amount: val });
+        invoke<any>('get_discount_limit_db', { userRole: username || 'cashier' }).then(setDiscountLimit);
+      } catch (e) { console.error(e); }
+    }
+  };
+
+  const handleAdminDiscountConfirm = async () => {
+    try {
+      const ok = await invoke<boolean>('admin_override_discount_db', {
+        password: adminDiscountPass,
+        discountAmount: pendingDiscount,
+        userRole: username || 'cashier',
+      });
+      if (ok) {
+        setDiscountAmount(pendingDiscount);
+        await invoke('record_discount_usage_db', { userRole: username || 'cashier', amount: pendingDiscount });
+        invoke<any>('get_discount_limit_db', { userRole: username || 'cashier' }).then(setDiscountLimit);
+        toast.success('تم تجاوز حد الخصم بإذن المدير');
+        setShowAdminDiscount(false);
+        setAdminDiscountPass('');
+      }
+    } catch (e: any) {
+      toast.error('فشل: ' + e);
+    }
   };
 
   const handleCheckout = () => {
@@ -602,20 +642,26 @@ function PosDashboard() {
             <span className="text-sm font-bold text-slate-700 tabular">{calculateSubtotal().toFixed(2)} د.ع</span>
           </div>
           <div className="flex justify-between items-center mb-4">
-            <label className="text-sm text-slate-500">الخصم (الحد الأقصى {maxDiscount}%)</label>
-            <input 
-              type="number" 
-              min="0" 
-              max="100" 
-              value={discountPercentage || ''} 
-              onChange={handleDiscountChange} 
-              className="w-24 px-3 py-1.5 text-sm text-left border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 tabular" 
-              placeholder="0%" 
+            <div>
+              <label className="text-sm text-slate-500">الخصم (د.ع)</label>
+              {discountLimit && (
+                <p className="text-[10px] text-slate-400 tabular">
+                  المتبقي اليوم: {discountLimit.remaining?.toFixed(0) || 0} د.ع
+                </p>
+              )}
+            </div>
+            <input
+              type="number"
+              min="0"
+              value={discountAmount || ''}
+              onChange={handleDiscountChange}
+              className="w-28 px-3 py-1.5 text-sm text-left border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 tabular"
+              placeholder="0"
             />
           </div>
           <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-200">
             <span className="text-sm text-slate-600 font-semibold">الإجمالي المستحق</span>
-            <span className="text-3xl font-bold text-brand-700 tabular">{calculateTotal().toFixed(2)} <span className="text-sm font-normal text-slate-400">د.ع</span></span>
+            <span className="text-3xl font-bold text-brand-700 tabular">{Math.max(0, calculateTotal() - discountAmount).toFixed(2)} <span className="text-sm font-normal text-slate-400">د.ع</span></span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button 
@@ -731,6 +777,28 @@ function PosDashboard() {
         />
       )}
       {invoiceData && <Receipt invoiceNumber={invoiceData.invoiceNumber} items={invoiceData.items} total={invoiceData.total} onClose={() => setInvoiceData(null)} />}
+
+      {/* نافذة تجاوز حد الخصم */}
+      {showAdminDiscount && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl w-80">
+            <h3 className="text-base font-bold text-slate-800 mb-2">تجاوز حد الخصم</h3>
+            <p className="text-xs text-slate-500 mb-4">الخصم المطلوب: {pendingDiscount} د.ع يتجاوز الحد المتبقي. أدخل كلمة مرور المدير.</p>
+            <input
+              type="password"
+              value={adminDiscountPass}
+              onChange={e => setAdminDiscountPass(e.target.value)}
+              className="input-lg text-center mb-4"
+              placeholder="••••••••"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button onClick={handleAdminDiscountConfirm} className="btn-primary flex-1 py-2.5">تأكيد</button>
+              <button onClick={() => { setShowAdminDiscount(false); setDiscountAmount(0); setAdminDiscountPass(''); }} className="btn-ghost border border-slate-200 flex-1 py-2.5">إلغاء</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -831,7 +899,7 @@ function App() {
         <div className="flex items-center gap-3">
           {activeTab !== 'dashboard' && (
             <button onClick={() => setActiveTab('dashboard')} className="btn-ghost text-white hover:bg-white/10 px-3 py-2">
-              <LayoutDashboard className="w-5 h-5" />
+              <Home className="w-5 h-5" />
               الرئيسية
             </button>
           )}
