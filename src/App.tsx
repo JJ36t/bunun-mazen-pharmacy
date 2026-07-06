@@ -260,6 +260,20 @@ function PosDashboard() {
   };
   
   const handleAddToCart = async (med: any) => {
+    if (!med || !med.id) return;
+
+    // لو الدواء موجود في السلة، زيد الكمية فقط
+    const existingItem = cart.find((item: any) => item.id === med.id);
+    if (existingItem) {
+      const medData = medicines.find((m: any) => m.id === med.id);
+      if (medData && existingItem.quantity < medData.quantity) {
+        addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
+      } else {
+        toast.error("الكمية المتوفرة لا تكفي.");
+      }
+      return;
+    }
+
     if (med.quantity <= 0) {
       if (med.scientificName) {
         const substitutes = medicines.filter((m:any) => !m.isDeleted && m.scientificName === med.scientificName && m.quantity > 0 && m.id !== med.id);
@@ -269,28 +283,32 @@ function PosDashboard() {
       return;
     }
 
-    const expiryDateStr = med.expiryDate ? String(med.expiryDate).split('T')[0] : null;
-    if (!expiryDateStr) return;
+    // فحص تاريخ الانتهاء بشكل آمن
+    if (med.expiryDate) {
+      try {
+        const expiryDateStr = String(med.expiryDate).split('T')[0];
+        const expDate = parseISO(expiryDateStr);
+        const today = startOfDay(new Date());
 
-    const expDate = parseISO(expiryDateStr);
-    const today = startOfDay(new Date());
+        if (isBefore(expDate, today)) {
+          toast.error(`تنبيه: (${med.nameAr}) منتهي الصلاحية!`);
+          return;
+        }
 
-    if (isBefore(expDate, today)) {
-      toast.error(`تنبيه: (${med.nameAr}) منتهي الصلاحية!`);
-      return;
+        const ninetyDaysLater = addDays(today, 90);
+        if (isAfter(expDate, today) && isBefore(expDate, ninetyDaysLater)) {
+          toast.warning(`تنبيه: (${med.nameAr}) على وشك الانتهاء.`);
+        }
+      } catch (e) {
+        // تجاهل خطأ parseISO — أكمل الإضافة
+      }
     }
 
-    const ninetyDaysLater = addDays(today, 90);
-
-    if (isAfter(expDate, today) && isBefore(expDate, ninetyDaysLater)) {
-      toast.warning(`تنبيه: (${med.nameAr}) على وشك الانتهاء.`);
-    }
-
-    // ===== فحص التفاعلات الدوائية عند الإضافة للسلة =====
+    // فحص التفاعلات الدوائية (فقط لو السلة فيها دواءين أو أكثر)
     const newCartItems = [...cart, { id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price }];
     const activeIngredients = newCartItems
       .map(item => {
-        const m = medicines.find((med: any) => med.id === item.id);
+        const m = medicines.find((mm: any) => mm.id === item.id);
         return m?.scientificName || '';
       })
       .filter(name => name && name.trim().length > 0);
@@ -301,10 +319,8 @@ function PosDashboard() {
           drugNamesJson: JSON.stringify(activeIngredients),
         });
         if (interactions.length > 0) {
-          // أضف الدواء للسلة أولاً
           addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
           setSearchTerm('');
-          // ثم اعرض نافذة التفاعلات
           setShowInteractionCheck(true);
           return;
         }
