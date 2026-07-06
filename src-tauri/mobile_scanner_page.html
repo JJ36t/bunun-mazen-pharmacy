@@ -60,7 +60,7 @@ const params = new URLSearchParams(window.location.search);
 const token = params.get('token') || '';
 const serverHost = window.location.hostname;
 const serverPort = parseInt(window.location.port) || 8080;
-const wsUrl = `wss://${serverHost}:${serverPort + 1}`;
+const wsUrl = `ws://${serverHost}:${serverPort + 1}`;
 
 function connectWS() {
   document.getElementById('connStatus').textContent = 'جاري الاتصال...';

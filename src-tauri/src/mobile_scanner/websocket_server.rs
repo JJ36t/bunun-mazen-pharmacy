@@ -1,4 +1,4 @@
-// WebSocket + HTTPS Server for Mobile Scanner
+// WebSocket + HTTP Server for Mobile Scanner
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 use futures_util::{StreamExt, SinkExt};
@@ -7,65 +7,36 @@ use crate::mobile_scanner::barcode_parser;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio::io::AsyncWriteExt;
-use tokio_rustls::TlsAcceptor;
-use std::sync::Arc;
 
 pub async fn run_server(port: usize, pool: PgPool) -> Result<(), String> {
-    // توليد شهادة self-signed
-    let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string(), "bunun-mazen-pharmacy".to_string()])
-        .map_err(|e| format!("Certificate generation error: {}", e))?;
-    let cert_der = cert.cert.der().clone();
-    let key_der = cert.key_pair.serialize_der();
-    let rustls_cert = rustls::pki_types::CertificateDer::from(cert_der);
-    let rustls_key = rustls::pki_types::PrivateKeyDer::try_from(key_der)
-        .map_err(|e| format!("Key conversion error: {}", e))?;
-
-    let mut server_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![rustls_cert], rustls_key)
-        .map_err(|e| format!("TLS config error: {}", e))?;
-    server_config.alpn_protocols = vec![b"http/1.1".to_vec(), b"h2".to_vec()];
-    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
-
     let http_addr = format!("0.0.0.0:{}", port);
     let http_listener = TcpListener::bind(&http_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] HTTPS server listening on https://0.0.0.0:{}", port);
+    println!("[MobileScanner] HTTP server listening on http://0.0.0.0:{}", port);
 
     let ws_port = port + 1;
     let ws_addr = format!("0.0.0.0:{}", ws_port);
     let ws_listener = TcpListener::bind(&ws_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] WSS server listening on wss://0.0.0.0:{}", ws_port);
+    println!("[MobileScanner] WebSocket server listening on ws://0.0.0.0:{}", ws_port);
 
-    let tls_acceptor_http = tls_acceptor.clone();
-    let tls_acceptor_ws = tls_acceptor.clone();
-
-    // HTTPS server
+    // HTTP server
     tokio::spawn(async move {
         loop {
             if let Ok((stream, _)) = http_listener.accept().await {
-                let acceptor = tls_acceptor_http.clone();
                 tokio::spawn(async move {
-                    match acceptor.accept(stream).await {
-                        Ok(tls_stream) => { let _ = handle_https_request(tls_stream).await; }
-                        Err(_) => {}
-                    }
+                    let _ = handle_http_request(stream).await;
                 });
             }
         }
     });
 
-    // WSS server
+    // WebSocket server
     let pool_clone = pool.clone();
     tokio::spawn(async move {
         loop {
             if let Ok((stream, addr)) = ws_listener.accept().await {
-                let acceptor = tls_acceptor_ws.clone();
                 let p = pool_clone.clone();
                 tokio::spawn(async move {
-                    match acceptor.accept(stream).await {
-                        Ok(tls_stream) => { let _ = handle_wss_connection(tls_stream, addr, p).await; }
-                        Err(_) => {}
-                    }
+                    let _ = handle_ws_connection(stream, addr, p).await;
                 });
             }
         }
@@ -76,10 +47,9 @@ pub async fn run_server(port: usize, pool: PgPool) -> Result<(), String> {
     }
 }
 
-async fn handle_https_request(stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>) -> Result<(), String> {
+async fn handle_http_request(mut stream: tokio::net::TcpStream) -> Result<(), String> {
     use tokio::io::AsyncReadExt;
     let mut buf = [0u8; 4096];
-    let mut stream = stream;
     let _ = stream.read(&mut buf).await;
 
     let html = include_str!("../../mobile_scanner_page.html");
@@ -92,8 +62,8 @@ async fn handle_https_request(stream: tokio_rustls::server::TlsStream<tokio::net
     Ok(())
 }
 
-async fn handle_wss_connection(
-    stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+async fn handle_ws_connection(
+    stream: tokio::net::TcpStream,
     addr: SocketAddr,
     pool: PgPool,
 ) -> Result<(), String> {
