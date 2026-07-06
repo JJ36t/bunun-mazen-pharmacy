@@ -260,75 +260,83 @@ function PosDashboard() {
   };
   
   const handleAddToCart = async (med: any) => {
-    if (!med || !med.id) return;
+    try {
+      if (!med || !med.id) return;
 
-    // لو الدواء موجود في السلة، زيد الكمية فقط
-    const existingItem = cart.find((item: any) => item.id === med.id);
-    if (existingItem) {
-      const medData = medicines.find((m: any) => m.id === med.id);
-      if (medData && existingItem.quantity < medData.quantity) {
-        addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
-      } else {
-        toast.error("الكمية المتوفرة لا تكفي.");
+      const medPrice = Number(med.price) || 0;
+      const medName = med.nameAr || med.name || 'دواء غير معروف';
+      const medQty = Number(med.quantity) || 0;
+
+      // لو الدواء موجود في السلة، زيد الكمية فقط
+      const existingItem = cart.find((item: any) => item.id === med.id);
+      if (existingItem) {
+        const medData = medicines.find((m: any) => m.id === med.id);
+        if (medData && existingItem.quantity < medData.quantity) {
+          addToCart({ id: med.id, nameAr: medName, quantity: 1, price: medPrice });
+        } else {
+          toast.error("الكمية المتوفرة لا تكفي.");
+        }
+        return;
       }
-      return;
-    }
 
-    if (med.quantity <= 0) {
-      if (med.scientificName) {
-        const substitutes = medicines.filter((m:any) => !m.isDeleted && m.scientificName === med.scientificName && m.quantity > 0 && m.id !== med.id);
-        if (substitutes.length > 0) toast.info(`نفد الدواء. البدائل: ${substitutes.map((s:any) => s.nameAr).join('، ')}`);
-        else toast.error("نفد هذا الدواء ولا يوجد بدائل متوفرة.");
-      } else toast.error("نفد هذا الدواء.");
-      return;
-    }
-
-    // فحص تاريخ الانتهاء بشكل آمن
-    if (med.expiryDate) {
-      try {
-        const expiryDateStr = String(med.expiryDate).split('T')[0];
-        const expDate = parseISO(expiryDateStr);
-        const today = startOfDay(new Date());
-
-        if (isBefore(expDate, today)) {
-          toast.error(`تنبيه: (${med.nameAr}) منتهي الصلاحية!`);
-          return;
-        }
-
-        const ninetyDaysLater = addDays(today, 90);
-        if (isAfter(expDate, today) && isBefore(expDate, ninetyDaysLater)) {
-          toast.warning(`تنبيه: (${med.nameAr}) على وشك الانتهاء.`);
-        }
-      } catch (e) {
-        // تجاهل خطأ parseISO — أكمل الإضافة
+      if (medQty <= 0) {
+        if (med.scientificName) {
+          const substitutes = medicines.filter((m:any) => !m.isDeleted && m.scientificName === med.scientificName && m.quantity > 0 && m.id !== med.id);
+          if (substitutes.length > 0) toast.info(`نفد الدواء. البدائل: ${substitutes.map((s:any) => s.nameAr).join('، ')}`);
+          else toast.error("نفد هذا الدواء ولا يوجد بدائل متوفرة.");
+        } else toast.error("نفد هذا الدواء.");
+        return;
       }
-    }
 
-    // فحص التفاعلات الدوائية (فقط لو السلة فيها دواءين أو أكثر)
-    const newCartItems = [...cart, { id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price }];
-    const activeIngredients = newCartItems
-      .map(item => {
-        const m = medicines.find((mm: any) => mm.id === item.id);
-        return m?.scientificName || '';
-      })
-      .filter(name => name && name.trim().length > 0);
+      // فحص تاريخ الانتهاء بشكل آمن
+      if (med.expiryDate) {
+        try {
+          const expiryDateStr = String(med.expiryDate).split('T')[0];
+          const expDate = parseISO(expiryDateStr);
+          const today = startOfDay(new Date());
 
-    if (activeIngredients.length >= 2) {
-      try {
-        const interactions = await invoke<any[]>('check_drug_interactions_db', {
-          drugNamesJson: JSON.stringify(activeIngredients),
-        });
-        if (interactions.length > 0) {
-          addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
-          setSearchTerm('');
-          setShowInteractionCheck(true);
-          return;
+          if (isBefore(expDate, today)) {
+            toast.error(`تنبيه: (${medName}) منتهي الصلاحية!`);
+            return;
+          }
+
+          const ninetyDaysLater = addDays(today, 90);
+          if (isAfter(expDate, today) && isBefore(expDate, ninetyDaysLater)) {
+            toast.warning(`تنبيه: (${medName}) على وشك الانتهاء.`);
+          }
+        } catch (e) {
+          // تجاهل خطأ parseISO — أكمل الإضافة
         }
-      } catch (e) { console.error('Interaction check failed:', e); }
-    }
+      }
 
-    addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
-    setSearchTerm('');
+      // فحص التفاعلات الدوائية
+      const newCartItems = [...cart, { id: med.id, nameAr: medName, quantity: 1, price: medPrice }];
+      const activeIngredients = newCartItems
+        .map(item => {
+          const m = medicines.find((mm: any) => mm.id === item.id);
+          return m?.scientificName || '';
+        })
+        .filter(name => name && name.trim().length > 0);
+
+      if (activeIngredients.length >= 2) {
+        try {
+          const interactions = await invoke<any[]>('check_drug_interactions_db', {
+            drugNamesJson: JSON.stringify(activeIngredients),
+          });
+          if (interactions.length > 0) {
+            addToCart({ id: med.id, nameAr: medName, quantity: 1, price: medPrice });
+            setSearchTerm('');
+            setShowInteractionCheck(true);
+            return;
+          }
+        } catch (e) { console.error('Interaction check failed:', e); }
+      }
+
+      addToCart({ id: med.id, nameAr: medName, quantity: 1, price: medPrice });
+      setSearchTerm('');
+    } catch (e) {
+      console.error('handleAddToCart error:', e);
+    }
   };
 
   const handleIncreaseCartQty = (item: any) => {
@@ -627,7 +635,7 @@ function PosDashboard() {
                       </div>
                     </div>
                   </div>
-                  <span className="font-bold text-brand-700 text-lg tabular">{med.price.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></span>
+                  <span className="font-bold text-brand-700 text-lg tabular">{Number(med.price || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></span>
                 </div>
               ))}
             </div>
@@ -695,10 +703,10 @@ function PosDashboard() {
                         onClick={() => handleIncreaseCartQty(item)} 
                         className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 text-sm font-bold active:scale-95"
                       >+</button>
-                      <span className="text-xs text-slate-400 mr-2 tabular">× {item.price.toFixed(2)}</span>
+                      <span className="text-xs text-slate-400 mr-2 tabular">× {Number(item.price || 0).toFixed(2)}</span>
                     </div>
                   </div>
-                  <span className="text-sm font-bold text-slate-800 tabular">{(item.price * item.quantity).toFixed(2)}</span>
+                  <span className="text-sm font-bold text-slate-800 tabular">{(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</span>
                 </div>
               ))}
             </div>
