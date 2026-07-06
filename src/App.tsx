@@ -141,6 +141,38 @@ function PosDashboard() {
     loadDraft();
   }, []);
 
+  // الاستماع لمسح الموبايل اللاسلكي
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    const setupListener = async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        unlisten = await listen<any>('mobile-scan-received', (event) => {
+          const result = event.payload;
+          if (result && result.status === 'found' && result.medicineId) {
+            const med = medicines.find((m: any) => m.id === result.medicineId);
+            if (med) {
+              handleAddToCart(med);
+              toast.success(`📱 مسح لاسلكي: ${result.nameAr} — أُضيف للسلة`);
+            }
+          } else if (result && result.status === 'not_found') {
+            toast.warning(`📱 مسح لاسلكي: باركود غير معروف (${result.barcode})`);
+            setSmartLookupBarcode(result.barcode);
+          }
+        });
+      } catch (e) {
+        console.error('Failed to listen for mobile scans:', e);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [medicines]);
+
   // حفظ السلة عند كل تغيير
   useEffect(() => {
     if (cart.length > 0) {
