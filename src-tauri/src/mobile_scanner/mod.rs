@@ -59,8 +59,8 @@ pub async fn start_scanner_server(
         "status": "running",
         "port": port,
         "ip": local_ip,
-        "wsUrl": format!("ws://{}:{}", local_ip, port + 1),
-        "mobileUrl": format!("http://{}:{}", local_ip, port),
+        "wsUrl": format!("wss://{}:{}", local_ip, port + 1),
+        "mobileUrl": format!("https://{}:{}", local_ip, port),
     }))
 }
 
@@ -83,8 +83,8 @@ pub async fn get_scanner_server_status(
     Ok(serde_json::json!({
         "port": port,
         "ip": local_ip,
-        "wsUrl": format!("ws://{}:{}", local_ip, port + 1),
-        "mobileUrl": format!("http://{}:{}", local_ip, port),
+        "wsUrl": format!("wss://{}:{}", local_ip, port + 1),
+        "mobileUrl": format!("https://{}:{}", local_ip, port),
     }))
 }
 
@@ -107,7 +107,7 @@ pub async fn generate_pairing_qr(
         .await
         .map_err(|e| e.to_string())?;
 
-    let mobile_url = format!("http://{}:{}", local_ip, port);
+    let mobile_url = format!("https://{}:{}", local_ip, port);
 
     // توليد QR code كـ SVG string
     let qr = qrcode::QrCode::new(&mobile_url).map_err(|e| e.to_string())?;

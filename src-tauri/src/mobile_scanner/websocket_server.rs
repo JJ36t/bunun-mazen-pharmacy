@@ -1,4 +1,4 @@
-// WebSocket Server for Mobile Scanner
+// WebSocket + HTTPS Server for Mobile Scanner
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 use futures_util::{StreamExt, SinkExt};
@@ -6,60 +6,100 @@ use sqlx::{PgPool, Row};
 use crate::mobile_scanner::barcode_parser;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
+use tokio_rustls::TlsAcceptor;
+use std::sync::Arc;
 
 pub async fn run_server(port: usize, pool: PgPool) -> Result<(), String> {
-    // HTTP server على port المحدد
+    // توليد شهادة self-signed
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string(), "bunun-mazen-pharmacy".to_string()])
+        .map_err(|e| format!("Certificate generation error: {}", e))?;
+    let cert_der = cert.cert.der().clone();
+    let key_der = cert.key_pair.serialize_der();
+    let rustls_cert = rustls::pki_types::CertificateDer::from(cert_der);
+    let rustls_key = rustls::pki_types::PrivateKeyDer::try_from(key_der)
+        .map_err(|e| format!("Key conversion error: {}", e))?;
+
+    let mut server_config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![rustls_cert], rustls_key)
+        .map_err(|e| format!("TLS config error: {}", e))?;
+    server_config.alpn_protocols = vec![b"http/1.1".to_vec(), b"h2".to_vec()];
+    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
+
     let http_addr = format!("0.0.0.0:{}", port);
     let http_listener = TcpListener::bind(&http_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] HTTP server listening on http://0.0.0.0:{}", port);
+    println!("[MobileScanner] HTTPS server listening on https://0.0.0.0:{}", port);
 
-    // WebSocket server على port + 1
     let ws_port = port + 1;
     let ws_addr = format!("0.0.0.0:{}", ws_port);
     let ws_listener = TcpListener::bind(&ws_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] WebSocket server listening on ws://0.0.0.0:{}", ws_port);
+    println!("[MobileScanner] WSS server listening on wss://0.0.0.0:{}", ws_port);
 
-    // ابدأ HTTP server في background
+    let tls_acceptor_http = tls_acceptor.clone();
+    let tls_acceptor_ws = tls_acceptor.clone();
+
+    // HTTPS server
     tokio::spawn(async move {
         loop {
             if let Ok((stream, _)) = http_listener.accept().await {
+                let acceptor = tls_acceptor_http.clone();
                 tokio::spawn(async move {
-                    let _ = handle_http_request(stream).await;
+                    match acceptor.accept(stream).await {
+                        Ok(tls_stream) => { let _ = handle_https_request(tls_stream).await; }
+                        Err(_) => {}
+                    }
                 });
             }
         }
     });
 
-    // ابدأ WebSocket server في background
+    // WSS server
     let pool_clone = pool.clone();
     tokio::spawn(async move {
         loop {
             if let Ok((stream, addr)) = ws_listener.accept().await {
+                let acceptor = tls_acceptor_ws.clone();
                 let p = pool_clone.clone();
                 tokio::spawn(async move {
-                    let _ = handle_ws_connection(stream, addr, p).await;
+                    match acceptor.accept(stream).await {
+                        Ok(tls_stream) => { let _ = handle_wss_connection(tls_stream, addr, p).await; }
+                        Err(_) => {}
+                    }
                 });
             }
         }
     });
 
-    // ابقى السيرفر يعمل
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
     }
 }
 
-async fn handle_ws_connection(
-    stream: tokio::net::TcpStream,
+async fn handle_https_request(stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>) -> Result<(), String> {
+    use tokio::io::AsyncReadExt;
+    let mut buf = [0u8; 4096];
+    let mut stream = stream;
+    let _ = stream.read(&mut buf).await;
+
+    let html = include_str!("../../mobile_scanner_page.html");
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+        html.len(), html
+    );
+
+    stream.write_all(response.as_bytes()).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn handle_wss_connection(
+    stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
     addr: SocketAddr,
     pool: PgPool,
 ) -> Result<(), String> {
     let mut ws_stream = accept_async(stream).await.map_err(|e| e.to_string())?;
-
     println!("[MobileScanner] Device connected: {}", addr);
 
-    // أرسل رسالة ترحيب
     let welcome = serde_json::json!({
         "type": "connected",
         "message": "مرحباً بك في نظام المسح اللاسلكي",
@@ -72,20 +112,12 @@ async fn handle_ws_connection(
             Ok(Message::Text(text)) => {
                 if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
                     let msg_type = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
                     match msg_type {
                         "scan" => {
                             let barcode = data.get("barcode").and_then(|b| b.as_str()).unwrap_or("");
                             let device_name = data.get("deviceName").and_then(|d| d.as_str()).unwrap_or("Unknown");
-
-                            // فحص الباركود
                             let result = process_scan(barcode, &pool, device_name, &addr.to_string()).await;
-
-                            let response = serde_json::json!({
-                                "type": "scan_result",
-                                "barcode": barcode,
-                                "result": result,
-                            });
+                            let response = serde_json::json!({ "type": "scan_result", "barcode": barcode, "result": result });
                             ws_stream.send(Message::Text(response.to_string())).await.map_err(|e| e.to_string())?;
                         }
                         "ping" => {
@@ -95,14 +127,12 @@ async fn handle_ws_connection(
                             let token = data.get("token").and_then(|t| t.as_str()).unwrap_or("");
                             let device_name = data.get("deviceName").and_then(|d| d.as_str()).unwrap_or("Unknown");
                             let valid = validate_pairing_token(token, &pool).await;
-
                             let response = serde_json::json!({
                                 "type": "pair_result",
                                 "success": valid,
                                 "message": if valid { "تم الإقتران بنجاح" } else { "رمز الإقتران غير صالح" },
                             });
                             ws_stream.send(Message::Text(response.to_string())).await.map_err(|e| e.to_string())?;
-
                             if valid {
                                 sqlx::query("UPDATE mobile_pairing_sessions SET is_active = TRUE, device_name = $1, device_ip = $2, last_seen = NOW() WHERE pairing_token = $3")
                                     .bind(device_name).bind(addr.to_string()).bind(token)
@@ -118,7 +148,6 @@ async fn handle_ws_connection(
             _ => {}
         }
     }
-
     println!("[MobileScanner] Device disconnected: {}", addr);
     Ok(())
 }
@@ -127,7 +156,6 @@ async fn process_scan(barcode: &str, pool: &PgPool, device_name: &str, device_ip
     let normalized = barcode_parser::normalize_barcode(barcode);
     let barcode_type = barcode_parser::detect_barcode_type(barcode);
 
-    // 1. ابحث في medicine_barcodes
     let med_row = sqlx::query(
         "SELECT m.id, m.name_ar, m.price, m.quantity, m.barcode
          FROM medicine_barcodes mb
@@ -146,7 +174,6 @@ async fn process_scan(barcode: &str, pool: &PgPool, device_name: &str, device_ip
             let price: rust_decimal::Decimal = r.get(2);
             let qty: i32 = r.get(3);
 
-            // سجل المسح
             let _ = sqlx::query("INSERT INTO scan_audit_logs (device_name, device_ip, barcode_scanned, barcode_type, normalized_barcode, scan_result, matched_medicine_id, matched_medicine_name) VALUES ($1, $2, $3, $4, $5, 'success', $6, $7)")
                 .bind(device_name).bind(device_ip).bind(barcode).bind(&barcode_type).bind(&normalized).bind(med_id).bind(&name)
                 .execute(pool).await;
@@ -161,7 +188,6 @@ async fn process_scan(barcode: &str, pool: &PgPool, device_name: &str, device_ip
             })
         }
         _ => {
-            // 2. ابحث في global_medicines
             let global_row = sqlx::query(
                 "SELECT barcode, name_fr, active_ingredient, brand_name, dosage_form, dosage_form_ar, strength
                  FROM global_medicines WHERE barcode = $1 LIMIT 1"
@@ -209,37 +235,4 @@ async fn validate_pairing_token(token: &str, pool: &PgPool) -> bool {
     )
     .bind(token).fetch_optional(pool).await.unwrap_or(None);
     result.unwrap_or(false)
-}
-
-async fn run_http_server(port: usize, _pool: PgPool) -> Result<(), String> {
-    // HTTP server بسيط لخدمة صفحة الموبايل
-    // سيتم خدمة صفحة HTML ثابتة تحتوي على كود المسح
-    let addr = format!("0.0.0.0:{}", port);
-    let listener = TcpListener::bind(&addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] HTTP server listening on http://0.0.0.0:{}", port);
-
-    while let Ok((stream, _addr)) = listener.accept().await {
-        tokio::spawn(async move {
-            let _ = handle_http_request(stream).await;
-        });
-    }
-    Ok(())
-}
-
-async fn handle_http_request(stream: tokio::net::TcpStream) -> Result<(), String> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let mut buf = [0u8; 4096];
-    let mut stream = stream;
-    let _ = stream.read(&mut buf).await;
-    let request = String::from_utf8_lossy(&buf);
-
-    // خدمة صفحة الموبايل
-    let html = include_str!("../../mobile_scanner_page.html");
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\n\r\n{}",
-        html.len(), html
-    );
-
-    stream.write_all(response.as_bytes()).await.map_err(|e| e.to_string())?;
-    Ok(())
 }

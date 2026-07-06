@@ -36,11 +36,15 @@ tauri-plugin-updater = "2"
 # reqwest - للبحث اللحظي في OpenFoodFacts و APIs خارجية
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 # tokio-tungstenite - WebSocket server للموبايل سكانر
-tokio-tungstenite = "0.24"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
 # qrcode - توليد QR code للإقتران
 qrcode = "0.14"
 # futures-util - for WebSocket stream splitting
 futures-util = "0.3"
+# rcgen - لتوليد شهادات SSL self-signed
+rcgen = "0.13"
+# tokio-rustls - لخادم HTTPS
+tokio-rustls = "0.26"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
