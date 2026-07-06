@@ -10,8 +10,9 @@ body { background:#0f172a; color:#fff; min-height:100vh; display:flex; flex-dire
 .header { background:#1e3a8a; padding:16px 20px; width:100%; text-align:center; position:sticky; top:0; z-index:100; }
 .header h1 { font-size:18px; font-weight:700; }
 .header .status { font-size:12px; margin-top:4px; opacity:0.8; }
-#reader { width:100%; max-width:500px; margin:20px auto; border-radius:16px; overflow:hidden; min-height:200px; }
+#reader { width:100%; max-width:500px; margin:20px auto; border-radius:16px; overflow:hidden; min-height:200px; position:relative; }
 #reader video { width:100%; border-radius:12px; }
+#reader canvas { display:none; }
 #result { padding:16px; width:100%; max-width:500px; }
 .card { background:#1e293b; border-radius:12px; padding:16px; margin-bottom:12px; }
 .card.found { border:2px solid #10b981; }
@@ -27,6 +28,7 @@ body { background:#0f172a; color:#fff; min-height:100vh; display:flex; flex-dire
 .scan-count { font-size:12px; color:#64748b; text-align:center; padding:8px; }
 .connected { color:#10b981; }
 .disconnected { color:#ef4444; }
+.scan-overlay { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:80%; height:40%; border:3px solid #10b981; border-radius:12px; pointer-events:none; box-shadow:0 0 0 1000px rgba(0,0,0,0.3); }
 </style>
 </head>
 <body>
@@ -34,7 +36,9 @@ body { background:#0f172a; color:#fff; min-height:100vh; display:flex; flex-dire
 <h1>💊 صيدلية بنين مازن</h1>
 <div class="status" id="connStatus">جاري الاتصال...</div>
 </div>
-<div id="reader"></div>
+<div id="reader">
+  <div class="scan-overlay"></div>
+</div>
 <div class="controls">
 <button class="btn" id="torchBtn" onclick="toggleTorch()">🔦 الفلاش</button>
 <button class="btn" id="modeBtn" onclick="toggleMode()">⏸ إيقاف</button>
@@ -42,7 +46,7 @@ body { background:#0f172a; color:#fff; min-height:100vh; display:flex; flex-dire
 <div class="scan-count" id="scanCount">0 عملية مسح</div>
 <div id="result"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
 <script>
 let ws = null;
 let scanning = true;
@@ -50,10 +54,6 @@ let scanCount = 0;
 let lastBarcode = '';
 let lastScanTime = 0;
 let videoStream = null;
-let videoEl = null;
-let canvasEl = null;
-let canvasCtx = null;
-let scanInterval = null;
 let torchOn = false;
 
 const params = new URLSearchParams(window.location.search);
@@ -92,60 +92,64 @@ function connectWS() {
   };
 }
 
-async function startScanner() {
-  try {
-    videoStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } }
-    });
-
-    videoEl = document.createElement('video');
-    videoEl.style.width = '100%';
-    videoEl.style.borderRadius = '12px';
-    videoEl.setAttribute('playsinline', 'true');
-    videoEl.setAttribute('muted', 'true');
-    videoEl.srcObject = videoStream;
-    videoEl.play();
-
-    document.getElementById('reader').innerHTML = '';
-    document.getElementById('reader').appendChild(videoEl);
-
-    canvasEl = document.createElement('canvas');
-    canvasCtx = canvasEl.getContext('2d', { willReadFrequently: true });
-
-    scanInterval = setInterval(() => {
-      if (!scanning || !videoEl.videoWidth) return;
-
-      canvasEl.width = videoEl.videoWidth;
-      canvasEl.height = videoEl.videoHeight;
-      canvasCtx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
-
-      const imageData = canvasCtx.getImageData(0, 0, canvasEl.width, canvasEl.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-      if (code) {
-        const decodedText = code.data;
-        const now = Date.now();
-        if (decodedText === lastBarcode && (now - lastScanTime) < 1500) return;
-        lastBarcode = decodedText;
-        lastScanTime = now;
-
-        scanCount++;
-        document.getElementById('scanCount').textContent = scanCount + ' عملية مسح';
-
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
-        }
+function startScanner() {
+  Quagga.init({
+    inputStream: {
+      name: "Live",
+      type: "LiveStream",
+      target: document.querySelector('#reader'),
+      constraints: {
+        facingMode: "environment"
       }
-    }, 200);
+    },
+    decoder: {
+      readers: ["ean_reader", "ean_8_reader", "upc_reader", "upc_e_reader", "code_128_reader", "code_39_reader"]
+    },
+    locate: true
+  }, function(err) {
+    if (err) {
+      // جرّب بدون facingMode
+      Quagga.init({
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: document.querySelector('#reader'),
+          constraints: {}
+        },
+        decoder: {
+          readers: ["ean_reader", "ean_8_reader", "upc_reader", "upc_e_reader", "code_128_reader", "code_39_reader"]
+        },
+        locate: true
+      }, function(err2) {
+        if (err2) {
+          document.querySelector('#reader').innerHTML =
+            '<div style="padding:20px;text-align:center;color:#ef4444;">فشل تشغيل الكاميرا: ' + err2 + '</div>';
+        } else {
+          Quagga.start();
+          videoStream = Quagga.CameraAccess.getActiveStream();
+        }
+      });
+    } else {
+      Quagga.start();
+      videoStream = Quagga.CameraAccess.getActiveStream();
+    }
+  });
 
-  } catch (err) {
-    document.getElementById('reader').innerHTML =
-      '<div style="padding:20px;text-align:center;color:#ef4444;">' +
-      'فشل تشغيل الكاميرا: ' + (err.message || err) + '<br><br>' +
-      'تأكد من السماح بالكاميرا<br>' +
-      'افتح إعدادات المتصفح ← الخصوصية ← الكاميرا ← اسمح لهذا الموقع' +
-      '</div>';
-  }
+  Quagga.onDetected(function(result) {
+    if (!scanning) return;
+    const decodedText = result.codeResult.code;
+    const now = Date.now();
+    if (decodedText === lastBarcode && (now - lastScanTime) < 2000) return;
+    lastBarcode = decodedText;
+    lastScanTime = now;
+
+    scanCount++;
+    document.getElementById('scanCount').textContent = scanCount + ' عملية مسح';
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
+    }
+  });
 }
 
 function displayResult(result) {
