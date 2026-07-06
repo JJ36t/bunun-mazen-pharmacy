@@ -35,21 +35,17 @@ pub struct ConnectedDevice {
 #[tauri::command]
 pub async fn start_scanner_server(
     state: tauri::State<'_, PgPool>,
+    app_handle: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
     let port: i64 = sqlx::query_scalar("SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'mobile_scanner_port'")
         .fetch_one(state.inner()).await.unwrap_or(8080);
 
-    let ws_state = ScannerState {
-        pool: state.inner().clone(),
-        pairing_token: Arc::new(RwLock::new(None)),
-        connected_devices: Arc::new(RwLock::new(Vec::new())),
-    };
-
     // ابدأ السيرفر في background
     let port_usize = port as usize;
     let pool_clone = state.inner().clone();
+    let app_handle_clone = app_handle.clone();
     tokio::spawn(async move {
-        let _ = websocket_server::run_server(port_usize, pool_clone).await;
+        let _ = websocket_server::run_server(port_usize, pool_clone, app_handle_clone).await;
     });
 
     // احصل على IP المحلي

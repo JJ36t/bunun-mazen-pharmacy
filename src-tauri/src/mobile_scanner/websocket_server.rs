@@ -1,4 +1,5 @@
 // WebSocket + HTTP Server for Mobile Scanner
+use tauri::Emitter;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 use futures_util::{StreamExt, SinkExt};
@@ -8,7 +9,7 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio::io::AsyncWriteExt;
 
-pub async fn run_server(port: usize, pool: PgPool) -> Result<(), String> {
+pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle) -> Result<(), String> {
     let http_addr = format!("0.0.0.0:{}", port);
     let http_listener = TcpListener::bind(&http_addr).await.map_err(|e| e.to_string())?;
     println!("[MobileScanner] HTTP server listening on http://0.0.0.0:{}", port);
@@ -35,8 +36,9 @@ pub async fn run_server(port: usize, pool: PgPool) -> Result<(), String> {
         loop {
             if let Ok((stream, addr)) = ws_listener.accept().await {
                 let p = pool_clone.clone();
+                let h = app_handle.clone();
                 tokio::spawn(async move {
-                    let _ = handle_ws_connection(stream, addr, p).await;
+                    let _ = handle_ws_connection(stream, addr, p, h).await;
                 });
             }
         }
@@ -66,6 +68,7 @@ async fn handle_ws_connection(
     stream: tokio::net::TcpStream,
     addr: SocketAddr,
     pool: PgPool,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let mut ws_stream = accept_async(stream).await.map_err(|e| e.to_string())?;
     println!("[MobileScanner] Device connected: {}", addr);
@@ -87,8 +90,13 @@ async fn handle_ws_connection(
                             let barcode = data.get("barcode").and_then(|b| b.as_str()).unwrap_or("");
                             let device_name = data.get("deviceName").and_then(|d| d.as_str()).unwrap_or("Unknown");
                             let result = process_scan(barcode, &pool, device_name, &addr.to_string()).await;
+
+                            // أرسل النتيجة للموبايل
                             let response = serde_json::json!({ "type": "scan_result", "barcode": barcode, "result": result });
                             ws_stream.send(Message::Text(response.to_string())).await.map_err(|e| e.to_string())?;
+
+                            // أرسل النتيجة للتطبيق المكتبي (POS) عبر Tauri event
+                            let _ = app_handle.emit("mobile-scan-received", &result);
                         }
                         "ping" => {
                             ws_stream.send(Message::Text(serde_json::json!({"type": "pong"}).to_string())).await.map_err(|e| e.to_string())?;
