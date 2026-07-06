@@ -149,16 +149,26 @@ function PosDashboard() {
       try {
         const { listen } = await import('@tauri-apps/api/event');
         unlisten = await listen<any>('mobile-scan-received', (event) => {
-          const result = event.payload;
-          if (result && result.status === 'found' && result.medicineId) {
-            const med = medicines.find((m: any) => m.id === result.medicineId);
-            if (med) {
-              handleAddToCart(med);
-              toast.success(`📱 مسح لاسلكي: ${result.nameAr} — أُضيف للسلة`);
+          try {
+            const result = event.payload;
+            if (!result) return;
+
+            if (result.status === 'found' && result.medicineId) {
+              const med = medicines.find((m: any) => m.id === result.medicineId);
+              if (med) {
+                handleAddToCart(med);
+                toast.success(`📱 ${result.nameAr || med.nameAr} — أُضيف للسلة`);
+              } else {
+                toast.info(`📱 تم العثور على: ${result.nameAr} — افتح POS للإضافة`);
+              }
+            } else if (result.status === 'not_found') {
+              toast.warning(`📱 باركود غير معروف: ${result.barcode}`);
+              if (result.barcode) {
+                setSmartLookupBarcode(result.barcode);
+              }
             }
-          } else if (result && result.status === 'not_found') {
-            toast.warning(`📱 مسح لاسلكي: باركود غير معروف (${result.barcode})`);
-            setSmartLookupBarcode(result.barcode);
+          } catch (e) {
+            console.error('Mobile scan handler error:', e);
           }
         });
       } catch (e) {
