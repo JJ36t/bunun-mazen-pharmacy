@@ -18,33 +18,47 @@ export const usePosStore = create<PosState>((set, get) => ({
   cart: [], discountPercentage: 0,
   
   addToCart: (item) => set((state) => {
-    const existing = state.cart.find(i => i.id === item.id);
+    const safeItem = {
+      id: String(item.id || ''),
+      nameAr: String(item.nameAr || item.name || 'دواء'),
+      quantity: Number(item.quantity) || 1,
+      price: Number(item.price) || 0,
+    };
+    const existing = state.cart.find(i => i.id === safeItem.id);
     if (existing) {
-      return { cart: state.cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity + item.quantity } : i) };
+      return { cart: state.cart.map(i => i.id === safeItem.id ? { ...i, quantity: i.quantity + safeItem.quantity } : i) };
     }
-    return { cart: [...state.cart, item] };
+    return { cart: [...state.cart, safeItem] };
   }),
   
   removeFromCart: (id) => set((state) => ({ cart: state.cart.filter(i => i.id !== id) })),
   
   updateItemQuantity: (id, quantity) => set((state) => ({
-    cart: state.cart.map(i => i.id === id ? { ...i, quantity: Math.max(1, quantity) } : i)
+    cart: state.cart.map(i => i.id === id ? { ...i, quantity: Math.max(1, Number(quantity) || 1) } : i)
   })),
   
-  setDiscountPercentage: (amount) => set({ discountPercentage: Math.max(0, amount) }),
+  setDiscountPercentage: (amount) => set({ discountPercentage: Math.max(0, Number(amount) || 0) }),
   
   clearCart: () => set({ cart: [], discountPercentage: 0 }),
   
-  calculateSubtotal: () => get().cart.reduce((total, item) => total + (item.price * item.quantity), 0),
+  calculateSubtotal: () => {
+    try {
+      return get().cart.reduce((total, item) => total + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
+    } catch { return 0; }
+  },
   
   calculateDiscountAmount: () => {
-    const subtotal = get().calculateSubtotal();
-    return subtotal * (get().discountPercentage / 100);
+    try {
+      const subtotal = get().calculateSubtotal();
+      return subtotal * (Number(get().discountPercentage) || 0 / 100);
+    } catch { return 0; }
   },
   
   calculateTotal: () => {
-    const subtotal = get().calculateSubtotal();
-    const discountAmount = get().calculateDiscountAmount();
-    return Math.max(0, subtotal - discountAmount);
+    try {
+      const subtotal = get().calculateSubtotal();
+      const discountAmount = get().calculateDiscountAmount();
+      return Math.max(0, subtotal - discountAmount);
+    } catch { return 0; }
   }
 }));
