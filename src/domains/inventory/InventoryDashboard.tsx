@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { useInventoryStore, Medicine } from './inventory.store';
 import { useAuthStore } from '../security/auth.store';
-import { Plus, Pencil, Trash2, X, Package, AlertTriangle, Search, Barcode, TrendingUp, Boxes, Clock } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Package, AlertTriangle, Search, Barcode, TrendingUp, Boxes, Clock, ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
 import { generateInternalEan13, isValidEan13 } from '../../lib/utils/search';
+import { BulkBarcodeEntry } from './BulkBarcodeEntry';
 
 export function InventoryDashboard() {
-  const { medicines, addMedicine, updateMedicine, softDeleteMedicine } = useInventoryStore();
+  const { medicines, addMedicine, updateMedicine, softDeleteMedicine, fetchMedicines } = useInventoryStore();
   const { role } = useAuthStore();
-  const [showForm, setShowForm] = useState(false); 
-  const [editId, setEditId] = useState<string | null>(null); 
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [showBulkBarcode, setShowBulkBarcode] = useState(false);
   const [form, setForm] = useState<any>({ nameAr: '', nameEn: '', scientificName: '', barcode: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
 
   const handleAddNew = () => { 
@@ -94,10 +96,20 @@ export function InventoryDashboard() {
           <h1 className="section-title">إدارة المخزون</h1>
           <p className="section-subtitle">{filteredMeds.length} صنف نشط في المخزون</p>
         </div>
-        <button onClick={handleAddNew} className="btn-primary">
-          <Plus className="w-4 h-4" />
-          إضافة دواء جديد
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowBulkBarcode(true)}
+            className="btn-ghost border-2 border-brand-500 text-brand-700 hover:bg-brand-50"
+            title="اربط الباركودات الأصلية للأدوية الموجودة (مسح USB أو لصق من Excel)"
+          >
+            <ScanLine className="w-4 h-4" />
+            إدخال الباركودات الأصلية
+          </button>
+          <button onClick={handleAddNew} className="btn-primary">
+            <Plus className="w-4 h-4" />
+            إضافة دواء جديد
+          </button>
+        </div>
       </div>
 
       {/* بطاقات إحصائية */}
@@ -269,6 +281,14 @@ export function InventoryDashboard() {
           </tbody>
         </table>
       </div>
+
+      {/* نافذة إدخال الباركودات الأصلية */}
+      {showBulkBarcode && (
+        <BulkBarcodeEntry
+          onClose={() => setShowBulkBarcode(false)}
+          onSaved={() => fetchMedicines()}
+        />
+      )}
     </div>
   );
 }

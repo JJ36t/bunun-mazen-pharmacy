@@ -191,20 +191,157 @@ async fn process_scan(barcode: &str, pool: &PgPool, device_name: &str, device_ip
                     })
                 }
                 _ => {
-                    let _ = sqlx::query("INSERT INTO scan_audit_logs (device_name, device_ip, barcode_scanned, barcode_type, normalized_barcode, scan_result) VALUES ($1, $2, $3, $4, $5, 'not_found')")
-                        .bind(device_name).bind(device_ip).bind(barcode).bind(&barcode_type).bind(&normalized)
+                    // ابحث في OpenFoodFacts API عند عدم وجود الباركود محلياً
+                    if let Some(off_data) = lookup_openfoodfacts_api(barcode).await {
+                        // حفظ النتيجة في global_medicines لاستخدامها لاحقاً
+                        let _ = sqlx::query(
+                            "INSERT INTO global_medicines (barcode, name_fr, active_ingredient, brand_name, dosage_form, dosage_form_ar, strength, manufacturer, country, source, verified)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'openfoodfacts_api', TRUE)
+                             ON CONFLICT (barcode) DO NOTHING"
+                        )
+                        .bind(barcode)
+                        .bind(&off_data["name"].as_str().unwrap_or("Unknown"))
+                        .bind(off_data["active_ingredient"].as_str())
+                        .bind(off_data["brand_name"].as_str())
+                        .bind(off_data["dosage_form"].as_str())
+                        .bind(off_data["dosage_form_ar"].as_str())
+                        .bind(off_data["strength"].as_str())
+                        .bind(off_data["manufacturer"].as_str())
+                        .bind(off_data["country"].as_str())
                         .execute(pool).await;
 
-                    serde_json::json!({
-                        "status": "not_found",
-                        "barcode": barcode,
-                        "normalized": normalized,
-                        "barcodeType": barcode_type,
-                    })
+                        let _ = sqlx::query("INSERT INTO scan_audit_logs (device_name, device_ip, barcode_scanned, barcode_type, normalized_barcode, scan_result, matched_medicine_name) VALUES ($1, $2, $3, $4, $5, 'openfoodfacts_found', $6)")
+                            .bind(device_name).bind(device_ip).bind(barcode).bind(&barcode_type).bind(&normalized)
+                            .bind(off_data["name"].as_str().unwrap_or(""))
+                            .execute(pool).await;
+
+                        serde_json::json!({
+                            "status": "global_found",
+                            "name": off_data["name"].as_str().unwrap_or("Unknown"),
+                            "activeIngredient": off_data["active_ingredient"].as_str(),
+                            "brandName": off_data["brand_name"].as_str(),
+                            "dosageForm": off_data["dosage_form"].as_str(),
+                            "dosageFormAr": off_data["dosage_form_ar"].as_str(),
+                            "strength": off_data["strength"].as_str(),
+                            "manufacturer": off_data["manufacturer"].as_str(),
+                            "country": off_data["country"].as_str(),
+                            "barcodeType": barcode_type,
+                            "source": "openfoodfacts_api",
+                        })
+                    } else {
+                        let _ = sqlx::query("INSERT INTO scan_audit_logs (device_name, device_ip, barcode_scanned, barcode_type, normalized_barcode, scan_result) VALUES ($1, $2, $3, $4, $5, 'not_found')")
+                            .bind(device_name).bind(device_ip).bind(barcode).bind(&barcode_type).bind(&normalized)
+                            .execute(pool).await;
+
+                        serde_json::json!({
+                            "status": "not_found",
+                            "barcode": barcode,
+                            "normalized": normalized,
+                            "barcodeType": barcode_type,
+                        })
+                    }
                 }
             }
         }
     }
+}
+
+/// ابحث في OpenFoodFacts API عن الباركود
+/// API: https://world.openfoodfacts.org/api/v0/product/{barcode}.json
+async fn lookup_openfoodfacts_api(barcode: &str) -> Option<serde_json::Value> {
+    let url = format!("https://world.openfoodfacts.org/api/v0/product/{}.json", barcode);
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .user_agent("PharmacyBinMazen/2.3 (mobile-scanner)")
+        .build() {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+
+    let resp = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => { println!("[OpenFoodFacts] Request failed: {}", e); return None; }
+    };
+
+    let body: serde_json::Value = match resp.json().await {
+        Ok(j) => j,
+        Err(_) => return None,
+    };
+
+    if body.get("status")?.as_i64()? != 1 {
+        return None;
+    }
+
+    let product = body.get("product")?;
+    let name = product.get("product_name").and_then(|n| n.as_str())
+        .or_else(|| product.get("product_name_en").and_then(|n| n.as_str()))
+        .or_else(|| product.get("generic_name").and_then(|n| n.as_str()))
+        .unwrap_or("Unknown");
+
+    let brands = product.get("brands").and_then(|b| b.as_str()).unwrap_or("");
+    let quantity = product.get("quantity").and_then(|q| q.as_str()).unwrap_or("");
+    let categories = product.get("categories").and_then(|c| c.as_str()).unwrap_or("");
+    let countries = product.get("countries").and_then(|c| c.as_str()).unwrap_or("");
+    let manufacturer = product.get("manufacturers").and_then(|m| m.as_str()).unwrap_or(brands);
+
+    // اشتقاق المادة الفعالة من categories أو generic_name
+    let active_ingredient = product.get("generic_name").and_then(|g| g.as_str())
+        .unwrap_or("");
+
+    // اشتقاق الشكل الدوائي
+    let dosage_form = if categories.to_lowercase().contains("tablet") || categories.to_lowercase().contains("قرص") {
+        "tablet"
+    } else if categories.to_lowercase().contains("capsule") || categories.to_lowercase().contains("كبسول") {
+        "capsule"
+    } else if categories.to_lowercase().contains("syrup") || categories.to_lowercase().contains("شراب") {
+        "syrup"
+    } else if categories.to_lowercase().contains("cream") || categories.to_lowercase().contains("كريم") {
+        "cream"
+    } else if categories.to_lowercase().contains("drop") || categories.to_lowercase().contains("قطرة") {
+        "drops"
+    } else if categories.to_lowercase().contains("injection") || categories.to_lowercase().contains("حقن") {
+        "injection"
+    } else {
+        "other"
+    };
+
+    let dosage_form_ar = match dosage_form {
+        "tablet" => "قرص",
+        "capsule" => "كبسولة",
+        "syrup" => "شراب",
+        "cream" => "كريم/مرهم",
+        "drops" => "قطرة",
+        "injection" => "حقنة",
+        _ => "أخرى",
+    };
+
+    // اشتقاق التركيز من quantity
+    let strength = if quantity.is_empty() {
+        // حاول استخراج التركيز من الاسم
+        let name_lower = name.to_lowercase();
+        let patterns = ["500mg", "250mg", "200mg", "100mg", "50mg", "10mg", "5mg", "150mg", "300mg", "400mg", "600mg", "800mg", "1000mg", "20mg", "75mg", "125mg", "1g", "2g"];
+        patterns.iter()
+            .find(|p| name_lower.contains(*p))
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else {
+        quantity.to_string()
+    };
+
+    // اشتقاق الدولة الأولى فقط
+    let country = countries.split(',').next().unwrap_or("").trim().to_string();
+
+    Some(serde_json::json!({
+        "name": name,
+        "active_ingredient": active_ingredient,
+        "brand_name": brands.split(',').next().unwrap_or("").trim(),
+        "dosage_form": dosage_form,
+        "dosage_form_ar": dosage_form_ar,
+        "strength": strength,
+        "manufacturer": manufacturer.split(',').next().unwrap_or("").trim(),
+        "country": country,
+    }))
 }
 
 async fn validate_pairing_token(token: &str, pool: &PgPool) -> bool {

@@ -455,6 +455,82 @@ async fn soft_delete_medicine_db(state: tauri::State<'_, PgPool>, medicine_id: S
     Ok(())
 }
 
+// --- ربط باركود أصلي بدواء موجود (لإدخال الباركودات الحقيقية جماعياً) ---
+#[tauri::command]
+async fn link_barcode_to_medicine_db(
+    state: tauri::State<'_, PgPool>,
+    medicine_id: String,
+    barcode: String,
+    source: Option<String>,
+) -> Result<(), String> {
+    let pool = state.inner();
+    let med_uuid = uuid::Uuid::parse_str(&medicine_id).map_err(|e| e.to_string())?;
+    let barcode_trimmed = barcode.trim().to_string();
+
+    if barcode_trimmed.is_empty() {
+        return Err("الباركود فارغ".to_string());
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // تحقق إن الباركود غير مستخدم بدواء آخر
+    let existing: Option<uuid::Uuid> = sqlx::query_scalar(
+        "SELECT id FROM medicines WHERE barcode = $1 AND id != $2 AND is_deleted = FALSE"
+    )
+    .bind(&barcode_trimmed)
+    .bind(med_uuid)
+    .fetch_optional(&mut *tx).await
+    .map_err(|e| e.to_string())?;
+
+    if existing.is_some() {
+        return Err(format!("الباركود {} مُسجّل بدواء آخر بالفعل", barcode_trimmed));
+    }
+
+    // حدّث باركود الدواء
+    sqlx::query("UPDATE medicines SET barcode = $1, updated_at = NOW() WHERE id = $2")
+        .bind(&barcode_trimmed)
+        .bind(med_uuid)
+        .execute(&mut *tx).await
+        .map_err(|e| e.to_string())?;
+
+    // أضف للجدول الموحد medicine_barcodes
+    let src = source.unwrap_or_else(|| "manual_entry".to_string());
+    let barcode_type = if barcode_trimmed.len() == 13 { "EAN13" }
+                       else if barcode_trimmed.len() == 12 { "UPC" }
+                       else if barcode_trimmed.len() == 8 { "EAN8" }
+                       else { "OTHER" };
+
+    sqlx::query(
+        "INSERT INTO medicine_barcodes (medicine_id, barcode, barcode_type, barcode_scope, normalized_barcode, is_primary, source, learned_at)
+         VALUES ($1, $2, $3, 'manufacturer', $2, TRUE, $4, NOW())
+         ON CONFLICT (barcode, barcode_type) DO UPDATE SET
+            medicine_id = $1,
+            is_primary = TRUE,
+            source = $4,
+            learned_at = NOW()"
+    )
+    .bind(med_uuid)
+    .bind(&barcode_trimmed)
+    .bind(barcode_type)
+    .bind(&src)
+    .execute(&mut *tx).await
+    .map_err(|e| e.to_string())?;
+
+    // سجل تدقيق
+    let med_name: String = sqlx::query_scalar("SELECT name_ar FROM medicines WHERE id = $1")
+        .bind(med_uuid)
+        .fetch_one(&mut *tx).await
+        .map_err(|e| e.to_string())?;
+
+    let desc = format!("ربط باركود أصلي ({}) بالدواء: {}", barcode_trimmed, med_name);
+    let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ('admin', 'LINK_BARCODE', $1)")
+        .bind(&desc)
+        .execute(&mut *tx).await;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // --- أوامر المحاسقة (وإصلاح خصم المخزون المزدوج) ---
 #[tauri::command]
 async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String) -> Result<(), String> {
@@ -1339,6 +1415,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             check_license, login, save_csv_file, get_device_id, activate_license, create_backup, restore_backup, check_auto_backup,
             get_medicines_db, add_medicine_db, update_medicine_db, adjust_stock_db, soft_delete_medicine_db, bulk_update_prices_db,
+            link_barcode_to_medicine_db,
             record_sale_db, record_refund_db, reverse_refund_db, add_expense_db, get_accounting_summary_db, reset_daily_db,
             get_settings_db, save_settings_db, log_action_db, get_audit_logs_db,
             get_top_medicines_db, get_dashboard_stats, get_filtered_sales_report, get_invoice_details_report, get_weekly_sales_stats,

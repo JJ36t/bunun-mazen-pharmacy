@@ -30,6 +30,7 @@ import { Receipt } from './domains/pos/Receipt';
 
 import { searchMedicines } from './lib/utils/search';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { SmartBarcodeLookup } from './domains/pos/SmartBarcodeLookup';
 import { DrugInteractionChecker } from './domains/pos/DrugInteractionChecker';
 import { DailyChecksModal } from './domains/intelligence/DailyChecksModal';
@@ -271,6 +272,81 @@ function PosDashboard() {
     addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
     setSearchTerm('');
   };
+
+  // ===== مستمع حدث المسح اللاسلكي =====
+  // عند مسح باركود من الموبايل، يُصدر السيرفر حدث 'mobile-scan-received'
+  // إذا وُجد الدواء: أضفه للسلة تلقائياً
+  // إذا لم يُوجد: افتح نافذة SmartBarcodeLookup لإضافته يدوياً
+  const medicinesRef = useRef(medicines);
+  medicinesRef.current = medicines;
+  const fetchMedicinesRef = useRef(fetchMedicines);
+  fetchMedicinesRef.current = fetchMedicines;
+  const handleAddToCartRef = useRef(handleAddToCart);
+  handleAddToCartRef.current = handleAddToCart;
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    const setup = async () => {
+      try {
+        unlisten = await listen<any>('mobile-scan-received', async (event) => {
+          const result = event.payload;
+          console.log('[MobileScan] Received:', result);
+          if (!result) return;
+
+          // لو نافذة إدخال الباركودات الجماعي مفتوحة، تخطّى المعالجة هنا
+          // (النافذة نفسها لها مستمع يربط الباركود بالأدوية)
+          if ((window as any).__bulkBarcodeActive) {
+            console.log('[MobileScan] Skipped — bulk barcode entry is active');
+            return;
+          }
+
+          const barcode = String(result.barcode || '');
+          const status = String(result.status || '');
+
+          if (status === 'found' && result.medicineId) {
+            // ابحث عن الدواء في الذاكرة
+            let med = medicinesRef.current.find((m: any) => m.id === result.medicineId);
+            if (!med) {
+              // أعد تحميل الأدوية ثم ابحث مرة أخرى
+              try {
+                await fetchMedicinesRef.current();
+                const allMeds = await invoke<any[]>('get_medicines_db');
+                med = allMeds.find((m: any) => m.id === result.medicineId);
+              } catch (e) { console.error('Failed to reload medicines:', e); }
+            }
+            if (med) {
+              handleAddToCartRef.current(med);
+              toast.success(`تم إضافة: ${med.nameAr}`);
+            } else {
+              toast.error('الدواء غير موجود في المخزون رغم تأكيد السيرفر');
+            }
+          } else if (status === 'global_found') {
+            // الباركود موجود في القاعدة العالمية — افتح نافذة الإضافة
+            setSmartLookupBarcode(null);
+            setTimeout(() => setSmartLookupBarcode(barcode), 50);
+            toast.info(`تم العثور على الباركود في القاعدة العالمية — أكمل البيانات`);
+          } else if (status === 'not_found') {
+            // الباركود غير معروف — افتح نافذة الإضافة اليدوية
+            setSmartLookupBarcode(null);
+            setTimeout(() => setSmartLookupBarcode(barcode), 50);
+            toast.info(`باركود غير معروف: ${barcode} — أضف الدواء لإكمال البيع`);
+          }
+        });
+        console.log('[MobileScan] Listener registered');
+      } catch (e) {
+        console.error('[MobileScan] Failed to register listener:', e);
+      }
+    };
+
+    setup();
+
+    return () => {
+      if (unlisten) {
+        try { unlisten(); } catch (e) { console.error(e); }
+      }
+    };
+  }, []);
 
   const handleIncreaseCartQty = (item: any) => {
     const medData = medicines.find((m:any) => m.id === item.id);
@@ -742,6 +818,7 @@ function PosDashboard() {
 
       {smartLookupBarcode && (
         <SmartBarcodeLookup
+          key={smartLookupBarcode}
           barcode={smartLookupBarcode}
           onClose={() => setSmartLookupBarcode(null)}
           onMedicineAdded={handleSmartLookupAdded}

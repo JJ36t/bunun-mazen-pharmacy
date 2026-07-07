@@ -6,7 +6,7 @@
 // لو لقى نتيجة، يعرض التفاصيل + يطلب السعر والكمية
 // لو ما لقى، يفتح نافذة إضافة يدوية
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { X, Search, Loader, Plus, AlertCircle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -28,10 +28,11 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
   const [expiryDate, setExpiryDate] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Lookup on mount
-  useState(() => {
+  // Lookup on mount — نفّذ البحث عند فتح النافذة أو تغيير الباركود
+  useEffect(() => {
     performLookup();
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barcode]);
 
   const performLookup = async () => {
     setLoading(true);
@@ -50,9 +51,12 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
     }
   };
 
-  const handleSave = async () => {
-    if (!selected) {
-      toast.error('اختر دواءً أولاً');
+  const handleSave = async (manualData?: any) => {
+    // manualData يأتي من ManualAddForm (عند عدم العثور على الباركود)
+    // selected يأتي من نتائج البحث (عند العثور)
+    const data = manualData || selected;
+    if (!data) {
+      toast.error('اختر دواءً أولاً أو أدخل بيانات يدوياً');
       return;
     }
     const p = parseFloat(price);
@@ -66,10 +70,10 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
     try {
       const medId = await invoke<string>('add_medicine_from_global_db', {
         barcode,
-        name: selected.name || selected.brandName || 'Unknown',
-        activeIngredient: selected.activeIngredient || null,
-        dosageForm: selected.dosageForm || null,
-        strength: selected.strength || null,
+        name: data.name || data.brandName || 'Unknown',
+        activeIngredient: data.activeIngredient || null,
+        dosageForm: data.dosageForm || null,
+        strength: data.strength || null,
         price: p,
         costPrice: cp,
         quantity: q,
@@ -77,7 +81,7 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
         expiryDate: expiryDate || null,
         userRole: 'admin',
       });
-      toast.success('تم إضافة الدواء للمخزون');
+      toast.success('تم إضافة الدواء للمخزون وربطه بالباركود');
       onMedicineAdded(medId);
       onClose();
     } catch (e: any) {
@@ -221,14 +225,21 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
 }
 
 // Manual add form (when barcode not found anywhere)
-function ManualAddForm({ onSave, saving, price, setPrice, costPrice, setCostPrice, quantity, setQuantity, batchNumber, setBatchNumber, expiryDate, setExpiryDate }: any) {
+function ManualAddForm({ barcode, onSave, saving, price, setPrice, costPrice, setCostPrice, quantity, setQuantity, batchNumber, setBatchNumber, expiryDate, setExpiryDate }: any) {
   const [name, setName] = useState('');
   const [activeIngredient, setActiveIngredient] = useState('');
   const [form, setForm] = useState('tablet');
 
   return (
     <div>
-      <h4 className="text-sm font-bold text-slate-800 mb-3">إضافة دواء جديد يدوياً:</h4>
+      <h4 className="text-sm font-bold text-slate-800 mb-2">إضافة دواء جديد يدوياً:</h4>
+      <div className="bg-brand-50 border border-brand-200 rounded-xl p-3 mb-3">
+        <p className="text-xs text-brand-700">
+          <strong>الباركود الممسوح:</strong> <span className="font-mono tabular">{barcode}</span>
+          <br />
+          سيتم ربط هذا الباركود بالدواء تلقائياً — في المرة القادمة سيتعرف عليه النظام فوراً.
+        </p>
+      </div>
       <div className="grid grid-cols-2 gap-3 mb-3">
         <div className="col-span-2">
           <label className="label">اسم الدواء *</label>
@@ -274,7 +285,7 @@ function ManualAddForm({ onSave, saving, price, setPrice, costPrice, setCostPric
       </div>
       <button onClick={() => onSave({ name, activeIngredient, dosageForm: form, source: 'manual' })} disabled={saving || !name} className="btn-primary w-full py-3 disabled:opacity-50">
         {saving ? <Loader className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-        إضافة للمخزون
+        إضافة للمخزون + متابعة البيع
       </button>
     </div>
   );
