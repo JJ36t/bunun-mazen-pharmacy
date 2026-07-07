@@ -92,6 +92,23 @@ function connectWS() {
   };
 }
 
+// Polyfill: حقن getUserMedia على HTTP للمتصفحات اللي تحجبه
+if (!navigator.mediaDevices) {
+  navigator.mediaDevices = {};
+}
+if (!navigator.mediaDevices.getUserMedia) {
+  navigator.mediaDevices.getUserMedia = function(constraints) {
+    return new Promise(function(resolve, reject) {
+      var getUserMediaOld = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+      if (getUserMediaOld) {
+        getUserMediaOld.call(navigator, constraints, resolve, reject);
+      } else {
+        reject(new Error('getUserMedia is not supported on HTTP. Use Chrome flag or Firefox.'));
+      }
+    });
+  };
+}
+
 function startScanner() {
   Quagga.init({
     inputStream: {
