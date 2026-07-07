@@ -20,7 +20,7 @@ export const usePosStore = create<PosState>((set, get) => ({
   addToCart: (item) => set((state) => {
     const safeItem = {
       id: String(item.id || ''),
-      nameAr: String(item.nameAr || item.name || 'دواء'),
+      nameAr: String(item.nameAr || 'دواء'),
       quantity: Number(item.quantity) || 1,
       price: Number(item.price) || 0,
     };
