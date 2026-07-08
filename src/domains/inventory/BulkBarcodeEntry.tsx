@@ -94,8 +94,15 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
   // ===== مسح من الهاتف =====
   // استخدم ref للقيم المتغيرة لتجنب إعادة تسجيل المستمع عند كل تغيير
   const medicinesRef = useRef(medicines);
-  medicinesRef.current = medicines;
-  const processScannedBarcodeRef = useRef<(b: string) => Promise<void>>(async () => {});
+  const selectedMedIdRef = useRef(selectedMedId);
+  selectedMedIdRef.current = selectedMedId;
+  const saveBarcodeForMedicineRef = useRef<(id: string, b: string) => Promise<void>>(async () => {});
+
+  // حدّث medicinesRef عند كل تغيير
+  useEffect(() => {
+    medicinesRef.current = medicines;
+    console.log('[BulkBarcode] medicinesRef updated, count:', medicines.length);
+  }, [medicines]);
 
   useEffect(() => {
     if (!phoneMode) return;
@@ -118,16 +125,42 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
           }
 
           console.log('[BulkBarcode] Phone scan received:', barcode, 'status:', result.status);
+          console.log('[BulkBarcode] medicinesRef.current.length:', medicinesRef.current.length);
 
           // لو الباركود موجود بدواء محلي أصلاً
           const existing = medicinesRef.current.find(m => m.currentBarcode === barcode);
           if (existing) {
+            console.log('[BulkBarcode] Barcode already exists for:', existing.nameAr);
             toast.warning(`الباركود ${barcode} مُسجّل بالفعل لـ: ${existing.nameAr}`);
             return;
           }
 
-          // اربطه أو افتح نافذة إضافة دواء جديد
-          await processScannedBarcodeRef.current(barcode);
+          // منطق المعالجة المباشر (بدون اعتماد على closure قديمة)
+          const selectedId = selectedMedIdRef.current;
+          if (selectedId) {
+            const target = medicinesRef.current.find(m => m.id === selectedId);
+            if (target && !target.currentBarcode) {
+              console.log('[BulkBarcode] Linking to selected medicine:', target.nameAr);
+              await saveBarcodeForMedicineRef.current(target.id, barcode);
+              setPendingBarcode(null);
+              return;
+            }
+          }
+
+          // ابحث عن أول دواء بدون باركود
+          const target = medicinesRef.current.find(m => !m.currentBarcode && m.status !== 'saved');
+          if (target) {
+            console.log('[BulkBarcode] Auto-linking to:', target.nameAr);
+            await saveBarcodeForMedicineRef.current(target.id, barcode);
+            setPendingBarcode(null);
+          } else {
+            // لا يوجد دواء بدون باركود → اعرض خيار إضافة دواء جديد
+            console.log('[BulkBarcode] No medicine without barcode → showing new medicine form');
+            setPendingBarcode(barcode);
+            setNewMed({ nameAr: '', nameEn: '', scientificName: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
+            setShowNewMedForm(true);
+            toast.info(`الباركود ${barcode} غير مرتبط — أضف دواءً جديداً`);
+          }
         });
 
         refreshConnectedDevices();
@@ -209,10 +242,8 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
     setScanBuffer(e.target.value);
   };
 
-  // معالجة باركود ممسوح
+  // معالجة باركود ممسوح (للوضع اليدوي/USB)
   const processScannedBarcode = async (barcode: string) => {
-    // حدّث الـ ref ليعكس أحدث نسخة من الدالة
-    processScannedBarcodeRef.current = processScannedBarcode;
     // تحقق إن الباركود مُستخدم بالفعل
     const existing = medicines.find(m => m.currentBarcode === barcode || m.newBarcode === barcode);
     if (existing) {
@@ -327,6 +358,8 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
       toast.error(`فشل ربط الباركود: ${e}`);
     }
   };
+  // حدّث الـ ref لـ saveBarcodeForMedicine (بعد كل render)
+  saveBarcodeForMedicineRef.current = saveBarcodeForMedicine;
 
   // معالجة اللصق من Excel
   const handlePasteImport = async () => {
