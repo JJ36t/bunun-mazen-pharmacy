@@ -291,7 +291,7 @@ function PosDashboard() {
       try {
         unlisten = await listen<any>('mobile-scan-received', async (event) => {
           const result = event.payload;
-          console.log('[MobileScan] Received:', result);
+          console.log('[MobileScan] Received in App:', result);
           if (!result) return;
 
           // لو نافذة إدخال الباركودات الجماعي مفتوحة، تخطّى المعالجة هنا
@@ -303,6 +303,7 @@ function PosDashboard() {
 
           const barcode = String(result.barcode || '');
           const status = String(result.status || '');
+          console.log('[MobileScan] Processing — barcode:', barcode, 'status:', status);
 
           if (status === 'found' && result.medicineId) {
             // ابحث عن الدواء في الذاكرة

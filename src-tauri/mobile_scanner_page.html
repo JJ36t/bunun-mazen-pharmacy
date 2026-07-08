@@ -78,10 +78,17 @@ function connectWS() {
 
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
+    console.log('[WS] Message:', data);
     if (data.type === 'scan_result') {
       displayResult(data.result);
       vibrate();
       playSound(data.result.status);
+      // أظهر الرسالة في الـ status لمدة قصيرة
+      const oldStatus = document.getElementById('connStatus').innerHTML;
+      document.getElementById('connStatus').innerHTML = '✓ تم المسح: ' + (data.result.barcode || '') + ' (' + (data.result.status || '') + ')';
+      setTimeout(() => {
+        document.getElementById('connStatus').innerHTML = oldStatus;
+      }, 3000);
     }
   };
 
@@ -198,9 +205,19 @@ function startScanner() {
 
     scanCount++;
     document.getElementById('scanCount').textContent = scanCount + ' عملية مسح';
+    console.log('[Scan] Detected:', decodedText, 'WS state:', ws ? ws.readyState : 'null');
 
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'scan', barcode: decodedText, deviceName: 'Mobile' }));
+      // أظهر الباركود الممسوح فوراً
+      const oldStatus = document.getElementById('connStatus').innerHTML;
+      document.getElementById('connStatus').innerHTML = '📤 تم الإرسال: ' + decodedText;
+      setTimeout(() => {
+        document.getElementById('connStatus').innerHTML = oldStatus;
+      }, 2000);
+    } else {
+      console.warn('[Scan] WS not open, cannot send');
+      document.getElementById('connStatus').innerHTML = '⚠️ غير متصل — لم يُرسل الباركود';
     }
   });
 }
