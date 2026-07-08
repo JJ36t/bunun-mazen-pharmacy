@@ -1,4 +1,4 @@
-// WebSocket + HTTP Server for Mobile Scanner
+// WebSocket + HTTP Server for Mobile Scanner (HTTPS/WSS مع شهادة self-signed)
 use tauri::Emitter;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
@@ -6,39 +6,113 @@ use futures_util::{StreamExt, SinkExt};
 use sqlx::{PgPool, Row};
 use crate::mobile_scanner::barcode_parser;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::io::AsyncWriteExt;
+use tokio_rustls::TlsAcceptor;
+use rustls::ServerConfig;
+use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+
+/// توليد شهادة self-signed صالحة للـ IP المحلي + localhost
+/// هذه الشهادة تُمكّن HTTPS/WSS → الكاميرا تعمل على الموبايل
+fn generate_self_signed_cert(ip: &str) -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>), String> {
+    use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, SanType};
+
+    // SANs: IP المحلي + localhost + 127.0.0.1
+    let mut params = CertificateParams::default();
+    params.subject_alt_names = vec![
+        SanType::DnsName("localhost".into()),
+        SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))),
+    ];
+    // أضف IP المحلي الحالي
+    if let Ok(ip_addr) = ip.parse::<std::net::IpAddr>() {
+        params.subject_alt_names.push(SanType::IpAddress(ip_addr));
+    }
+
+    // CN
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, "Pharmacy Bin Mazen Scanner");
+    dn.push(DnType::OrganizationName, "Bin Mazen Pharmacy");
+    params.distinguished_name = dn;
+
+    // صلاحية 10 سنوات
+    params.not_before = time::OffsetDateTime::now_utc();
+    params.not_after = time::OffsetDateTime::now_utc() + time::Duration::days(3650);
+
+    // هوية الخادم (Extended Key Usage)
+    params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
+
+    let key_pair = KeyPair::generate().map_err(|e| format!("KeyPair generation failed: {}", e))?;
+    let cert = params.self_signed(&key_pair).map_err(|e| format!("Cert generation failed: {}", e))?;
+
+    let cert_der = CertificateDer::from(cert.der().to_vec());
+    let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_pair.serialize_der()));
+
+    Ok((cert_der, key_der))
+}
+
+/// إنشاء TLS acceptor لـ HTTPS/WSS
+fn create_tls_acceptor(ip: &str) -> Result<TlsAcceptor, String> {
+    let (cert, key) = generate_self_signed_cert(ip)?;
+
+    let config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert], key)
+        .map_err(|e| format!("TLS config failed: {}", e))?;
+
+    Ok(TlsAcceptor::from(Arc::new(config)))
+}
 
 pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let http_addr = format!("0.0.0.0:{}", port);
-    let http_listener = TcpListener::bind(&http_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] HTTP server listening on http://0.0.0.0:{}", port);
+    let local_ip = crate::mobile_scanner::mod::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
 
-    let ws_port = port + 1;
-    let ws_addr = format!("0.0.0.0:{}", ws_port);
-    let ws_listener = TcpListener::bind(&ws_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] WebSocket server listening on ws://0.0.0.0:{}", ws_port);
+    // أنشئ TLS acceptor بشهادة self-signed للـ IP المحلي
+    let tls_acceptor = create_tls_acceptor(&local_ip)?;
+    println!("[MobileScanner] TLS cert generated for IP: {}", local_ip);
 
-    // HTTP server
+    let https_addr = format!("0.0.0.0:{}", port);
+    let https_listener = TcpListener::bind(&https_addr).await.map_err(|e| e.to_string())?;
+    println!("[MobileScanner] HTTPS server listening on https://0.0.0.0:{}", port);
+
+    let wss_port = port + 1;
+    let wss_addr = format!("0.0.0.0:{}", wss_port);
+    let wss_listener = TcpListener::bind(&wss_addr).await.map_err(|e| e.to_string())?;
+    println!("[MobileScanner] WSS server listening on wss://0.0.0.0:{}", wss_port);
+
+    // HTTPS server
+    let tls_acceptor_http = tls_acceptor.clone();
     tokio::spawn(async move {
         loop {
-            if let Ok((stream, _)) = http_listener.accept().await {
+            if let Ok((stream, _)) = https_listener.accept().await {
+                let acceptor = tls_acceptor_http.clone();
                 tokio::spawn(async move {
-                    let _ = handle_http_request(stream).await;
+                    match acceptor.accept(stream).await {
+                        Ok(tls_stream) => {
+                            let _ = handle_http_request(tls_stream).await;
+                        }
+                        Err(e) => println!("[HTTPS] TLS accept failed: {}", e),
+                    }
                 });
             }
         }
     });
 
-    // WebSocket server
+    // WSS server
+    let tls_acceptor_ws = tls_acceptor.clone();
     let pool_clone = pool.clone();
     tokio::spawn(async move {
         loop {
-            if let Ok((stream, addr)) = ws_listener.accept().await {
+            if let Ok((stream, addr)) = wss_listener.accept().await {
+                let acceptor = tls_acceptor_ws.clone();
                 let p = pool_clone.clone();
                 let h = app_handle.clone();
                 tokio::spawn(async move {
-                    let _ = handle_ws_connection(stream, addr, p, h).await;
+                    match acceptor.accept(stream).await {
+                        Ok(tls_stream) => {
+                            let _ = handle_ws_connection(tls_stream, addr, p, h).await;
+                        }
+                        Err(e) => println!("[WSS] TLS accept failed: {}", e),
+                    }
                 });
             }
         }
@@ -49,7 +123,11 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle)
     }
 }
 
-async fn handle_http_request(mut stream: tokio::net::TcpStream) -> Result<(), String> {
+/// معالجة طلب HTTPS — إرجاع صفحة الموبايل
+async fn handle_http_request<S>(mut stream: S) -> Result<(), String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     use tokio::io::AsyncReadExt;
     let mut buf = [0u8; 4096];
     let _ = stream.read(&mut buf).await;
@@ -64,12 +142,15 @@ async fn handle_http_request(mut stream: tokio::net::TcpStream) -> Result<(), St
     Ok(())
 }
 
-async fn handle_ws_connection(
-    stream: tokio::net::TcpStream,
+async fn handle_ws_connection<S>(
+    stream: S,
     addr: SocketAddr,
     pool: PgPool,
     app_handle: tauri::AppHandle,
-) -> Result<(), String> {
+) -> Result<(), String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     let mut ws_stream = accept_async(stream).await.map_err(|e| e.to_string())?;
     println!("[MobileScanner] Device connected: {}", addr);
 

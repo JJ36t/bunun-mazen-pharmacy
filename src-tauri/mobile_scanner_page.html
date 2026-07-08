@@ -60,7 +60,7 @@ const params = new URLSearchParams(window.location.search);
 const token = params.get('token') || '';
 const serverHost = window.location.hostname;
 const serverPort = parseInt(window.location.port) || 8080;
-const wsUrl = `ws://${serverHost}:${serverPort + 1}`;
+const wsUrl = `wss://${serverHost}:${serverPort + 1}`;
 
 function connectWS() {
   document.getElementById('connStatus').textContent = 'جاري الاتصال...';
@@ -92,21 +92,11 @@ function connectWS() {
   };
 }
 
-// Polyfill: حقن getUserMedia على HTTP للمتصفحات اللي تحجبه
-if (!navigator.mediaDevices) {
-  navigator.mediaDevices = {};
-}
-if (!navigator.mediaDevices.getUserMedia) {
-  navigator.mediaDevices.getUserMedia = function(constraints) {
-    return new Promise(function(resolve, reject) {
-      var getUserMediaOld = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
-      if (getUserMediaOld) {
-        getUserMediaOld.call(navigator, constraints, resolve, reject);
-      } else {
-        reject(new Error('getUserMedia is not supported on HTTP. Use Chrome flag or Firefox.'));
-      }
-    });
-  };
+// التحقق من دعم الكاميرا — السيرفر الآن HTTPS بشهادة self-signed
+// إذا رأيت هذا الخطأ، تأكد إنك فتحت https:// (وليس http://) ووافقت على الشهادة
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  document.getElementById('connStatus').innerHTML = '⚠️ الكاميرا غير مدعومة — تأكد إنك فتحت <strong>https://</strong> (وليس http://) ووافقت على الشهادة';
+  document.getElementById('connStatus').className = 'status disconnected';
 }
 
 function startScanner() {

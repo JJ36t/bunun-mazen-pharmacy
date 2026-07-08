@@ -55,8 +55,9 @@ pub async fn start_scanner_server(
         "status": "running",
         "port": port,
         "ip": local_ip,
-        "wsUrl": format!("ws://{}:{}", local_ip, port + 1),
-        "mobileUrl": format!("http://{}:{}", local_ip, port),
+        "wsUrl": format!("wss://{}:{}", local_ip, port + 1),
+        "mobileUrl": format!("https://{}:{}", local_ip, port),
+        "https": true,
     }))
 }
 
@@ -79,8 +80,9 @@ pub async fn get_scanner_server_status(
     Ok(serde_json::json!({
         "port": port,
         "ip": local_ip,
-        "wsUrl": format!("ws://{}:{}", local_ip, port + 1),
-        "mobileUrl": format!("http://{}:{}", local_ip, port),
+        "wsUrl": format!("wss://{}:{}", local_ip, port + 1),
+        "mobileUrl": format!("https://{}:{}", local_ip, port),
+        "https": true,
     }))
 }
 
@@ -167,7 +169,7 @@ pub async fn get_scan_audit_logs(
 }
 
 /// الحصول على IP المحلي
-fn get_local_ip() -> Option<String> {
+pub fn get_local_ip() -> Option<String> {
     use std::net::UdpSocket;
     let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
     socket.connect("8.8.8.8:80").ok()?;

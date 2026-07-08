@@ -41,6 +41,16 @@ tokio-tungstenite = "0.24"
 qrcode = "0.14"
 # futures-util - for WebSocket stream splitting
 futures-util = "0.3"
+# rcgen - توليد شهادات self-signed لـ HTTPS (لتفعيل الكاميرا على الموبايل)
+rcgen = "0.13"
+# tokio-rustls - TLS server لـ HTTPS/WSS
+tokio-rustls = "0.26"
+# rustls - مكتبة TLS الأساسية
+rustls = "0.23"
+# rustls-pki-types - أنواع الشهادات
+rustls-pki-types = "1"
+# time - مطلوب لـ rcgen (توليد الشهادات)
+time = "0.3"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
