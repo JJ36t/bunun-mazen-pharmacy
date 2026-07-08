@@ -45,8 +45,8 @@ futures-util = "0.3"
 rcgen = "0.13"
 # tokio-rustls - TLS server لـ HTTPS/WSS
 tokio-rustls = "0.26"
-# rustls - مكتبة TLS الأساسية
-rustls = "0.23"
+# rustls - مكتبة TLS الأساسية (مع تفعيل ring كـ crypto provider)
+rustls = { version = "0.23", features = ["ring"] }
 # rustls-pki-types - أنواع الشهادات
 rustls-pki-types = "1"
 

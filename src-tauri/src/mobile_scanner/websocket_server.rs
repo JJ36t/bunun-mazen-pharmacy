@@ -53,6 +53,11 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle)
     println!("[MobileScanner] WSS port: {} (wss://{}:{})", port + 1, local_ip, port + 1);
     println!("[MobileScanner] ====================================");
 
+    // ثبّت CryptoProvider الافتراضي (ring) — مطلوب لـ rustls 0.23
+    // نثبّته مرة واحدة فقط (آمنة للاستدعاء المتعدد)
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    println!("[MobileScanner] CryptoProvider (ring) installed");
+
     // أنشئ TLS acceptor بشهادة self-signed للـ IP المحلي
     let tls_acceptor = create_tls_acceptor(&local_ip)?;
     println!("[MobileScanner] TLS acceptor created successfully");
