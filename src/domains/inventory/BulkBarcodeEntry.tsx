@@ -92,7 +92,11 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
   }, [autoMode, pasteMode, phoneMode, medicines.length]);
 
   // ===== مسح من الهاتف =====
-  // ابدأ السيرفر + استمع لأحداث المسح من الموبايل
+  // استخدم ref للقيم المتغيرة لتجنب إعادة تسجيل المستمع عند كل تغيير
+  const medicinesRef = useRef(medicines);
+  medicinesRef.current = medicines;
+  const processScannedBarcodeRef = useRef<(b: string) => Promise<void>>(async () => {});
+
   useEffect(() => {
     if (!phoneMode) return;
 
@@ -100,32 +104,32 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
 
     const setup = async () => {
       try {
-        // ابدأ سيرفر WebSocket
         const status = await invoke<any>('start_scanner_server');
         setPhoneServerStatus(status);
         console.log('[BulkBarcode] Scanner server started:', status);
 
-        // استمع لأحداث المسح
         unlisten = await listen<any>('mobile-scan-received', async (event) => {
           const result = event.payload;
           if (!result) return;
           const barcode = String(result.barcode || '');
-          if (!barcode) return;
+          if (!barcode) {
+            console.log('[BulkBarcode] No barcode in payload:', result);
+            return;
+          }
 
-          console.log('[BulkBarcode] Phone scan received:', barcode);
+          console.log('[BulkBarcode] Phone scan received:', barcode, 'status:', result.status);
 
-          // لو الباركود موجود بدواء آخر أصلاً، لا تربطه
-          const existing = medicines.find(m => m.currentBarcode === barcode);
+          // لو الباركود موجود بدواء محلي أصلاً
+          const existing = medicinesRef.current.find(m => m.currentBarcode === barcode);
           if (existing) {
             toast.warning(`الباركود ${barcode} مُسجّل بالفعل لـ: ${existing.nameAr}`);
             return;
           }
 
-          // اربطه بالدواء المحدد أو أول دواء بدون باركود
-          await processScannedBarcode(barcode);
+          // اربطه أو افتح نافذة إضافة دواء جديد
+          await processScannedBarcodeRef.current(barcode);
         });
 
-        // حدّث قائمة الأجهزة المتصلة
         refreshConnectedDevices();
       } catch (e) {
         console.error('[BulkBarcode] Failed to setup phone scanner:', e);
@@ -135,14 +139,13 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
 
     setup();
 
-    // تحديث قائمة الأجهزة كل 5 ثواني
     const interval = setInterval(refreshConnectedDevices, 5000);
 
     return () => {
       if (unlisten) { try { unlisten(); } catch {} }
       clearInterval(interval);
     };
-  }, [phoneMode, medicines]);
+  }, [phoneMode]);
 
   const refreshConnectedDevices = async () => {
     try {
@@ -208,6 +211,8 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
 
   // معالجة باركود ممسوح
   const processScannedBarcode = async (barcode: string) => {
+    // حدّث الـ ref ليعكس أحدث نسخة من الدالة
+    processScannedBarcodeRef.current = processScannedBarcode;
     // تحقق إن الباركود مُستخدم بالفعل
     const existing = medicines.find(m => m.currentBarcode === barcode || m.newBarcode === barcode);
     if (existing) {

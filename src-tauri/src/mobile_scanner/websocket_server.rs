@@ -229,6 +229,7 @@ async fn process_scan(barcode: &str, pool: &PgPool, device_name: &str, device_ip
 
             serde_json::json!({
                 "status": "found",
+                "barcode": barcode,
                 "medicineId": med_id.to_string(),
                 "nameAr": name,
                 "price": price.to_string().parse::<f64>().unwrap_or(0.0),
@@ -252,6 +253,7 @@ async fn process_scan(barcode: &str, pool: &PgPool, device_name: &str, device_ip
 
                     serde_json::json!({
                         "status": "global_found",
+                        "barcode": barcode,
                         "name": r.get::<String, _>(1),
                         "activeIngredient": r.get::<Option<String>, _>(2),
                         "brandName": r.get::<Option<String>, _>(3),
@@ -288,6 +290,7 @@ async fn process_scan(barcode: &str, pool: &PgPool, device_name: &str, device_ip
 
                         serde_json::json!({
                             "status": "global_found",
+                            "barcode": barcode,
                             "name": off_data["name"].as_str().unwrap_or("Unknown"),
                             "activeIngredient": off_data["active_ingredient"].as_str(),
                             "brandName": off_data["brand_name"].as_str(),
