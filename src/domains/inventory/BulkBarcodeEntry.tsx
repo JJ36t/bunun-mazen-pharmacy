@@ -116,50 +116,61 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
         console.log('[BulkBarcode] Scanner server started:', status);
 
         unlisten = await listen<any>('mobile-scan-received', async (event) => {
-          const result = event.payload;
-          if (!result) return;
-          const barcode = String(result.barcode || '');
-          if (!barcode) {
-            console.log('[BulkBarcode] No barcode in payload:', result);
-            return;
-          }
+          try {
+            console.log('[BulkBarcode] === EVENT RECEIVED ===');
+            console.log('[BulkBarcode] event:', event);
+            console.log('[BulkBarcode] event.payload:', event.payload);
 
-          console.log('[BulkBarcode] Phone scan received:', barcode, 'status:', result.status);
-          console.log('[BulkBarcode] medicinesRef.current.length:', medicinesRef.current.length);
-
-          // لو الباركود موجود بدواء محلي أصلاً
-          const existing = medicinesRef.current.find(m => m.currentBarcode === barcode);
-          if (existing) {
-            console.log('[BulkBarcode] Barcode already exists for:', existing.nameAr);
-            toast.warning(`الباركود ${barcode} مُسجّل بالفعل لـ: ${existing.nameAr}`);
-            return;
-          }
-
-          // منطق المعالجة المباشر (بدون اعتماد على closure قديمة)
-          const selectedId = selectedMedIdRef.current;
-          if (selectedId) {
-            const target = medicinesRef.current.find(m => m.id === selectedId);
-            if (target && !target.currentBarcode) {
-              console.log('[BulkBarcode] Linking to selected medicine:', target.nameAr);
-              await saveBarcodeForMedicineRef.current(target.id, barcode);
-              setPendingBarcode(null);
+            const result = event.payload;
+            if (!result) {
+              console.log('[BulkBarcode] No payload, exiting');
               return;
             }
-          }
 
-          // ابحث عن أول دواء بدون باركود
-          const target = medicinesRef.current.find(m => !m.currentBarcode && m.status !== 'saved');
-          if (target) {
-            console.log('[BulkBarcode] Auto-linking to:', target.nameAr);
-            await saveBarcodeForMedicineRef.current(target.id, barcode);
-            setPendingBarcode(null);
-          } else {
-            // لا يوجد دواء بدون باركود → اعرض خيار إضافة دواء جديد
-            console.log('[BulkBarcode] No medicine without barcode → showing new medicine form');
-            setPendingBarcode(barcode);
-            setNewMed({ nameAr: '', nameEn: '', scientificName: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
-            setShowNewMedForm(true);
-            toast.info(`الباركود ${barcode} غير مرتبط — أضف دواءً جديداً`);
+            const barcode = String(result.barcode || '');
+            console.log('[BulkBarcode] barcode extracted:', JSON.stringify(barcode));
+            console.log('[BulkBarcode] result.status:', result.status);
+            console.log('[BulkBarcode] result.barcode (raw):', result.barcode);
+
+            if (!barcode || barcode === 'undefined' || barcode === 'null') {
+              console.log('[BulkBarcode] Empty/invalid barcode, exiting');
+              return;
+            }
+
+            console.log('[BulkBarcode] Processing barcode:', barcode);
+            console.log('[BulkBarcode] medicinesRef.current.length:', medicinesRef.current ? medicinesRef.current.length : 'NULL');
+
+            // لو الباركود موجود بدواء محلي أصلاً
+            const existing = medicinesRef.current.find(m => m.currentBarcode === barcode);
+            if (existing) {
+              console.log('[BulkBarcode] Barcode already exists for:', existing.nameAr);
+              toast.warning(`الباركود ${barcode} مُسجّل بالفعل لـ: ${existing.nameAr}`);
+              return;
+            }
+
+            console.log('[BulkBarcode] Barcode not in local medicines, proceeding...');
+
+            // ابحث عن أول دواء بدون باركود
+            const target = medicinesRef.current.find(m => !m.currentBarcode && m.status !== 'saved');
+            console.log('[BulkBarcode] Auto-link target found:', target ? target.nameAr : 'NONE');
+
+            if (target) {
+              console.log('[BulkBarcode] Auto-linking to:', target.nameAr);
+              await saveBarcodeForMedicineRef.current(target.id, barcode);
+              setPendingBarcode(null);
+            } else {
+              // لا يوجد دواء بدون باركود → اعرض خيار إضافة دواء جديد
+              console.log('[BulkBarcode] >>> SHOWING NEW MEDICINE FORM <<<');
+              console.log('[BulkBarcode] Setting pendingBarcode:', barcode);
+              setPendingBarcode(barcode);
+              setNewMed({ nameAr: '', nameEn: '', scientificName: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
+              setShowNewMedForm(true);
+              console.log('[BulkBarcode] showNewMedForm set to true');
+              toast.info(`الباركود ${barcode} غير مرتبط — أضف دواءً جديداً`);
+            }
+          } catch (err) {
+            console.error('[BulkBarcode] LISTENER ERROR:', err);
+            toast.error('خطأ في معالجة المسح: ' + err);
           }
         });
 
