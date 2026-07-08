@@ -11,7 +11,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { X, Barcode, Search, Loader, CheckCircle, AlertCircle, Upload, Zap, FileSpreadsheet, Smartphone, QrCode, Wifi, RefreshCw } from 'lucide-react';
+import { X, Barcode, Search, Loader, CheckCircle, AlertCircle, Upload, Zap, FileSpreadsheet, Smartphone, QrCode, Wifi, RefreshCw, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 // علم global يمنع PosDashboard من معالجة الحدث عندما هذه النافذة مفتوحة
@@ -39,10 +39,13 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [autoMode, setAutoMode] = useState(true); // وضع الإدخال التلقائي: مسح → يبحث عن أول دواء بدون باركود
+  const [autoMode, setAutoMode] = useState(true);
   const [pasteMode, setPasteMode] = useState(false);
-  const [phoneMode, setPhoneMode] = useState(false); // مسح من الهاتف
+  const [phoneMode, setPhoneMode] = useState(false);
   const [pasteText, setPasteText] = useState('');
+  const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
+  const [showNewMedForm, setShowNewMedForm] = useState(false);
+  const [newMed, setNewMed] = useState<any>({ nameAr: '', nameEn: '', scientificName: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
   const [selectedMedId, setSelectedMedId] = useState<string | null>(null);
   const [scanBuffer, setScanBuffer] = useState('');
   const [lastScan, setLastScan] = useState<{ name: string; barcode: string } | null>(null);
@@ -210,31 +213,76 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
     if (existing) {
       toast.warning(`الباركود ${barcode} مُسجّل بالفعل للدواء: ${existing.nameAr}`);
       setLastScan({ name: existing.nameAr, barcode });
+      setPendingBarcode(null);
+      setShowNewMedForm(false);
       return;
     }
 
-    if (autoMode) {
-      // ابحث عن أول دواء بدون باركود (أو المحدد حالياً)
-      let target: MedicineItem | undefined;
-      if (selectedMedId) {
-        target = medicines.find(m => m.id === selectedMedId);
-      } else {
-        target = medicines.find(m => !m.currentBarcode && m.status !== 'saved');
-      }
-
-      if (!target) {
-        toast.error('لا يوجد دواء متاح لربط الباركود. اختر دواءً يدوياً.');
+    // لو دواء محدد يدوياً، اربط به مباشرة
+    if (selectedMedId) {
+      const target = medicines.find(m => m.id === selectedMedId);
+      if (target && !target.currentBarcode) {
+        await saveBarcodeForMedicine(target.id, barcode);
+        setPendingBarcode(null);
         return;
       }
+    }
 
+    // ابحث عن أول دواء بدون باركود
+    const target = medicines.find(m => !m.currentBarcode && m.status !== 'saved');
+    if (target) {
       await saveBarcodeForMedicine(target.id, barcode);
+      setPendingBarcode(null);
     } else {
-      // الوضع اليدوي — ابحث عن الباركود في حقل الدواء المحدد
-      if (!selectedMedId) {
-        toast.error('اختر دواءً أولاً من القائمة');
-        return;
-      }
-      await saveBarcodeForMedicine(selectedMedId, barcode);
+      // لا يوجد دواء بدون باركود → اعرض خيار إضافة دواء جديد
+      setPendingBarcode(barcode);
+      setNewMed({ nameAr: '', nameEn: '', scientificName: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
+      setShowNewMedForm(true);
+      toast.info(`الباركود ${barcode} غير مرتبط — أضف دواءً جديداً`);
+    }
+  };
+
+  // إضافة دواء جديد بالباركود الممسوح
+  const handleCreateNewMedicine = async () => {
+    if (!pendingBarcode) return;
+    if (!newMed.nameAr) { toast.error('الاسم العربي مطلوب'); return; }
+    if (!newMed.price || newMed.price <= 0) { toast.error('أدخل سعر بيع صحيح'); return; }
+    if (!newMed.quantity || newMed.quantity <= 0) { toast.error('أدخل كمية صحيحة'); return; }
+    if (!newMed.expiryDate) { toast.error('تاريخ الانتهاء مطلوب'); return; }
+
+    setSaving(true);
+    try {
+      const newId = await invoke<string>('add_medicine_db', {
+        nameAr: newMed.nameAr,
+        nameEn: newMed.nameEn || null,
+        scientificName: newMed.scientificName || null,
+        barcode: pendingBarcode,
+        price: newMed.price,
+        wholesalePrice: newMed.wholesalePrice || 0,
+        costPrice: newMed.costPrice || 0,
+        quantity: newMed.quantity,
+        batchNumber: newMed.batchNumber || null,
+        expiryDate: newMed.expiryDate || null,
+      });
+
+      setMedicines(prev => [{
+        id: newId,
+        nameAr: newMed.nameAr,
+        currentBarcode: pendingBarcode,
+        newBarcode: pendingBarcode,
+        status: 'saved' as const,
+        matched: true,
+      }, ...prev]);
+
+      setLastScan({ name: newMed.nameAr, barcode: pendingBarcode });
+      toast.success(`تم إضافة دواء جديد: ${newMed.nameAr}`);
+      setPendingBarcode(null);
+      setShowNewMedForm(false);
+      onSaved();
+    } catch (e: any) {
+      toast.error('فشل الإضافة: ' + e);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -703,6 +751,66 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
             إغلاق
           </button>
         </div>
+
+        {/* نافذة إضافة دواء جديد عند مسح باركود غير معروف */}
+        {showNewMedForm && pendingBarcode && (
+          <div className="absolute inset-0 bg-slate-900/50 flex items-center justify-center z-50 animate-fade-in" onClick={() => { setShowNewMedForm(false); setPendingBarcode(null); }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-[500px] max-h-[90vh] overflow-auto animate-scale-in" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-4 flex items-center justify-between bg-brand-900 text-white rounded-t-2xl">
+                <h3 className="text-base font-bold">إضافة دواء جديد</h3>
+                <button onClick={() => { setShowNewMedForm(false); setPendingBarcode(null); }} className="text-white/70 hover:bg-white/10 w-8 h-8 rounded-lg flex items-center justify-center">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5">
+                <div className="bg-brand-50 border border-brand-200 rounded-xl p-3 mb-4">
+                  <p className="text-xs text-brand-700">
+                    <strong>الباركود الممسوح:</strong>
+                    <span className="font-mono tabular text-base block mt-1">{pendingBarcode}</span>
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="col-span-2">
+                    <label className="label">الاسم بالعربي *</label>
+                    <input className="input" value={newMed.nameAr} onChange={e => setNewMed({...newMed, nameAr: e.target.value})} placeholder="مثلاً: بنادول 500mg" autoFocus />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label">الاسم العلمي</label>
+                    <input className="input" value={newMed.scientificName} onChange={e => setNewMed({...newMed, scientificName: e.target.value})} placeholder="Paracetamol" />
+                  </div>
+                  <div>
+                    <label className="label">سعر البيع (د.ع) *</label>
+                    <input type="number" className="input tabular" value={newMed.price} onChange={e => setNewMed({...newMed, price: parseFloat(e.target.value) || 0})} placeholder="1000" />
+                  </div>
+                  <div>
+                    <label className="label">سعر الشراء (د.ع)</label>
+                    <input type="number" className="input tabular" value={newMed.costPrice} onChange={e => setNewMed({...newMed, costPrice: parseFloat(e.target.value) || 0})} placeholder="700" />
+                  </div>
+                  <div>
+                    <label className="label">الكمية *</label>
+                    <input type="number" className="input tabular" value={newMed.quantity} onChange={e => setNewMed({...newMed, quantity: parseInt(e.target.value) || 0})} placeholder="10" />
+                  </div>
+                  <div>
+                    <label className="label">رقم الدفعة</label>
+                    <input className="input" value={newMed.batchNumber} onChange={e => setNewMed({...newMed, batchNumber: e.target.value})} placeholder="BATCH-001" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label">تاريخ الانتهاء *</label>
+                    <input type="date" className="input" value={newMed.expiryDate} onChange={e => setNewMed({...newMed, expiryDate: e.target.value})} />
+                  </div>
+                </div>
+                <button
+                  onClick={handleCreateNewMedicine}
+                  disabled={saving || !newMed.nameAr || !newMed.price || !newMed.quantity || !newMed.expiryDate}
+                  className="btn-primary w-full py-3 disabled:opacity-50"
+                >
+                  {saving ? <Loader className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                  إضافة الدواء + ربط الباركود
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
