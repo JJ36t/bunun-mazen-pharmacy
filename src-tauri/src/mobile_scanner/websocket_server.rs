@@ -13,40 +13,20 @@ use tokio_rustls::TlsAcceptor;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
-/// توليد شهادة self-signed صالحة للـ IP المحلي + localhost
-/// هذه الشهادة تُمكّن HTTPS/WSS → الكاميرا تعمل على الموبايل
+/// توليد شهادة self-signed باستخدام generate_simple_self_signed (API مستقر)
 fn generate_self_signed_cert(ip: &str) -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>), String> {
-    use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, SanType};
+    println!("[MobileScanner] Generating self-signed cert for IP: {}", ip);
 
-    // SANs: IP المحلي + localhost + 127.0.0.1
-    let mut params = CertificateParams::default();
-    params.subject_alt_names = vec![
-        SanType::DnsName("localhost".into()),
-        SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))),
-    ];
-    // أضف IP المحلي الحالي
-    if let Ok(ip_addr) = ip.parse::<std::net::IpAddr>() {
-        params.subject_alt_names.push(SanType::IpAddress(ip_addr));
-    }
+    // استخدم الدالة المساعدة generate_simple_self_signed (مستقرة عبر إصدارات rcgen)
+    // نمرر IP كـ DNS name — المتصفحات تقبله مع "proceed anyway"
+    let sans = vec!["localhost".to_string(), ip.to_string()];
+    let cert = rcgen::generate_simple_self_signed(sans)
+        .map_err(|e| format!("rcgen failed: {}", e))?;
 
-    // CN
-    let mut dn = DistinguishedName::new();
-    dn.push(DnType::CommonName, "Pharmacy Bin Mazen Scanner");
-    dn.push(DnType::OrganizationName, "Bin Mazen Pharmacy");
-    params.distinguished_name = dn;
+    println!("[MobileScanner] Cert generated successfully");
 
-    // صلاحية 10 سنوات
-    params.not_before = time::OffsetDateTime::now_utc();
-    params.not_after = time::OffsetDateTime::now_utc() + time::Duration::days(3650);
-
-    // هوية الخادم (Extended Key Usage)
-    params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
-
-    let key_pair = KeyPair::generate().map_err(|e| format!("KeyPair generation failed: {}", e))?;
-    let cert = params.self_signed(&key_pair).map_err(|e| format!("Cert generation failed: {}", e))?;
-
-    let cert_der = CertificateDer::from(cert.der().to_vec());
-    let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_pair.serialize_der()));
+    let cert_der = CertificateDer::from(cert.cert.der().to_vec());
+    let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()));
 
     Ok((cert_der, key_der))
 }
@@ -66,28 +46,37 @@ fn create_tls_acceptor(ip: &str) -> Result<TlsAcceptor, String> {
 pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle) -> Result<(), String> {
     let local_ip = crate::mobile_scanner::mod::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
 
+    println!("[MobileScanner] ====================================");
+    println!("[MobileScanner] Starting HTTPS/WSS server");
+    println!("[MobileScanner] Local IP: {}", local_ip);
+    println!("[MobileScanner] HTTPS port: {} (https://{}:{})", port, local_ip, port);
+    println!("[MobileScanner] WSS port: {} (wss://{}:{})", port + 1, local_ip, port + 1);
+    println!("[MobileScanner] ====================================");
+
     // أنشئ TLS acceptor بشهادة self-signed للـ IP المحلي
     let tls_acceptor = create_tls_acceptor(&local_ip)?;
-    println!("[MobileScanner] TLS cert generated for IP: {}", local_ip);
+    println!("[MobileScanner] TLS acceptor created successfully");
 
     let https_addr = format!("0.0.0.0:{}", port);
     let https_listener = TcpListener::bind(&https_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] HTTPS server listening on https://0.0.0.0:{}", port);
+    println!("[MobileScanner] HTTPS listener bound on https://0.0.0.0:{}", port);
 
     let wss_port = port + 1;
     let wss_addr = format!("0.0.0.0:{}", wss_port);
     let wss_listener = TcpListener::bind(&wss_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] WSS server listening on wss://0.0.0.0:{}", wss_port);
+    println!("[MobileScanner] WSS listener bound on wss://0.0.0.0:{}", wss_port);
 
     // HTTPS server
     let tls_acceptor_http = tls_acceptor.clone();
     tokio::spawn(async move {
         loop {
-            if let Ok((stream, _)) = https_listener.accept().await {
+            if let Ok((stream, peer_addr)) = https_listener.accept().await {
+                println!("[HTTPS] Connection from {}", peer_addr);
                 let acceptor = tls_acceptor_http.clone();
                 tokio::spawn(async move {
                     match acceptor.accept(stream).await {
                         Ok(tls_stream) => {
+                            println!("[HTTPS] TLS handshake OK");
                             let _ = handle_http_request(tls_stream).await;
                         }
                         Err(e) => println!("[HTTPS] TLS accept failed: {}", e),
@@ -103,6 +92,7 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle)
     tokio::spawn(async move {
         loop {
             if let Ok((stream, addr)) = wss_listener.accept().await {
+                println!("[WSS] Connection from {}", addr);
                 let acceptor = tls_acceptor_ws.clone();
                 let p = pool_clone.clone();
                 let h = app_handle.clone();
