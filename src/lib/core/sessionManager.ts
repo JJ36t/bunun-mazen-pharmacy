@@ -19,6 +19,11 @@ class SessionManager {
   private activityTimer: any = null;
   private readonly ACTIVITY_UPDATE_INTERVAL = 60 * 1000; // دقيقة
   private readonly SESSION_TIMEOUT = 60 * 60 * 1000; // ساعة
+  // تخزين مراجع المستمعين لإزالتها لاحقاً (إصلاح memory leak)
+  private activityHandlers: { event: string; handler: (e: Event) => void }[] = [];
+  // throttling لـ mousemove لتجنب تحديث lastActivity آلاف المرات
+  private lastActivityUpdate = 0;
+  private readonly ACTIVITY_THROTTLE_MS = 5000; // 5 ثواني
 
   /** بدء جلسة جديدة */
   async startSession(userId: string, username: string): Promise<void> {
@@ -62,6 +67,10 @@ class SessionManager {
   /** تحديث النشاط */
   updateActivity(): void {
     if (!this.currentSession) return;
+    // Throttle: لا تحدّث أكثر من مرة كل 5 ثواني
+    const now = Date.now();
+    if (now - this.lastActivityUpdate < this.ACTIVITY_THROTTLE_MS) return;
+    this.lastActivityUpdate = now;
     this.currentSession.lastActivity = new Date().toISOString();
   }
 
@@ -89,9 +98,11 @@ class SessionManager {
       }
     }, this.ACTIVITY_UPDATE_INTERVAL);
     
-    // تحديث النشاط عند أي تفاعل
+    // تحديث النشاط عند أي تفاعل — نخزّن المراجع للإزالة لاحقاً
+    const handler = () => this.updateActivity();
     ['click', 'keydown', 'mousemove'].forEach(event => {
-      document.addEventListener(event, () => this.updateActivity(), { passive: true });
+      document.addEventListener(event, handler, { passive: true });
+      this.activityHandlers.push({ event, handler });
     });
   }
 
@@ -101,6 +112,11 @@ class SessionManager {
       clearInterval(this.activityTimer);
       this.activityTimer = null;
     }
+    // إزالة كل المستمعين (إصلاح memory leak)
+    this.activityHandlers.forEach(({ event, handler }) => {
+      document.removeEventListener(event, handler);
+    });
+    this.activityHandlers = [];
   }
 
   /** معلومات الجهاز */

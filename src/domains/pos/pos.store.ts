@@ -1,9 +1,22 @@
 import { create } from 'zustand';
 
-interface CartItem { id: string; nameAr: string; quantity: number; price: number; }
+// CartItem يدعم batch + expiry لإتاحة FEFO في المستقبل
+interface CartItem {
+  id: string;
+  nameAr: string;
+  quantity: number;
+  price: number;
+  // حقول اختيارية لدعم الدفعات (FEFO)
+  batchId?: string;
+  batchNumber?: string;
+  expiryDate?: string;
+  scientificName?: string;
+}
+
 interface PosState {
   cart: CartItem[];
   discountPercentage: number;
+  // discountAmount مطلق (IQD) — يُستخدم فعلياً في App.tsx
   addToCart: (item: CartItem) => void;
   removeFromCart: (id: string) => void;
   updateItemQuantity: (id: string, quantity: number) => void;
@@ -18,11 +31,15 @@ export const usePosStore = create<PosState>((set, get) => ({
   cart: [], discountPercentage: 0,
   
   addToCart: (item) => set((state) => {
-    const safeItem = {
+    const safeItem: CartItem = {
       id: String(item.id || ''),
       nameAr: String(item.nameAr || 'دواء'),
       quantity: Number(item.quantity) || 1,
       price: Number(item.price) || 0,
+      batchId: item.batchId,
+      batchNumber: item.batchNumber,
+      expiryDate: item.expiryDate,
+      scientificName: item.scientificName,
     };
     const existing = state.cart.find(i => i.id === safeItem.id);
     if (existing) {
@@ -47,10 +64,12 @@ export const usePosStore = create<PosState>((set, get) => ({
     } catch { return 0; }
   },
   
+  // إصلاح bug أسبقية العوامل: (Number(...) || 0) / 100 — وليس Number(...) || (0/100)
   calculateDiscountAmount: () => {
     try {
       const subtotal = get().calculateSubtotal();
-      return subtotal * (Number(get().discountPercentage) || 0 / 100);
+      const pct = Number(get().discountPercentage) || 0;
+      return subtotal * (pct / 100);
     } catch { return 0; }
   },
   

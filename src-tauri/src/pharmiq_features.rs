@@ -146,16 +146,16 @@ pub async fn get_daily_inventory_checks_db(state: tauri::State<'_, PgPool>) -> R
         }));
     }
 
-    // قارب الانتهاء (خلال X يوم)
-    let expiring_soon = sqlx::query(&format!(
+    // قارب الانتهاء (خلال X يوم) — استعلام معلمات آمن
+    let expiring_soon = sqlx::query(
         "SELECT id, name_ar, barcode, expiry_date, quantity, CAST((expiry_date - CURRENT_DATE) AS BIGINT) as days_left
          FROM medicines
          WHERE is_deleted = FALSE AND expiry_date IS NOT NULL
            AND expiry_date >= CURRENT_DATE
-           AND expiry_date <= CURRENT_DATE + INTERVAL '{}' day
-         ORDER BY expiry_date ASC",
-        expiry_days
-    ))
+           AND expiry_date <= CURRENT_DATE + ($1 || ' days')::INTERVAL
+         ORDER BY expiry_date ASC"
+    )
+    .bind(expiry_days.to_string())
     .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut expiring_list = Vec::new();
     for r in expiring_soon {
@@ -169,11 +169,11 @@ pub async fn get_daily_inventory_checks_db(state: tauri::State<'_, PgPool>) -> R
         }));
     }
 
-    // مخزون منخفض
-    let low_stock_rows = sqlx::query(&format!(
-        "SELECT id, name_ar, barcode, quantity FROM medicines WHERE is_deleted = FALSE AND quantity <= {} ORDER BY quantity ASC",
-        low_stock
-    ))
+    // مخزون منخفض — استعلام معلمات آمن
+    let low_stock_rows = sqlx::query(
+        "SELECT id, name_ar, barcode, quantity FROM medicines WHERE is_deleted = FALSE AND quantity <= $1 ORDER BY quantity ASC"
+    )
+    .bind(low_stock as i32)
     .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut low_stock_list = Vec::new();
     for r in low_stock_rows {
@@ -436,17 +436,21 @@ pub async fn update_supplier_order_status_db(
 
 #[tauri::command]
 pub async fn get_inventory_value_db(state: tauri::State<'_, PgPool>) -> Result<serde_json::Value, String> {
+    // عتبة المخزون المنخفض من الإعدادات (default 20)
+    let low_stock_threshold: i32 = sqlx::query_scalar("SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'low_stock_threshold'")
+        .fetch_optional(state.inner()).await.unwrap_or(None).unwrap_or(20);
     let row = sqlx::query(
         "SELECT
             COUNT(*) as total_items,
             COALESCE(SUM(quantity * cost_price), 0) as total_cost_value,
             COALESCE(SUM(quantity * price), 0) as total_sell_value,
             COALESCE(SUM(quantity), 0) as total_units,
-            COUNT(CASE WHEN quantity <= 20 THEN 1 END) as low_stock_count,
+            COUNT(CASE WHEN quantity <= $1 THEN 1 END) as low_stock_count,
             COUNT(CASE WHEN expiry_date IS NOT NULL AND expiry_date < CURRENT_DATE THEN 1 END) as expired_count,
             COUNT(CASE WHEN expiry_date IS NOT NULL AND expiry_date >= CURRENT_DATE AND expiry_date <= CURRENT_DATE + INTERVAL '30 day' THEN 1 END) as expiring_soon_count
          FROM medicines WHERE is_deleted = FALSE"
     )
+    .bind(low_stock_threshold)
     .fetch_one(state.inner())
     .await
     .map_err(|e| e.to_string())?;

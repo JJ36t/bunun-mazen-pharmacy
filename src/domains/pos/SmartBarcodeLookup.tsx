@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { X, Search, Loader, Plus, AlertCircle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuthStore } from '../security/auth.store';
 
 interface SmartBarcodeLookupProps {
   barcode: string;
@@ -79,7 +80,7 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
         quantity: q,
         batchNumber: batchNumber || null,
         expiryDate: expiryDate || null,
-        userRole: 'admin',
+        userRole: useAuthStore.getState().username || 'unknown',
       });
       toast.success('تم إضافة الدواء للمخزون وربطه بالباركود');
       onMedicineAdded(medId);

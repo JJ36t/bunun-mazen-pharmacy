@@ -6,7 +6,7 @@ import { useDebtsStore } from './domains/accounting/debts.store';
 import { TrendingUp, Wallet, Users, Package, AlertTriangle, Clock, DollarSign, ArrowUpRight, Activity, ShoppingCart, RotateCcw, Pill, Zap, Trophy, RefreshCw } from 'lucide-react';
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart } from 'recharts';
 
-export function MainDashboard() {
+export function MainDashboard({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const [stats, setStats] = useState({ todaySales: 0, todayInvoices: 0, lowStockCount: 0 });
   const [chartData, setChartData] = useState<any[]>([]);
   const [topMeds, setTopMeds] = useState<any[]>([]);
@@ -99,12 +99,18 @@ export function MainDashboard() {
         })}
       </div>
 
-      {/* إجراءات سريعة */}
+      {/* إجراءات سريعة — مرتبطة بـ onNavigate (إن وُجد) */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         {quickActions.map((action, i) => {
           const Icon = action.icon;
+          const handleAction = onNavigate ? () => onNavigate(action.action) : undefined;
           return (
-            <button key={i} className={`p-4 rounded-2xl ${colorMap[action.color]} flex items-center gap-3 transition-all`}>
+            <button
+              key={i}
+              onClick={handleAction}
+              disabled={!handleAction}
+              className={`p-4 rounded-2xl ${colorMap[action.color]} flex items-center gap-3 transition-all ${handleAction ? 'hover:shadow-md cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
+            >
               <Icon className="w-5 h-5" />
               <span className="text-sm font-semibold">{action.label}</span>
             </button>

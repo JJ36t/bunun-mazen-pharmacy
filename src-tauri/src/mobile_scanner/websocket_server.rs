@@ -13,22 +13,49 @@ use tokio_rustls::TlsAcceptor;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
-/// توليد شهادة self-signed باستخدام generate_simple_self_signed (API مستقر)
+/// توليد أو تحميل شهادة self-signed دائمة (لا تُعاد كل إقلاع)
+/// تُخزّن في مجلد بيانات التطبيق
 fn generate_self_signed_cert(ip: &str) -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>), String> {
-    println!("[MobileScanner] Generating self-signed cert for IP: {}", ip);
+    let app_dir = dirs_next::data_dir()
+        .ok_or("تعذّر تحديد مجلد البيانات")?
+        .join("BununMazenPharmacy");
+    std::fs::create_dir_all(&app_dir).ok();
+    let cert_file = app_dir.join("scanner_cert.der");
+    let key_file = app_dir.join("scanner_key.der");
 
-    // استخدم الدالة المساعدة generate_simple_self_signed (مستقرة عبر إصدارات rcgen)
-    // نمرر IP كـ DNS name — المتصفحات تقبله مع "proceed anyway"
+    // إذا وُجدت شهادة محفوظة، حمّلها
+    if cert_file.exists() && key_file.exists() {
+        if let (Ok(cert_bytes), Ok(key_bytes)) = (
+            std::fs::read(&cert_file),
+            std::fs::read(&key_file),
+        ) {
+            println!("[MobileScanner] Loaded persisted self-signed cert");
+            let cert = CertificateDer::from(cert_bytes);
+            let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_bytes));
+            return Ok((cert, key));
+        }
+    }
+
+    // توليد شهادة جديدة وحفظها
+    println!("[MobileScanner] Generating new self-signed cert for IP: {}", ip);
     let sans = vec!["localhost".to_string(), ip.to_string()];
     let cert = rcgen::generate_simple_self_signed(sans)
         .map_err(|e| format!("rcgen failed: {}", e))?;
 
-    println!("[MobileScanner] Cert generated successfully");
+    let cert_der = cert.cert.der().to_vec();
+    let key_der = cert.key_pair.serialize_der();
 
-    let cert_der = CertificateDer::from(cert.cert.der().to_vec());
-    let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()));
+    // حفظ للإقلاعات القادمة (صلاحيات 0600 على يونكس)
+    let _ = std::fs::write(&cert_file, &cert_der);
+    let _ = std::fs::write(&key_file, &key_der);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&key_file, std::fs::Permissions::from_mode(0o600));
+    }
 
-    Ok((cert_der, key_der))
+    println!("[MobileScanner] Cert generated and persisted");
+    Ok((CertificateDer::from(cert_der), PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_der))))
 }
 
 /// إنشاء TLS acceptor لـ HTTPS/WSS
@@ -43,7 +70,7 @@ fn create_tls_acceptor(ip: &str) -> Result<TlsAcceptor, String> {
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
-pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle) -> Result<(), String> {
+pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle, cancel_token: tokio_util::sync::CancellationToken) -> Result<(), String> {
     let local_ip = crate::mobile_scanner::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
 
     println!("[MobileScanner] ====================================");
@@ -54,7 +81,6 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle)
     println!("[MobileScanner] ====================================");
 
     // ثبّت CryptoProvider الافتراضي (ring) — مطلوب لـ rustls 0.23
-    // نثبّته مرة واحدة فقط (آمنة للاستدعاء المتعدد)
     let _ = rustls::crypto::ring::default_provider().install_default();
     println!("[MobileScanner] CryptoProvider (ring) installed");
 
@@ -73,20 +99,29 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle)
 
     // HTTPS server
     let tls_acceptor_http = tls_acceptor.clone();
+    let cancel_http = cancel_token.clone();
     tokio::spawn(async move {
         loop {
-            if let Ok((stream, peer_addr)) = https_listener.accept().await {
-                println!("[HTTPS] Connection from {}", peer_addr);
-                let acceptor = tls_acceptor_http.clone();
-                tokio::spawn(async move {
-                    match acceptor.accept(stream).await {
-                        Ok(tls_stream) => {
-                            println!("[HTTPS] TLS handshake OK");
-                            let _ = handle_http_request(tls_stream).await;
-                        }
-                        Err(e) => println!("[HTTPS] TLS accept failed: {}", e),
+            tokio::select! {
+                _ = cancel_http.cancelled() => {
+                    println!("[MobileScanner] HTTPS server shutting down");
+                    break;
+                }
+                accept_result = https_listener.accept() => {
+                    if let Ok((stream, peer_addr)) = accept_result {
+                        println!("[HTTPS] Connection from {}", peer_addr);
+                        let acceptor = tls_acceptor_http.clone();
+                        tokio::spawn(async move {
+                            match acceptor.accept(stream).await {
+                                Ok(tls_stream) => {
+                                    println!("[HTTPS] TLS handshake OK");
+                                    let _ = handle_http_request(tls_stream).await;
+                                }
+                                Err(e) => println!("[HTTPS] TLS accept failed: {}", e),
+                            }
+                        });
                     }
-                });
+                }
             }
         }
     });
@@ -94,28 +129,39 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle)
     // WSS server
     let tls_acceptor_ws = tls_acceptor.clone();
     let pool_clone = pool.clone();
+    let app_handle_ws = app_handle.clone();
+    let cancel_ws = cancel_token.clone();
     tokio::spawn(async move {
         loop {
-            if let Ok((stream, addr)) = wss_listener.accept().await {
-                println!("[WSS] Connection from {}", addr);
-                let acceptor = tls_acceptor_ws.clone();
-                let p = pool_clone.clone();
-                let h = app_handle.clone();
-                tokio::spawn(async move {
-                    match acceptor.accept(stream).await {
-                        Ok(tls_stream) => {
-                            let _ = handle_ws_connection(tls_stream, addr, p, h).await;
-                        }
-                        Err(e) => println!("[WSS] TLS accept failed: {}", e),
+            tokio::select! {
+                _ = cancel_ws.cancelled() => {
+                    println!("[MobileScanner] WSS server shutting down");
+                    break;
+                }
+                accept_result = wss_listener.accept() => {
+                    if let Ok((stream, addr)) = accept_result {
+                        println!("[WSS] Connection from {}", addr);
+                        let acceptor = tls_acceptor_ws.clone();
+                        let p = pool_clone.clone();
+                        let h = app_handle_ws.clone();
+                        tokio::spawn(async move {
+                            match acceptor.accept(stream).await {
+                                Ok(tls_stream) => {
+                                    let _ = handle_ws_connection(tls_stream, addr, p, h).await;
+                                }
+                                Err(e) => println!("[WSS] TLS accept failed: {}", e),
+                            }
+                        });
                     }
-                });
+                }
             }
         }
     });
 
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-    }
+    // انتظر cancellation بدل sleep forever
+    cancel_token.cancelled().await;
+    println!("[MobileScanner] Server fully stopped");
+    Ok(())
 }
 
 /// معالجة طلب HTTPS — إرجاع صفحة الموبايل
@@ -326,9 +372,9 @@ async fn process_scan(barcode: &str, pool: &PgPool, device_name: &str, device_ip
 }
 
 /// ابحث في OpenFoodFacts API عن الباركود
-/// API: https://world.openfoodfacts.org/api/v0/product/{barcode}.json
+/// API: https://world.openfoodfacts.org/api/v2/product/{barcode}.json (v2 موحّد مع smart_barcode_commands)
 async fn lookup_openfoodfacts_api(barcode: &str) -> Option<serde_json::Value> {
-    let url = format!("https://world.openfoodfacts.org/api/v0/product/{}.json", barcode);
+    let url = format!("https://world.openfoodfacts.org/api/v2/product/{}.json", barcode);
 
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(8))

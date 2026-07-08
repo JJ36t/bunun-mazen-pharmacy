@@ -4,6 +4,11 @@
 )]
 #![allow(dead_code)]
 
+// ثابت تكلفة bcrypt — مرفوعة من 8 إلى 12 (OWASP يوصي ≥ 12)
+const BCRYPT_COST: u32 = 12;
+// ثابت عدد تكرارات PBKDF2 لاشتقاق مفتاح AES (بديل آمن لـ SHA256 المفردة)
+const AES_KDF_ITERATIONS: u32 = 100_000;
+
 
 use sysinfo::{System, SystemExt, CpuExt};
 use std::fs;
@@ -98,45 +103,89 @@ fn activate_license(activation_key: String) -> Result<bool, String> {
 }
 
 // --- أوامر النسخ الاحتياطي (مع التشفير) ---
+// اشتقاق مفتاح AES-256 من كلمة المرور باستخدام PBKDF2-HMAC-SHA256 (10salt + 100k iterations)
+// بديل آمن لـ SHA256(password) المفردة التي كانت قابلة لكسر GPU
+fn derive_aes_key(password: &str, salt: &[u8; 16]) -> [u8; 32] {
+    use ring::pbkdf2;
+    let mut key = [0u8; 32];
+    pbkdf2::derive(pbkdf2::PBKDF2_HMAC_SHA256, std::num::NonZeroU32::new(AES_KDF_ITERATIONS).unwrap(), salt, password.as_bytes(), &mut key);
+    key
+}
+
 fn encrypt_data(data: &str, password: &str) -> Result<String, String> {
-    let key_bytes = digest::digest(&digest::SHA256, password.as_bytes());
-    let key = Key::<Aes256Gcm>::from_slice(key_bytes.as_ref());
+    // توليد salt عشوائي 16 بايت (يُخزّن مع النص المشفر)
+    let mut salt = [0u8; 16];
+    OsRng.fill_bytes(&mut salt);
+    let key_bytes = derive_aes_key(password, &salt);
+    let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
     let cipher = Aes256Gcm::new(key);
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher.encrypt(nonce, data.as_bytes()).map_err(|e| e.to_string())?;
-    Ok(format!("{}:{}", general_purpose::STANDARD.encode(nonce_bytes), general_purpose::STANDARD.encode(ciphertext)))
+    // الصيغة الجديدة: base64(salt):base64(nonce):base64(ciphertext)
+    // متوافقة مع النسخ القديمة عبر detect في decrypt_data
+    Ok(format!("{}:{}:{}", general_purpose::STANDARD.encode(salt), general_purpose::STANDARD.encode(nonce_bytes), general_purpose::STANDARD.encode(ciphertext)))
 }
 
 fn decrypt_data(encrypted_data: &str, password: &str) -> Result<String, String> {
-    let key_bytes = digest::digest(&digest::SHA256, password.as_bytes());
-    let key = Key::<Aes256Gcm>::from_slice(key_bytes.as_ref());
-    let cipher = Aes256Gcm::new(key);
     let parts: Vec<&str> = encrypted_data.split(':').collect();
-    if parts.len() != 2 { return Err("صيغة الملف المشفر غير صحيحة".to_string()); }
-    let nonce_bytes = general_purpose::STANDARD.decode(parts[0]).map_err(|e| e.to_string())?;
-    let ciphertext = general_purpose::STANDARD.decode(parts[1]).map_err(|e| e.to_string())?;
-    let nonce = Nonce::from_slice(&nonce_bytes);
-    let plaintext = cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| "كلمة مرور النسخة الاحتياطية خاطئة".to_string())?;
-    String::from_utf8(plaintext).map_err(|e| e.to_string())
+    if parts.len() == 3 {
+        // الصيغة الجديدة (PBKDF2): salt:nonce:ciphertext
+        let salt = general_purpose::STANDARD.decode(parts[0]).map_err(|e| e.to_string())?;
+        let nonce_bytes = general_purpose::STANDARD.decode(parts[1]).map_err(|e| e.to_string())?;
+        let ciphertext = general_purpose::STANDARD.decode(parts[2]).map_err(|e| e.to_string())?;
+        if salt.len() != 16 { return Err("صيغة الملف المشفر غير صحيحة".to_string()); }
+        let mut salt_arr = [0u8; 16];
+        salt_arr.copy_from_slice(&salt);
+        let key_bytes = derive_aes_key(password, &salt_arr);
+        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+        let cipher = Aes256Gcm::new(key);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| "كلمة مرور النسخة الاحتياطية خاطئة".to_string())?;
+        String::from_utf8(plaintext).map_err(|e| e.to_string())
+    } else if parts.len() == 2 {
+        // الصيغة القديمة (SHA256 مفردة) للتوافق مع النسخ الاحتياطية القديمة
+        let key_bytes = digest::digest(&digest::SHA256, password.as_bytes());
+        let key = Key::<Aes256Gcm>::from_slice(key_bytes.as_ref());
+        let cipher = Aes256Gcm::new(key);
+        let nonce_bytes = general_purpose::STANDARD.decode(parts[0]).map_err(|e| e.to_string())?;
+        let ciphertext = general_purpose::STANDARD.decode(parts[1]).map_err(|e| e.to_string())?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| "كلمة مرور النسخة الاحتياطية خاطئة".to_string())?;
+        String::from_utf8(plaintext).map_err(|e| e.to_string())
+    } else {
+        Err("صيغة الملف المشفر غير صحيحة".to_string())
+    }
+}
+
+// إرجاع مسار سطح المكتب عبر منصة (Windows/macOS/Linux)
+fn desktop_dir() -> Result<std::path::PathBuf, String> {
+    if let Some(dir) = dirs_next::desktop_dir() {
+        return Ok(dir);
+    }
+    // fallback
+    if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        return Ok(std::path::PathBuf::from(home).join("Desktop"));
+    }
+    Err("تعذّر تحديد مسار سطح المكتب".to_string())
 }
 
 #[tauri::command]
 fn save_csv_file(filename: String, content: String) -> Result<String, String> {
-    let desktop_dir = std::env::var("USERPROFILE").map_err(|e| e.to_string())?;
-    let path = format!("{}\\Desktop\\{}", desktop_dir, filename);
+    let dir = desktop_dir()?;
+    let path = dir.join(filename);
     std::fs::File::create(&path).map_err(|e| e.to_string())?.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
-    Ok(path)
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
 fn create_backup(data: String, password: String) -> Result<String, String> {
-    let desktop_dir = std::env::var("USERPROFILE").map_err(|e| e.to_string())?;
-    let path = format!("{}\\Desktop\\Pharmacy_Backup_{}.enc", desktop_dir, chrono::Local::now().format("%Y%m%d_%H%M%S"));
+    let dir = desktop_dir()?;
+    let path = dir.join(format!("Pharmacy_Backup_{}.enc", chrono::Local::now().format("%Y%m%d_%H%M%S")));
     let encrypted_data = encrypt_data(&data, &password)?;
     std::fs::File::create(&path).map_err(|e| e.to_string())?.write_all(encrypted_data.as_bytes()).map_err(|e| e.to_string())?;
-    Ok(path)
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -166,23 +215,62 @@ async fn check_auto_backup(state: tauri::State<'_, PgPool>) -> Result<bool, Stri
 // --- أوامر المستخدمين والورديات ---
 #[tauri::command]
 async fn login(state: tauri::State<'_, PgPool>, username: String, password: String) -> Result<serde_json::Value, String> {
-    let row = sqlx::query("SELECT password, role FROM users WHERE username = $1 AND is_active = TRUE AND deleted_at IS NULL")
+    // Rate-limit بدائي: نسمح بـ 5 محاولات فاشلة لكل username خلال 5 دقائق
+    let recent_failures: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_logs WHERE user_role = $1 AND action_type = 'LOGIN_FAILED' AND created_at > NOW() - INTERVAL '5 minutes'"
+    ).bind(&username).fetch_one(state.inner()).await.unwrap_or(0);
+    if recent_failures >= 5 {
+        return Err("تم تجاوز عدد محاولات الدخول المسموحة. حاول بعد 5 دقائق.".to_string());
+    }
+
+    let row = sqlx::query("SELECT id, password, role FROM users WHERE username = $1 AND is_active = TRUE AND deleted_at IS NULL")
         .bind(&username).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
     match row {
         Some(r) => {
-            let hashed_pass: String = r.get(0);
-            let role: String = r.get(1);
-            if bcrypt::verify(&password, &hashed_pass).unwrap_or(false) {
+            let user_id: uuid::Uuid = r.get(0);
+            let hashed_pass: String = r.get(1);
+            let role: String = r.get(2);
+            // bcrypt::verify يعيد Err عند hash تالف — نعتبره "كلمة مرور خاطئة"
+            let verified = bcrypt::verify(&password, &hashed_pass).unwrap_or(false);
+            if verified {
                 // تحديث آخر دخول
                 let _ = sqlx::query("UPDATE users SET last_login = NOW() WHERE username = $1")
                     .bind(&username).execute(state.inner()).await;
+                // توليد session token وإدراجه في user_sessions
+                let session_token = uuid::Uuid::new_v4().to_string();
+                let device_info = format!("os:{}", std::env::consts::OS);
+                let _ = sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at) VALUES ($1, $2, $3, TRUE, NOW())")
+                    .bind(user_id).bind(&username).bind(&device_info).execute(state.inner()).await;
                 // تسجيل في سجل التدقيق
                 let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN', 'تسجيل دخول ناجح')")
                     .bind(&username).execute(state.inner()).await;
-                Ok(serde_json::json!({ "username": username, "role": role }))
-            } else { Err("بيانات الدخول غير صحيحة".to_string()) }
+                Ok(serde_json::json!({ "username": username, "role": role, "sessionToken": session_token, "userId": user_id.to_string() }))
+            } else {
+                let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN_FAILED', 'محاولة دخول فاشلة')")
+                    .bind(&username).execute(state.inner()).await;
+                Err("بيانات الدخول غير صحيحة".to_string())
+            }
         },
-        None => Err("بيانات الدخول غير صحيحة أو الحساب موقوف".to_string()),
+        None => {
+            let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN_FAILED', 'مستخدم غير موجود أو موقوف')")
+                .bind(&username).execute(state.inner()).await;
+            Err("بيانات الدخول غير صحيحة أو الحساب موقوف".to_string())
+        },
+    }
+}
+
+// تحقق من session token — يُستخدم كطبقة مصادقة على الأوامر الحساسة
+async fn verify_session_token(pool: &PgPool, session_token: &str) -> Result<(uuid::Uuid, String, String), String> {
+    // session_token هنا يُمرّر كـ user_id كبديل بسيط (لأن الواجهة لا ترسل token فعلياً بعد)
+    // في المستقبل: استبدل بجدول session_tokens منفصل
+    let uuid_id = uuid::Uuid::parse_str(session_token)
+        .map_err(|_| "session token غير صالح".to_string())?;
+    let row = sqlx::query("SELECT id, username, role FROM users WHERE id = $1 AND is_active = TRUE AND deleted_at IS NULL")
+        .bind(uuid_id).fetch_optional(pool).await
+        .map_err(|e| e.to_string())?;
+    match row {
+        Some(r) => Ok((r.get(0), r.get(1), r.get(2))),
+        None => Err("جلسة غير صالحة أو المستخدم موقوف".to_string()),
     }
 }
 
@@ -225,15 +313,18 @@ async fn get_users_db(state: tauri::State<'_, PgPool>, requester_role: Option<St
 
 #[tauri::command]
 async fn add_user_db(state: tauri::State<'_, PgPool>, username: String, password: String, role: String) -> Result<(), String> {
-    let hashed = bcrypt::hash(&password, 8).map_err(|e| e.to_string())?;
+    // التحقق من طول كلمة المرور (>= 6)
+    if password.len() < 6 { return Err("كلمة المرور يجب أن تكون 6 أحرف على الأقل".to_string()); }
+    let hashed = bcrypt::hash(&password, BCRYPT_COST).map_err(|e| e.to_string())?;
     sqlx::query("INSERT INTO users (username, password, role) VALUES ($1, $2, $3)").bind(&username).bind(hashed).bind(&role).execute(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 async fn reset_user_password_db(state: tauri::State<'_, PgPool>, user_id: String, new_password: String) -> Result<(), String> {
+    if new_password.len() < 6 { return Err("كلمة المرور يجب أن تكون 6 أحرف على الأقل".to_string()); }
     let uuid_id = uuid::Uuid::parse_str(&user_id).map_err(|e| e.to_string())?;
-    let hashed = bcrypt::hash(&new_password, 8).map_err(|e| e.to_string())?;
+    let hashed = bcrypt::hash(&new_password, BCRYPT_COST).map_err(|e| e.to_string())?;
     sqlx::query("UPDATE users SET password = $1 WHERE id = $2").bind(hashed).bind(uuid_id).execute(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -532,9 +623,21 @@ async fn link_barcode_to_medicine_db(
 }
 
 // --- أوامر المحاسقة (وإصلاح خصم المخزون المزدوج) ---
+// idempotency: operation_id يمنع تسجيل البيع مرتين عند إعادة المحاولة بعد انهيار
 #[tauri::command]
-async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String) -> Result<(), String> {
+async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>) -> Result<serde_json::Value, String> {
     let pool = state.inner();
+
+    // ===== Idempotency check =====
+    if let Some(op_id) = &operation_id {
+        let already: Option<uuid::Uuid> = sqlx::query_scalar(
+            "SELECT id FROM invoices WHERE idempotency_key = $1"
+        ).bind(op_id).fetch_optional(pool).await.map_err(|e| e.to_string())?;
+        if let Some(inv_id) = already {
+            return Ok(serde_json::json!({ "invoiceId": inv_id.to_string(), "replayed": true }));
+        }
+    }
+
     let settings_row = sqlx::query("SELECT value FROM settings WHERE key = 'max_discount'").fetch_optional(pool).await.map_err(|e| e.to_string())?;
     let max_discount: f64 = if let Some(row) = settings_row { row.get::<String, _>(0).parse::<f64>().unwrap_or(10.0) } else { 10.0 };
     if discount_percentage > max_discount { return Err(format!("الخصم يتجاوز الحد الأقصى المسموح به ({})%", max_discount)); }
@@ -557,10 +660,14 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
     let discount_factor = rust_decimal::Decimal::from_f64(discount_percentage).ok_or("Err")? / rust_decimal::Decimal::from(100);
     let discount_amount = subtotal * discount_factor;
     let final_total = subtotal - discount_amount;
-    let final_profit = total_profit - discount_amount;
+    // تصحيح: الخصم يُخصم من الربح بنسبة نسبية وليس كاملاً
+    // إذا كان الربح = (price - cost) * qty والخصم = subtotal * factor
+    // فالخصم يُتقاسم بين الربح والتكلفة بنسبة هامش الربح
+    let margin_ratio = if subtotal > rust_decimal::Decimal::ZERO { total_profit / subtotal } else { rust_decimal::Decimal::ZERO };
+    let final_profit = total_profit - (discount_amount * margin_ratio);
 
-    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number) VALUES ($1, $2, $3, get_daily_receipt_number()) RETURNING id")
-        .bind(final_total).bind(final_profit).bind(&user_role).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number, idempotency_key) VALUES ($1, $2, $3, get_daily_receipt_number(), $4) RETURNING id")
+        .bind(final_total).bind(final_profit).bind(&user_role).bind(&operation_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let invoice_id: uuid::Uuid = row.get(0);
 
     let mut items_desc = Vec::new();
@@ -591,7 +698,7 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
     let desc = format!("بيع فاتورة بمبلغ {}. الأصناف: {}", final_total, items_desc.join(", "));
     sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("SALE_INVOICE").bind(desc).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(serde_json::json!({ "invoiceId": invoice_id.to_string(), "replayed": false }))
 }
 
 #[tauri::command]
@@ -695,15 +802,19 @@ async fn get_accounting_summary_db(state: tauri::State<'_, PgPool>) -> Result<se
     Ok(serde_json::json!({ "totalSales": total_sales.to_string().parse::<f64>().unwrap_or(0.0), "totalProfits": total_profits.to_string().parse::<f64>().unwrap_or(0.0), "totalExpenses": total_expenses.to_string().parse::<f64>().unwrap_or(0.0), "cashbox": cashbox.to_string().parse::<f64>().unwrap_or(0.0), "expenses": expenses_list }))
 }
 
+// الإغلاق اليومي — يصفّر ONLY اليوم الحالي وليس كل التاريخ
+// البيانات التاريخية تُنقل لجدول archive (إن وُجد) أو تُترك كما هي
 #[tauri::command]
 async fn reset_daily_db(state: tauri::State<'_, PgPool>, user_role: String) -> Result<(), String> {
     if user_role != "Super Admin" { return Err("صلاحية غير كافية: يجب أن تكون مديراً للقيام بالإغلاق اليومي.".to_string()); }
+    let today = chrono::Local::now().date_naive();
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
-    sqlx::query("TRUNCATE TABLE invoice_items RESTART IDENTITY").execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    sqlx::query("TRUNCATE TABLE invoices RESTART IDENTITY").execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    sqlx::query("TRUNCATE TABLE expenses RESTART IDENTITY").execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    sqlx::query("TRUNCATE TABLE audit_logs RESTART IDENTITY").execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("DAILY_CLOSING").bind("إغلاق يومي وتصفير العدادات").execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    // حذف فقط إيصالات اليوم (total_amount >= 0 = بيع، < 0 = مرتجع — كلاهما اليومي)
+    sqlx::query("DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE created_at::date = $1)").bind(today).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM invoices WHERE created_at::date = $1").bind(today).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM expenses WHERE created_at::date = $1").bind(today).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    // نُبقي سجل التدقيق (لا نمسحه)
+    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("DAILY_CLOSING").bind("إغلاق يومي — مسح مبيعات اليوم فقط").execute(&mut *tx).await.map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -894,87 +1005,141 @@ async fn get_dashboard_stats(state: tauri::State<'_, PgPool>) -> Result<serde_js
     let sales_row = sqlx::query("SELECT COALESCE(SUM(total_amount), 0), COUNT(id) FROM invoices WHERE created_at::date = $1").bind(today).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
     let today_sales: rust_decimal::Decimal = sales_row.get(0);
     let today_invoices: i64 = sales_row.get(1);
-    let low_stock_row = sqlx::query("SELECT COUNT(id) FROM medicines WHERE quantity < 50 AND is_deleted = FALSE").fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
+    // عتبة المخزون المنخفض من الإعدادات (default 20)
+    let threshold_row = sqlx::query("SELECT value FROM settings WHERE key = 'low_stock_threshold'").fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
+    let threshold: i32 = threshold_row.and_then(|r| r.get::<String, _>(0).parse::<i32>().ok()).unwrap_or(20);
+    let low_stock_row = sqlx::query("SELECT COUNT(id) FROM medicines WHERE quantity <= $1 AND is_deleted = FALSE").bind(threshold).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
     let low_stock_count: i64 = low_stock_row.get(0);
     Ok(serde_json::json!({ "todaySales": today_sales.to_string().parse::<f64>().unwrap_or(0.0), "todayInvoices": today_invoices, "lowStockCount": low_stock_count }))
 }
 
 #[tauri::command]
 async fn get_weekly_sales_stats(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_json::Value>, String> {
+    // استعلام واحد بدل 7 — يحسب مبيعات آخر 7 أيام في استعلام واحد
+    let start_date = chrono::Local::now().date_naive() - chrono::Duration::days(6);
+    let rows = sqlx::query("SELECT d::date AS day, COALESCE(SUM(i.total_amount), 0) AS total FROM generate_series($1::date, $2::date, INTERVAL '1 day') AS d LEFT JOIN invoices i ON i.created_at::date = d::date GROUP BY d::date ORDER BY d::date ASC")
+        .bind(start_date).bind(today()).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut results = Vec::new();
-    for i in 0..7 {
-        let date = chrono::Local::now().date_naive() - chrono::Duration::days(i);
-        let row = sqlx::query("SELECT COALESCE(SUM(total_amount), 0) FROM invoices WHERE created_at::date = $1").bind(date).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
-        let total: rust_decimal::Decimal = row.get(0);
-        results.push(serde_json::json!({ "date": date.format("%Y-%m-%d").to_string(), "sales": total.to_string().parse::<f64>().unwrap_or(0.0) }));
+    for row in rows {
+        let day: chrono::NaiveDate = row.get(0);
+        let total: rust_decimal::Decimal = row.get(1);
+        results.push(serde_json::json!({ "date": day.format("%Y-%m-%d").to_string(), "sales": total.to_string().parse::<f64>().unwrap_or(0.0) }));
     }
     Ok(results)
 }
 
-// --- أوامر الطباعة المباشرة (ESC/POS) ---
+fn today() -> chrono::NaiveDate { chrono::Local::now().date_naive() }
+
+// --- أوامر الطباعة (متعددة المنصات + تشكيل عربي RTL) ---
+
+// تحويل نص عربي ليطبع بشكل صحيح على طابعات ESC/POS بدون فيرموير عربي
+// نعكس الأحرف لكل سطر عربي ونغلقه بـ RTL mark (الحل المبسّط؛ الحل الكامل يحتاج arabic_reshaper)
+fn shape_arabic_for_print(s: &str) -> String {
+    // تحقق إن كان النص يحوي أحرف عربية
+    let has_arabic = s.chars().any(|c| (c as u32) >= 0x0600 && (c as u32) <= 0x06FF);
+    if !has_arabic { return s.to_string(); }
+    // عكس الأحرف في كل كلمة على حدة + عكس ترتيب الكلمات
+    let mut words: Vec<String> = s.split_whitespace().map(|w| w.chars().rev().collect()).collect();
+    words.reverse();
+    format!("\u{200F}{}", words.join(" ")) // RLM mark + reversed
+}
 
 #[tauri::command]
 fn get_available_printers() -> Vec<String> {
-    let output = Command::new("cmd")
-        .args(&["/C", "wmic printer get name"])
-        .output();
-
-    match output {
-        Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            stdout.lines()
-                .skip(1)
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        },
-        Err(_) => vec![],
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("cmd").args(&["/C", "wmic", "printer", "get", "name"]).output();
+        match output {
+            Ok(o) => {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines().skip(1)
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            },
+            Err(_) => vec![],
+        }
     }
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("lpstat").arg("-p").output();
+        match output {
+            Ok(o) => String::from_utf8_lossy(&o.stdout).lines()
+                .filter_map(|l| l.split_whitespace().nth(1).map(|s| s.to_string()))
+                .collect(),
+            Err(_) => vec![],
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let output = Command::new("lpstat").arg("-p").output();
+        match output {
+            Ok(o) => String::from_utf8_lossy(&o.stdout).lines()
+                .filter_map(|l| l.split_whitespace().nth(1).map(|s| s.to_string()))
+                .collect(),
+            Err(_) => vec![],
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    { vec![] }
 }
 
 #[tauri::command]
 fn print_receipt_direct(printer_name: String, pharmacy_name: String, invoice_num: String, items_json: String, total: String) -> Result<(), String> {
     let mut esc_data: Vec<u8> = Vec::new();
-    
-    esc_data.extend_from_slice(b"\x1B\x40"); 
-    esc_data.extend_from_slice(b"\x1B\x61\x01"); 
-    esc_data.extend_from_slice(format!("{}\n", pharmacy_name).as_bytes());
-    esc_data.extend_from_slice(b"\x1B\x61\x00"); 
+    esc_data.extend_from_slice(b"\x1B\x40"); // init
+    esc_data.extend_from_slice(b"\x1B\x61\x01"); // center
+    esc_data.extend_from_slice(format!("{}\n", shape_arabic_for_print(&pharmacy_name)).as_bytes());
+    esc_data.extend_from_slice(b"\x1B\x61\x00"); // left align
     esc_data.extend_from_slice(b"----------------------------\n");
     esc_data.extend_from_slice(format!("Invoice: {}\n", invoice_num).as_bytes());
     esc_data.extend_from_slice(b"----------------------------\n");
-    
     let items: Vec<serde_json::Value> = serde_json::from_str(&items_json).map_err(|e| e.to_string())?;
     for item in items {
         let name = item["nameAr"].as_str().unwrap_or("");
         let qty = item["quantity"].as_i64().unwrap_or(0);
         let price = item["price"].as_f64().unwrap_or(0.0);
-        esc_data.extend_from_slice(format!("{:<20} x{} {:.2}\n", name, qty, price * qty as f64).as_bytes());
+        let line_total = price * qty as f64;
+        let shaped = shape_arabic_for_print(name);
+        // اسم دواء (محدود 18) + كمية + سعر الإجمالي
+        esc_data.extend_from_slice(format!("{:<18} x{} {:.2}\n", shaped.chars().take(18).collect::<String>(), qty, line_total).as_bytes());
     }
-    
     esc_data.extend_from_slice(b"----------------------------\n");
-    esc_data.extend_from_slice(b"\x1B\x45\x01"); 
+    esc_data.extend_from_slice(b"\x1B\x45\x01"); // bold on
     esc_data.extend_from_slice(format!("TOTAL: {} IQD\n", total).as_bytes());
-    esc_data.extend_from_slice(b"\x1B\x45\x00"); 
+    esc_data.extend_from_slice(b"\x1B\x45\x00"); // bold off
     esc_data.extend_from_slice(b"\n\n\n");
-    esc_data.extend_from_slice(b"\x1D\x56\x00"); 
+    esc_data.extend_from_slice(b"\x1D\x56\x00"); // paper cut
 
     let temp_dir = std::env::temp_dir();
     let temp_file = temp_dir.join("pharmacy_receipt.prn");
     std::fs::write(&temp_file, &esc_data).map_err(|e| e.to_string())?;
 
-    let printer_arg = format!("/d:{}", printer_name);
-    let output = Command::new("print")
-        .arg(&printer_arg)
-        .arg(temp_file.to_str().unwrap())
-        .output()
-        .map_err(|e| format!("فشل الطباعة: {}", e))?;
-
-    if !output.status.success() {
-        let err_msg = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("فشل الطباعة: {}", err_msg));
+    #[cfg(target_os = "windows")]
+    {
+        let printer_arg = format!("/d:{}", printer_name);
+        let output = Command::new("print").arg(&printer_arg).arg(temp_file.to_str().unwrap()).output()
+            .map_err(|e| format!("فشل الطباعة: {}", e))?;
+        if !output.status.success() {
+            return Err(format!("فشل الطباعة: {}", String::from_utf8_lossy(&output.stderr)));
+        }
     }
-
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("lp").arg("-d").arg(&printer_name).arg(temp_file.to_str().unwrap()).output()
+            .map_err(|e| format!("فشل الطباعة: {}", e))?;
+        if !output.status.success() {
+            return Err(format!("فشل الطباعة: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let output = Command::new("lp").arg("-d").arg(&printer_name).arg(temp_file.to_str().unwrap()).output()
+            .map_err(|e| format!("فشل الطباعة: {}", e))?;
+        if !output.status.success() {
+            return Err(format!("فشل الطباعة: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+    }
     Ok(())
 }
 
@@ -1198,25 +1363,103 @@ async fn record_backup_history_db(state: tauri::State<'_, PgPool>, backup_type: 
     Ok(())
 }
 
+// النسخ الاحتياطي التلقائي — يصدّر البيانات الفعلية (الجداول الرئيسية) لا مجرد metadata
 #[tauri::command]
 async fn create_auto_backup_db(state: tauri::State<'_, PgPool>, user_role: String) -> Result<String, String> {
+    let pool = state.inner();
+    // تصدير كل الجداول الحرجة كـ JSON
+    let medicines = sqlx::query("SELECT id, name_ar, name_en, scientific_name, barcode, price, wholesale_price, cost_price, quantity, batch_number, expiry_date, is_deleted FROM medicines").fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let batches = sqlx::query("SELECT medicine_id, batch_number, expiry_date, quantity FROM medicine_batches").fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let invoices = sqlx::query("SELECT id, total_amount, profit_amount, user_role, daily_receipt_number, created_at, is_reversed, discount_amount FROM invoices").fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let invoice_items = sqlx::query("SELECT invoice_id, medicine_id, name_ar, quantity, price FROM invoice_items").fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let expenses = sqlx::query("SELECT id, description, amount, category, created_at FROM expenses").fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let debts = sqlx::query("SELECT id, customer_name, amount, is_paid, note, created_at, paid_date FROM customer_debts").fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let suppliers = sqlx::query("SELECT id, name, phone, address, balance, is_active FROM suppliers").fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let patients = sqlx::query("SELECT id, name, national_id, phone, notes, created_at FROM patients").fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let settings_rows = sqlx::query("SELECT key, value FROM settings").fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let audit_logs = sqlx::query("SELECT user_role, action_type, description, created_at FROM audit_logs").fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    let medicines_arr: Vec<serde_json::Value> = medicines.iter().map(|r| serde_json::json!({
+        "id": r.get::<uuid::Uuid, _>(0).to_string(), "name_ar": r.get::<String, _>(1),
+        "name_en": r.get::<Option<String>, _>(2), "scientific_name": r.get::<Option<String>, _>(3),
+        "barcode": r.get::<Option<String>, _>(4), "price": r.get::<rust_decimal::Decimal, _>(5).to_string(),
+        "wholesale_price": r.get::<rust_decimal::Decimal, _>(6).to_string(), "cost_price": r.get::<rust_decimal::Decimal, _>(7).to_string(),
+        "quantity": r.get::<i32, _>(8), "batch_number": r.get::<Option<String>, _>(9),
+        "expiry_date": r.get::<Option<chrono::NaiveDate>, _>(10).map(|d| d.to_string()),
+        "is_deleted": r.get::<bool, _>(11)
+    })).collect();
+    let batches_arr: Vec<serde_json::Value> = batches.iter().map(|r| serde_json::json!({
+        "medicine_id": r.get::<uuid::Uuid, _>(0).to_string(), "batch_number": r.get::<Option<String>, _>(1),
+        "expiry_date": r.get::<Option<chrono::NaiveDate>, _>(2).map(|d| d.to_string()), "quantity": r.get::<i32, _>(3)
+    })).collect();
+    let invoices_arr: Vec<serde_json::Value> = invoices.iter().map(|r| serde_json::json!({
+        "id": r.get::<uuid::Uuid, _>(0).to_string(), "total_amount": r.get::<rust_decimal::Decimal, _>(1).to_string(),
+        "profit_amount": r.get::<rust_decimal::Decimal, _>(2).to_string(), "user_role": r.get::<Option<String>, _>(3),
+        "daily_receipt_number": r.get::<Option<i32>, _>(4), "created_at": r.get::<chrono::NaiveDateTime, _>(5).to_string(),
+        "is_reversed": r.get::<bool, _>(6), "discount_amount": r.get::<Option<rust_decimal::Decimal>, _>(7).map(|d| d.to_string())
+    })).collect();
+    let invoice_items_arr: Vec<serde_json::Value> = invoice_items.iter().map(|r| serde_json::json!({
+        "invoice_id": r.get::<uuid::Uuid, _>(0).to_string(), "medicine_id": r.get::<Option<uuid::Uuid>, _>(1).map(|u| u.to_string()),
+        "name_ar": r.get::<String, _>(2), "quantity": r.get::<i32, _>(3), "price": r.get::<rust_decimal::Decimal, _>(4).to_string()
+    })).collect();
+    let expenses_arr: Vec<serde_json::Value> = expenses.iter().map(|r| serde_json::json!({
+        "id": r.get::<uuid::Uuid, _>(0).to_string(), "description": r.get::<String, _>(1),
+        "amount": r.get::<rust_decimal::Decimal, _>(2).to_string(), "category": r.get::<Option<String>, _>(3).unwrap_or_else(|| "operational".to_string()),
+        "created_at": r.get::<chrono::NaiveDateTime, _>(4).to_string()
+    })).collect();
+    let debts_arr: Vec<serde_json::Value> = debts.iter().map(|r| serde_json::json!({
+        "id": r.get::<uuid::Uuid, _>(0).to_string(), "customer_name": r.get::<String, _>(1),
+        "amount": r.get::<rust_decimal::Decimal, _>(2).to_string(), "is_paid": r.get::<bool, _>(3),
+        "note": r.get::<Option<String>, _>(4), "created_at": r.get::<chrono::NaiveDateTime, _>(5).to_string(),
+        "paid_date": r.get::<Option<chrono::NaiveDateTime>, _>(6).map(|d| d.to_string())
+    })).collect();
+    let suppliers_arr: Vec<serde_json::Value> = suppliers.iter().map(|r| serde_json::json!({
+        "id": r.get::<uuid::Uuid, _>(0).to_string(), "name": r.get::<String, _>(1),
+        "phone": r.get::<Option<String>, _>(2), "address": r.get::<Option<String>, _>(3),
+        "balance": r.get::<rust_decimal::Decimal, _>(4).to_string(), "is_active": r.get::<bool, _>(5)
+    })).collect();
+    let patients_arr: Vec<serde_json::Value> = patients.iter().map(|r| serde_json::json!({
+        "id": r.get::<uuid::Uuid, _>(0).to_string(), "name": r.get::<String, _>(1),
+        "national_id": r.get::<String, _>(2), "phone": r.get::<String, _>(3),
+        "notes": r.get::<Option<String>, _>(4), "created_at": r.get::<chrono::NaiveDateTime, _>(5).to_string()
+    })).collect();
+    let settings_arr: Vec<serde_json::Value> = settings_rows.iter().map(|r| serde_json::json!({
+        "key": r.get::<String, _>(0), "value": r.get::<String, _>(1)
+    })).collect();
+    let audit_arr: Vec<serde_json::Value> = audit_logs.iter().map(|r| serde_json::json!({
+        "user_role": r.get::<Option<String>, _>(0), "action_type": r.get::<String, _>(1),
+        "description": r.get::<String, _>(2), "created_at": r.get::<chrono::NaiveDateTime, _>(3).to_string()
+    })).collect();
+
     let backup_data = serde_json::json!({
         "backupDate": chrono::Utc::now().to_rfc3339(),
         "version": "2.3.0",
-        "type": "auto"
+        "type": "auto",
+        "tables": {
+            "medicines": medicines_arr,
+            "medicine_batches": batches_arr,
+            "invoices": invoices_arr,
+            "invoice_items": invoice_items_arr,
+            "expenses": expenses_arr,
+            "customer_debts": debts_arr,
+            "suppliers": suppliers_arr,
+            "patients": patients_arr,
+            "settings": settings_arr,
+            "audit_logs": audit_arr
+        }
     }).to_string();
-    
-    let password = "AUTO_BACKUP_2024_BUNUN_MAZEN";
-    let encrypted_data = encrypt_data(&backup_data, password)?;
-    
-    let desktop_dir = std::env::var("USERPROFILE").map_err(|e| e.to_string())?;
-    let backup_dir = format!("{}\\Desktop\\PharmacyBackups", desktop_dir);
+
+    // كلمة مرور عشوائية تُخزّن في ملف آمن بدلاً من hardcoded
+    let password = get_or_create_auto_backup_password()?;
+    let encrypted_data = encrypt_data(&backup_data, &password)?;
+
+    let dir = desktop_dir()?;
+    let backup_dir = dir.join("PharmacyBackups");
     std::fs::create_dir_all(&backup_dir).ok();
-    
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let path = format!("{}\\auto_backup_{}.enc", backup_dir, timestamp);
+    let path = backup_dir.join(format!("auto_backup_{}.enc", timestamp));
     std::fs::write(&path, encrypted_data.as_bytes()).map_err(|e| e.to_string())?;
-    
+
     // تدوير النسخ القديمة
     let mut backups: Vec<_> = std::fs::read_dir(&backup_dir).map_err(|e| e.to_string())?
         .filter_map(|e| e.ok())
@@ -1229,16 +1472,37 @@ async fn create_auto_backup_db(state: tauri::State<'_, PgPool>, user_role: Strin
             backups.remove(0);
         } else { break; }
     }
-    
+
     let file_size = std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0);
     sqlx::query("INSERT INTO backup_history (backup_type, file_path, file_size, status, user_role) VALUES ('auto', $1, $2, 'success', $3)")
-        .bind(&path).bind(file_size).bind(&user_role)
+        .bind(path.to_string_lossy().to_string()).bind(file_size).bind(&user_role)
         .execute(state.inner()).await.map_err(|e| e.to_string())?;
     sqlx::query("INSERT INTO settings (key, value) VALUES ('last_backup', $1) ON CONFLICT (key) DO UPDATE SET value = $1")
         .bind(chrono::Utc::now().to_rfc3339())
         .execute(state.inner()).await.map_err(|e| e.to_string())?;
-    
-    Ok(path)
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+// كلمة مرور عشوائية للنسخ التلقائي تُخزّن في مجلد بيانات التطبيق (وليست hardcoded)
+fn get_or_create_auto_backup_password() -> Result<String, String> {
+    let app_dir = dirs_next::data_dir().ok_or("تعذّر تحديد مجلد البيانات")?.join("BununMazenPharmacy");
+    std::fs::create_dir_all(&app_dir).ok();
+    let key_file = app_dir.join(".backup_key");
+    if key_file.exists() {
+        return std::fs::read_to_string(&key_file).map_err(|e| e.to_string());
+    }
+    // توليد 32 بايت عشوائي وتحويلها base64
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let password = general_purpose::STANDARD.encode(bytes);
+    std::fs::write(&key_file, &password).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&key_file, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(password)
 }
 
 // --- 7. RBAC ---
@@ -1285,14 +1549,23 @@ async fn get_role_permissions_db(state: tauri::State<'_, PgPool>, role_id: Strin
     Ok(perms)
 }
 
+// check_permission_db — يدعم كلا المسارين: role_id FK و role VARCHAR (للتوافق مع الكود القديم)
 #[tauri::command]
 async fn check_permission_db(state: tauri::State<'_, PgPool>, username: String, permission_name: String) -> Result<bool, String> {
+    // محاولة 1: عبر role_id FK
     let result: Option<i64> = sqlx::query_scalar(
         "SELECT COUNT(*) FROM users u JOIN roles r ON u.role_id = r.id JOIN role_permissions rp ON r.id = rp.role_id JOIN permissions p ON rp.permission_id = p.id WHERE u.username = $1 AND p.name = $2 AND u.is_active = TRUE"
     )
     .bind(&username).bind(&permission_name)
     .fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
-    Ok(result.unwrap_or(0) > 0)
+    if result.unwrap_or(0) > 0 { return Ok(true); }
+    // محاولة 2: عبر role VARCHAR مباشرة (للمستخدمين بدون role_id)
+    let result2: Option<i64> = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM users u JOIN roles r ON (LOWER(u.role) = LOWER(r.name) OR LOWER(u.role) = LOWER(r.display_name)) JOIN role_permissions rp ON r.id = rp.role_id JOIN permissions p ON rp.permission_id = p.id WHERE u.username = $1 AND p.name = $2 AND u.is_active = TRUE"
+    )
+    .bind(&username).bind(&permission_name)
+    .fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
+    Ok(result2.unwrap_or(0) > 0)
 }
 
 // --- 8. Performance Metrics ---
@@ -1383,18 +1656,23 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let device_fingerprint = generate_device_fingerprint();
-            println!("==============================\nDevice ID: {}\nValid Activation Key: {}\n==============================", device_fingerprint, generate_activation_key(&device_fingerprint));
-            let database_url = "postgres://postgres:123456@localhost:5432/pharmacy_db";
+            // إزالة طباعة مفتاح التفعيل في stdout — كان يسمح بتجاوز الترخيص فوراً
+            let _device_fingerprint = generate_device_fingerprint();
+            // قراءة بيانات DB من متغيرات البيئة (لا hardcoded)
+            let db_password = std::env::var("PHARMACY_DB_PASSWORD").unwrap_or_else(|_| "123456".to_string());
+            let db_user = std::env::var("PHARMACY_DB_USER").unwrap_or_else(|_| "postgres".to_string());
+            let db_host = std::env::var("PHARMACY_DB_HOST").unwrap_or_else(|_| "localhost".to_string());
+            let db_port = std::env::var("PHARMACY_DB_PORT").unwrap_or_else(|_| "5432".to_string());
+            let database_url = format!("postgres://{}:{}@{}:{}/pharmacy_db", db_user, db_password, db_host, db_port);
             let pool = tauri::async_runtime::block_on(async { 
-                match PgPoolOptions::new().max_connections(5).connect(database_url).await {
+                match PgPoolOptions::new().max_connections(10).connect(&database_url).await {
                     Ok(p) => p,
                     Err(_) => {
-                        let admin_url = "postgres://postgres:123456@localhost:5432/postgres";
-                        let admin_pool = PgPoolOptions::new().max_connections(1).connect(admin_url).await.expect("Failed to connect to postgres");
+                        let admin_url = format!("postgres://{}:{}@{}:{}/postgres", db_user, db_password, db_host, db_port);
+                        let admin_pool = PgPoolOptions::new().max_connections(1).connect(&admin_url).await.expect("Failed to connect to postgres");
                         sqlx::query("CREATE DATABASE pharmacy_db").execute(&admin_pool).await.ok();
                         drop(admin_pool);
-                        PgPoolOptions::new().max_connections(5).connect(database_url).await.expect("Failed to connect to database")
+                        PgPoolOptions::new().max_connections(10).connect(&database_url).await.expect("Failed to connect to database")
                     }
                 }
             });
@@ -1403,8 +1681,8 @@ fn main() {
                 
                 let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE username = 'admin'").fetch_one(&pool).await.unwrap_or(0);
                 if admin_count == 0 {
-                    let admin_pass = bcrypt::hash("admin123", 8).unwrap();
-                    let cashier_pass = bcrypt::hash("cashier123", 8).unwrap();
+                    let admin_pass = bcrypt::hash("admin123", BCRYPT_COST).unwrap();
+                    let cashier_pass = bcrypt::hash("cashier123", BCRYPT_COST).unwrap();
                     let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('admin', $1, 'Super Admin', TRUE)").bind(admin_pass).execute(&pool).await;
                     let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('cashier', $1, 'Cashier', TRUE)").bind(cashier_pass).execute(&pool).await;
                 }
@@ -1479,6 +1757,7 @@ fn main() {
             invoices_commands::delete_invoice_db,
             invoices_commands::mark_invoice_printed_db,
             invoices_commands::get_daily_receipt_stats_db,
+            get_refunds_db,
             // Smart barcode lookup commands
             smart_barcode_commands::lookup_in_global_db,
             smart_barcode_commands::lookup_in_openfoodfacts,

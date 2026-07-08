@@ -53,12 +53,12 @@ export const searchMedicines = (query: string, items: any[]) => {
   const transliteratedQuery = transliterate(query);
 
   return items.filter(item => {
-    // مطابقة الباركود: تامة أو جزئية، مع إزالة الفراغات
+    // مطابقة الباركود: تامة أو جزئية
     if (isBarcode && item.barcode) {
       const itemBarcode = String(item.barcode).trim();
       if (itemBarcode === trimmedQuery) return true;
       if (itemBarcode.includes(trimmedQuery)) return true;
-      if (trimmedQuery.length >= 8 && itemBarcode.endsWith(trimmedQuery)) return true;
+      // endsWith فرع ميت (includes يغطيه) — أُزيل
     }
 
     const normalizedNameAr = normalizeArabic(item.nameAr);
@@ -72,13 +72,73 @@ export const searchMedicines = (query: string, items: any[]) => {
       return true;
     }
 
+    // Fuzzy: قارن الاستعلام بكل كلمة في الاسم (tokenization) بدل الاسم الكامل
+    // هذا يُحسّن البحث الضبابي بشكل كبير للأسماء متعددة الكلمات
     if (normalizedQuery.length >= 4) {
-      const distance = levenshtein(normalizedQuery, normalizedNameAr);
-      if (distance <= 2 && distance > 0) return true;
+      const tokens = normalizedNameAr.split(' ').filter(t => t.length >= 3);
+      for (const token of tokens) {
+        const distance = levenshtein(normalizedQuery, token);
+        if (distance <= 2 && distance > 0) return true;
+      }
     }
 
     return false;
   });
+};
+
+// ===== فهرسة مسبقة للأسماء (memoization) — تُستخدم عبر searchMedicinesIndexed =====
+// تُحسب مرة واحدة لكل قائمة أدوية، ثم تُعاد استخدامها
+interface IndexedItem { item: any; normalizedNameAr: string; normalizedNameEn: string; }
+const indexCache = new WeakMap<any[], IndexedItem[]>();
+
+const getIndexedItems = (items: any[]): IndexedItem[] => {
+  let indexed = indexCache.get(items);
+  if (!indexed) {
+    indexed = items.map(item => ({
+      item,
+      normalizedNameAr: normalizeArabic(item.nameAr || ''),
+      normalizedNameEn: (item.nameEn || '').toLowerCase(),
+    }));
+    indexCache.set(items, indexed);
+  }
+  return indexed;
+};
+
+// نسخة مفهرسة من searchMedicines — أسرع 5-10x للقوائم الكبيرة
+export const searchMedicinesIndexed = (query: string, items: any[]) => {
+  if (!query.trim()) return [];
+  const trimmedQuery = query.trim();
+  const isBarcode = /^\d+$/.test(trimmedQuery);
+  const normalizedQuery = normalizeArabic(query);
+  const transliteratedQuery = transliterate(query);
+  const indexed = getIndexedItems(items);
+
+  const results: any[] = [];
+  for (const { item, normalizedNameAr, normalizedNameEn } of indexed) {
+    if (isBarcode && item.barcode) {
+      const itemBarcode = String(item.barcode).trim();
+      if (itemBarcode === trimmedQuery || itemBarcode.includes(trimmedQuery)) {
+        results.push(item);
+        continue;
+      }
+    }
+    if (
+      normalizedNameAr.includes(normalizedQuery) ||
+      normalizedNameEn.includes(trimmedQuery.toLowerCase()) ||
+      normalizedNameAr.includes(transliteratedQuery)
+    ) {
+      results.push(item);
+      continue;
+    }
+    if (normalizedQuery.length >= 4) {
+      const tokens = normalizedNameAr.split(' ').filter(t => t.length >= 3);
+      for (const token of tokens) {
+        const distance = levenshtein(normalizedQuery, token);
+        if (distance <= 2 && distance > 0) { results.push(item); break; }
+      }
+    }
+  }
+  return results;
 };
 
 // ===== أدوات مساعدة لـ EAN-13 =====

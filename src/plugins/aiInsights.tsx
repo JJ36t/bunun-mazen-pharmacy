@@ -13,7 +13,8 @@ function AIDashboard() {
 
   useEffect(() => {
     // محاكاة توليد رؤى (في المستقبل سيستدعي AI API)
-    setTimeout(() => {
+    // إصلاح: تنظيف setTimeout لمنع setState على مكوّن unmouted
+    const t = setTimeout(() => {
       setInsights([
         {
           type: 'trend',
@@ -25,7 +26,7 @@ function AIDashboard() {
         {
           type: 'warning',
           icon: AlertCircle,
-          title: 'تنبيه: نفاد دواء Panaدول Extra',
+          title: 'تنبيه: نفاد دواء Panadol Extra',
           description: 'متوقع النفاد خلال 3 أيام بناءً على معدل البيع',
           color: 'amber',
         },
@@ -39,6 +40,7 @@ function AIDashboard() {
       ]);
       setLoading(false);
     }, 1000);
+    return () => clearTimeout(t);
   }, []);
 
   if (loading) {

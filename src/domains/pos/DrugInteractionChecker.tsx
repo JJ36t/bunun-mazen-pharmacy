@@ -7,18 +7,21 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { AlertTriangle, X, Shield, CheckCircle, AlertOctagon, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuthStore } from '../security/auth.store';
 
 interface DrugInteractionCheckerProps {
   drugNames: string[];  // قائمة المواد الفعالية في السلة
+  invoiceId?: string | null;  // ربط التجاوز بالفاتورة
   onOverride: () => void;  // متابعة البيع بعد التجاوز
   onClose: () => void;
 }
 
-export function DrugInteractionChecker({ drugNames, onOverride, onClose }: DrugInteractionCheckerProps) {
+export function DrugInteractionChecker({ drugNames, invoiceId, onOverride, onClose }: DrugInteractionCheckerProps) {
   const [interactions, setInteractions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [overrideReason, setOverrideReason] = useState('');
   const [showOverrideForm, setShowOverrideForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     checkInteractions();
@@ -43,21 +46,26 @@ export function DrugInteractionChecker({ drugNames, onOverride, onClose }: DrugI
       toast.error('سبب التجاوز إلزامي');
       return;
     }
+    if (submitting) return; // منع الـ double-click
+    setSubmitting(true);
     try {
-      // سجّل تجاوز كل تفاعل
-      for (const interaction of interactions) {
-        await invoke('log_interaction_override_db', {
+      const currentUser = useAuthStore.getState().username || 'unknown';
+      // سجّل تجاوز كل تفاعل بالتوازي (بدل sequential await)
+      await Promise.all(interactions.map(interaction =>
+        invoke('log_interaction_override_db', {
           interactionId: interaction.interactionId,
-          userRole: 'admin',
+          userRole: currentUser,
           reason: overrideReason,
-          invoiceId: null,
-        });
-      }
+          invoiceId: invoiceId || null, // ربط بالفاتورة بدل null
+        })
+      ));
       toast.success('تم تسجيل التجاوز. يمكنك متابعة البيع.');
       onOverride();
       onClose();
     } catch (e: any) {
       toast.error('فشل تسجيل التجاوز: ' + e);
+    } finally {
+      setSubmitting(false);
     }
   };
 

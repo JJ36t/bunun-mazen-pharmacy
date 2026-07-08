@@ -49,6 +49,8 @@ tokio-rustls = "0.26"
 rustls = { version = "0.23", features = ["ring"] }
 # rustls-pki-types - أنواع الشهادات
 rustls-pki-types = "1"
+# tokio-util - CancellationToken لإيقاف سيرفر الموبايل
+tokio-util = "0.7"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

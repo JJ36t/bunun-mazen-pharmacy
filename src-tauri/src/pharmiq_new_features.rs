@@ -51,7 +51,7 @@ pub async fn check_discount_db(state: tauri::State<'_, PgPool>, user_role: Strin
     }))
 }
 
-/// خصم مدير (يتجاوز الحد)
+/// خصم مدير (يتجاوز الحد) — يسجّل في سجل التدقيق
 #[tauri::command]
 pub async fn admin_override_discount_db(state: tauri::State<'_, PgPool>, password: String, discount_amount: f64, user_role: String) -> Result<bool, String> {
     // تحقق من كلمة مرور المدير
@@ -61,6 +61,10 @@ pub async fn admin_override_discount_db(state: tauri::State<'_, PgPool>, passwor
     if !bcrypt::verify(&password, &admin_pass).unwrap_or(false) {
         return Err("كلمة مرور المدير غير صحيحة".to_string());
     }
+    // تسجيل التجاوز في سجل التدقيق
+    let desc = format!("تجاوز حد الخصم اليومي بمبلغ {} د.ع للمستخدم {}", discount_amount, user_role);
+    let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'DISCOUNT_OVERRIDE', $2)")
+        .bind(&user_role).bind(&desc).execute(state.inner()).await;
     Ok(true)
 }
 
@@ -130,7 +134,7 @@ pub async fn update_own_profile_db(
 
     if let Some(password) = &new_password {
         if !password.trim().is_empty() {
-            let hashed = bcrypt::hash(password, 8).map_err(|e| e.to_string())?;
+            let hashed = bcrypt::hash(password, 12).map_err(|e| e.to_string())?;
             sqlx::query("UPDATE users SET password = $1 WHERE id = $2")
                 .bind(hashed).bind(uuid_id)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -158,10 +162,8 @@ pub async fn create_partial_stock_count_db(
     let count_id: uuid::Uuid = row.get(0);
 
     // إنشاء عناصر الجرد بناءً على الفلتر
-    let items_query = if let Some(ids_json) = medicine_ids_json {
+    if let Some(ids_json) = medicine_ids_json {
         let ids: Vec<String> = serde_json::from_str(&ids_json).map_err(|e| e.to_string())?;
-        let mut query = String::from("SELECT id, quantity FROM medicines WHERE is_deleted = FALSE AND id = ANY($1)");
-        // نفذها بشكل منفصل
         for id_str in &ids {
             if let Ok(id) = uuid::Uuid::parse_str(id_str) {
                 sqlx::query("INSERT INTO stock_count_items (stock_count_id, medicine_id, expected_quantity) SELECT $1, id, quantity FROM medicines WHERE id = $2 AND is_deleted = FALSE ON CONFLICT DO NOTHING")
@@ -171,22 +173,30 @@ pub async fn create_partial_stock_count_db(
         }
         return Ok(count_id.to_string());
     } else if let Some(category) = &category_filter {
-        format!("SELECT id, quantity FROM medicines WHERE is_deleted = FALSE AND name_ar ILIKE '%{}%'", category)
+        // استعلام معلمات آمن (بدل format! injection)
+        let items = sqlx::query("SELECT id, quantity FROM medicines WHERE is_deleted = FALSE AND name_ar ILIKE $1")
+            .bind(format!("%{}%", category))
+            .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
+        for item in items {
+            let med_id: uuid::Uuid = item.get(0);
+            let expected: i32 = item.get(1);
+            sqlx::query("INSERT INTO stock_count_items (stock_count_id, medicine_id, expected_quantity) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                .bind(count_id).bind(med_id).bind(expected)
+                .execute(state.inner()).await.map_err(|e| e.to_string())?;
+        }
+        return Ok(count_id.to_string());
     } else {
-        "SELECT id, quantity FROM medicines WHERE is_deleted = FALSE".to_string()
-    };
-
-    // للفلتر بالفئة أو جرد كامل
-    let items = sqlx::query(&items_query).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
-    for item in items {
-        let med_id: uuid::Uuid = item.get(0);
-        let expected: i32 = item.get(1);
-        sqlx::query("INSERT INTO stock_count_items (stock_count_id, medicine_id, expected_quantity) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
-            .bind(count_id).bind(med_id).bind(expected)
-            .execute(state.inner()).await.map_err(|e| e.to_string())?;
+        let items = sqlx::query("SELECT id, quantity FROM medicines WHERE is_deleted = FALSE")
+            .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
+        for item in items {
+            let med_id: uuid::Uuid = item.get(0);
+            let expected: i32 = item.get(1);
+            sqlx::query("INSERT INTO stock_count_items (stock_count_id, medicine_id, expected_quantity) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                .bind(count_id).bind(med_id).bind(expected)
+                .execute(state.inner()).await.map_err(|e| e.to_string())?;
+        }
+        return Ok(count_id.to_string());
     }
-
-    Ok(count_id.to_string())
 }
 
 /// الحصول على عناصر الجرد

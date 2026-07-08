@@ -23,13 +23,21 @@ export function RefundDashboard() {
 
   const fetchRefunds = async () => {
     try {
-      const data = await invoke<any[]>('get_invoice_details_report', { 
-        startDate: '2000-01-01 00:00:00', 
-        endDate: '2100-01-01 00:00:00', 
-        userFilter: 'all' 
-      });
-      setRefunds(data.filter(inv => inv.totalAmount < 0 && !inv.isReversed));
-    } catch (e) { console.error(e); }
+      // استخدام endpoint مخصص للمرتجعات بدل جلب كل الفواتير
+      const data = await invoke<any[]>('get_refunds_db', { limit: 100 });
+      setRefunds(data);
+    } catch (e) { 
+      console.error(e); 
+      // fallback للطريقة القديمة إذا فشل endpoint الجديد
+      try {
+        const fallback = await invoke<any[]>('get_invoice_details_report', { 
+          startDate: '2000-01-01 00:00:00', 
+          endDate: '2100-01-01 00:00:00', 
+          userFilter: 'all' 
+        });
+        setRefunds(fallback.filter(inv => inv.totalAmount < 0 && !inv.isReversed));
+      } catch (e2) { console.error('fallback failed:', e2); }
+    }
   };
 
   const handleReverse = async (invoiceId: string) => {

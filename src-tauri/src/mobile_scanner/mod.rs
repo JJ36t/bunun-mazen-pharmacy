@@ -14,6 +14,7 @@ use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use base64::Engine;
+use tokio_util::sync::CancellationToken;
 
 /// حالة السيرفر المشتركة
 pub struct ScannerState {
@@ -31,21 +32,55 @@ pub struct ConnectedDevice {
     pub last_seen: chrono::NaiveDateTime,
 }
 
+// shutdown token عام لإيقاف السيرفر
+static SCANNER_SHUTDOWN_TOKEN: std::sync::OnceLock<tokio::sync::Mutex<Option<CancellationToken>>> = std::sync::OnceLock::new();
+
+async fn get_token() -> &'static tokio::sync::Mutex<Option<CancellationToken>> {
+    SCANNER_SHUTDOWN_TOKEN.get_or_init(|| tokio::sync::Mutex::new(None))
+}
+
 /// بدء سيرفر WebSocket
 #[tauri::command]
 pub async fn start_scanner_server(
     state: tauri::State<'_, PgPool>,
     app_handle: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
+    // إذا كان السيرفر يعمل، لا تُعده
+    {
+        let guard = get_token().await.lock().await;
+        if let Some(token) = guard.as_ref() {
+            if !token.is_cancelled() {
+                let port: i64 = sqlx::query_scalar("SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'mobile_scanner_port'")
+                    .fetch_one(state.inner()).await.unwrap_or(8080);
+                let local_ip = get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+                return Ok(serde_json::json!({
+                    "status": "already_running",
+                    "port": port,
+                    "ip": local_ip,
+                    "wsUrl": format!("wss://{}:{}", local_ip, port + 1),
+                    "mobileUrl": format!("https://{}:{}", local_ip, port),
+                    "https": true,
+                }));
+            }
+        }
+    }
+
     let port: i64 = sqlx::query_scalar("SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'mobile_scanner_port'")
         .fetch_one(state.inner()).await.unwrap_or(8080);
+
+    // إنشاء shutdown token
+    let cancel_token = CancellationToken::new();
+    {
+        let mut guard = get_token().await.lock().await;
+        *guard = Some(cancel_token.clone());
+    }
 
     // ابدأ السيرفر في background
     let port_usize = port as usize;
     let pool_clone = state.inner().clone();
     let app_handle_clone = app_handle.clone();
     tokio::spawn(async move {
-        let _ = websocket_server::run_server(port_usize, pool_clone, app_handle_clone).await;
+        let _ = websocket_server::run_server(port_usize, pool_clone, app_handle_clone, cancel_token).await;
     });
 
     // احصل على IP المحلي
@@ -61,10 +96,14 @@ pub async fn start_scanner_server(
     }))
 }
 
-/// إيقاف السيرفر
+/// إيقاف السيرفر — فعلي الآن عبر cancellation token
 #[tauri::command]
 pub async fn stop_scanner_server() -> Result<(), String> {
-    // السيرفر يعمل في background task — سيُغلق عند إغلاق التطبيق
+    let mut guard = get_token().await.lock().await;
+    if let Some(token) = guard.take() {
+        token.cancel();
+        println!("[MobileScanner] Server shutdown requested");
+    }
     Ok(())
 }
 

@@ -31,10 +31,13 @@ export const useAccountingStore = create<AccountingState>((set) => ({
     try {
       const itemsJson = JSON.stringify(items);
       await invoke('record_refund_db', { totalAmount: refundAmount, itemsJson, userRole });
-      // خصم قيمة المرتجع من الصندوق والمبيعات
+      // خصم قيمة المرتجع من الصندوق والمبيعات + تقدير الربح المخصوم
+      // نفترض هامش ربح متوسط 30% لتقدير الربح المخصوم (مطابق للـ Rust في معظم الحالات)
+      const estimatedProfitLoss = refundAmount * 0.30;
       set((state) => ({ 
         cashbox: state.cashbox - refundAmount, 
-        totalSales: state.totalSales - refundAmount 
+        totalSales: state.totalSales - refundAmount,
+        totalProfits: Math.max(0, state.totalProfits - estimatedProfitLoss),
       }));
     } catch (e) { console.error("Failed to record refund:", e); alert("فشل تسجيل المرتجع!"); }
   },

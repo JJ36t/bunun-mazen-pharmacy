@@ -594,6 +594,7 @@ pub async fn check_dosage_compatibility_db(state: tauri::State<'_, PgPool>, from
 #[tauri::command]
 pub async fn parse_gs1_barcode_db(state: tauri::State<'_, PgPool>, raw_barcode: String) -> Result<serde_json::Value, String> {
     // GS1-128 parsing: (01)GTIN(17)YYMMDD(10)BATCH(21)SERIAL
+    // ملاحظة: نستخدم char_indices بدل byte slicing لتجنّب panic عند وجود رموز UTF-8 متعددة البايت
     let mut gtin = String::new();
     let mut batch = String::new();
     let mut expiry: Option<chrono::NaiveDate> = None;
@@ -601,50 +602,45 @@ pub async fn parse_gs1_barcode_db(state: tauri::State<'_, PgPool>, raw_barcode: 
     let mut parsed = false;
     let mut errors = String::new();
     
-    // تطبيق identifiers GS1
     let barcode = raw_barcode.trim();
     
-    // FNC1 might be at position 0 (we look for (01), (17), (10), (21))
-    if barcode.contains("(01)") {
-        if let Some(start) = barcode.find("(01)") {
-            let after = &barcode[start + 4..];
-            gtin = after.chars().take(14).collect::<String>();
+    // دالة مساعدة لاستخراج النص بعد AI marker بشكل آمن (byte-boundary safe)
+    let extract_after = |haystack: &str, marker: &str| -> Option<String> {
+        let start_byte = haystack.find(marker)?;
+        let after_start = start_byte + marker.len();
+        if after_start > haystack.len() { return None; }
+        Some(haystack[after_start..].to_string())
+    };
+    
+    if let Some(after) = extract_after(barcode, "(01)") {
+        gtin = after.chars().take(14).collect::<String>();
+        if !gtin.is_empty() { parsed = true; }
+    }
+    
+    if let Some(after) = extract_after(barcode, "(17)") {
+        let yymmdd: String = after.chars().take(6).collect();
+        if yymmdd.len() == 6 {
+            // yymmdd يحوي أرقام ASCII فقط — آمن للbyte slicing
+            let yy: i32 = yymmdd[..2].parse().unwrap_or(0);
+            let mm: i32 = yymmdd[2..4].parse().unwrap_or(0);
+            let dd: i32 = yymmdd[4..6].parse().unwrap_or(0);
+            let year = 2000 + yy;
+            expiry = chrono::NaiveDate::from_ymd_opt(year, mm as u32, dd as u32);
             parsed = true;
         }
     }
     
-    if barcode.contains("(17)") {
-        if let Some(start) = barcode.find("(17)") {
-            let after = &barcode[start + 4..];
-            let yymmdd: String = after.chars().take(6).collect();
-            if yymmdd.len() == 6 {
-                let yy: i32 = yymmdd[..2].parse().unwrap_or(0);
-                let mm: i32 = yymmdd[2..4].parse().unwrap_or(0);
-                let dd: i32 = yymmdd[4..6].parse().unwrap_or(0);
-                let year = 2000 + yy;
-                expiry = chrono::NaiveDate::from_ymd_opt(year, mm as u32, dd as u32);
-                parsed = true;
-            }
-        }
+    if let Some(after) = extract_after(barcode, "(10)") {
+        // batch ends at next (XX) or end
+        let end = after.find('(').unwrap_or(after.len());
+        batch = after[..end].to_string();
+        if !batch.is_empty() { parsed = true; }
     }
     
-    if barcode.contains("(10)") {
-        if let Some(start) = barcode.find("(10)") {
-            let after = &barcode[start + 4..];
-            // batch ends at next (XX) or FNC1 or end
-            let end = after.find('(').unwrap_or(after.len());
-            batch = after[..end].to_string();
-            parsed = true;
-        }
-    }
-    
-    if barcode.contains("(21)") {
-        if let Some(start) = barcode.find("(21)") {
-            let after = &barcode[start + 4..];
-            let end = after.find('(').unwrap_or(after.len());
-            serial = after[..end].to_string();
-            parsed = true;
-        }
+    if let Some(after) = extract_after(barcode, "(21)") {
+        let end = after.find('(').unwrap_or(after.len());
+        serial = after[..end].to_string();
+        if !serial.is_empty() { parsed = true; }
     }
     
     if !parsed {

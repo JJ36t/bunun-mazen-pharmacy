@@ -90,17 +90,19 @@ class CrashRecoveryManager {
     return { recovered, failed, details };
   }
 
-  /** إعادة محاولة عملية */
+  /** إعادة محاولة عملية — مع idempotency عبر operationId */
   private async retryOperation(entry: any): Promise<void> {
     const payload = JSON.parse(entry.payload);
+    const operationId = entry.operation_id; // idempotency key
     
     switch (entry.operation_type) {
       case 'sale':
-        // إعادة محاولة تسجيل بيع
+        // إعادة محاولة تسجيل بيع — مع operationId لمنع التكرار
         await invoke('record_sale_db', {
           discountPercentage: payload.discountPercentage || 0,
           itemsJson: JSON.stringify(payload.items),
           userRole: entry.user_role,
+          operationId, // idempotency key — لو سُجّل البيع مسبقاً يُعاد نفسه دون تكرار
         });
         break;
         
@@ -127,10 +129,11 @@ class CrashRecoveryManager {
       default:
         console.warn(`[Recovery] Unknown operation type: ${entry.operation_type}`);
         // تعليمها كمكتملة لتجنب إعادة المحاولة
-        await invoke('complete_journal_entry_db', { operationId: entry.operation_id });
+        await invoke('complete_journal_entry_db', { operationId }).catch(() => {});
+        return; // لا ندعو complete مرة أخرى
     }
     
-    await invoke('complete_journal_entry_db', { operationId: entry.operation_id });
+    await invoke('complete_journal_entry_db', { operationId }).catch(() => {});
   }
 
   /** فحص صحة النظام عند بدء التشغيل */

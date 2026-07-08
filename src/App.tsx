@@ -472,10 +472,13 @@ function PosDashboard() {
     }
 
     try {
+        // Idempotency key — يمنع تكرار البيع عند الانهيار
+        const operationId = crypto.randomUUID();
         await invoke('record_sale_db', {
           discountPercentage: discountPercentage,
           itemsJson: JSON.stringify(currentItems),
-          userRole: username || 'Unknown'
+          userRole: username || 'Unknown',
+          operationId,
         });
 
         // إذا كان الدفع آجل، أضف دين للزبون (اسم الزبون إلزامي)

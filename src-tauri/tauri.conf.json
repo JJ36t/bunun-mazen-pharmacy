@@ -26,7 +26,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis"],
+    "targets": ["msi", "nsis", "dmg", "appimage", "deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -45,7 +45,7 @@
       "endpoints": [
         "https://github.com/JJ36t/bunun-mazen-pharmacy/releases/latest/download/latest.json"
       ],
-      "pubkey": "",
+      "pubkey": "UPDATER_PUBKEY_MUST_BE_SET_BEFORE_RELEASE",
       "windows": {
         "installMode": "passive"
       }

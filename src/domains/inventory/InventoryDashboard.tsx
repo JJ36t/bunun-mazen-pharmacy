@@ -5,6 +5,7 @@ import { Plus, Pencil, Trash2, X, Package, AlertTriangle, Search, Barcode, Trend
 import { toast } from 'sonner';
 import { generateInternalEan13, isValidEan13 } from '../../lib/utils/search';
 import { BulkBarcodeEntry } from './BulkBarcodeEntry';
+import { usePagination, PaginationControls } from '../../lib/hooks/usePagination';
 
 export function InventoryDashboard() {
   const { medicines, addMedicine, updateMedicine, softDeleteMedicine, fetchMedicines } = useInventoryStore();
@@ -87,6 +88,9 @@ export function InventoryDashboard() {
   const lowStockCount = filteredMeds.filter(m => m.quantity < 50).length;
   const expiringCount = filteredMeds.filter(m => new Date(m.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)).length;
   const totalValue = filteredMeds.reduce((sum, m) => sum + (m.price * m.quantity), 0);
+
+  // Pagination لعرض المخزون (تجنّب تجمّد 5000+ صف)
+  const { currentPage, paginatedItems, totalPages, goToPage, hasNext, hasPrev } = usePagination(filteredMeds, 50);
 
   return (
     <div className="p-8 overflow-auto h-full bg-slate-50 animate-fade-in">
@@ -233,7 +237,7 @@ export function InventoryDashboard() {
                   </div>
                 </td>
               </tr>
-            ) : filteredMeds.map((med: any) => {
+            ) : paginatedItems.map((med: any) => {
               const isLowStock = med.quantity < 50;
               const isExpiringSoon = med.expiryDate && new Date(med.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
               const isExpired = med.expiryDate && new Date(med.expiryDate) < new Date();
@@ -281,6 +285,19 @@ export function InventoryDashboard() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <PaginationControls
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredMeds.length}
+          pageSize={50}
+          hasNext={hasNext}
+          hasPrev={hasPrev}
+          onPageChange={goToPage}
+        />
+      )}
 
       {/* نافذة إدخال الباركودات الأصلية */}
       {showBulkBarcode && (

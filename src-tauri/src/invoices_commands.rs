@@ -52,19 +52,59 @@ pub async fn delete_invoice_db(state: tauri::State<'_, PgPool>, invoice_id: Stri
     let inv_uuid = uuid::Uuid::parse_str(&invoice_id).map_err(|e| e.to_string())?;
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
     
-    // إرجاع الكميات للمخزون إذا كانت فاتورة بيع
+    // إرجاع الكميات للمخزون + للدفعات (FIFO) إذا كانت فاتورة بيع
     let items = sqlx::query("SELECT medicine_id, quantity FROM invoice_items WHERE invoice_id = $1")
         .bind(inv_uuid).fetch_all(&mut *tx).await.map_err(|e| e.to_string())?;
     
     let inv_row = sqlx::query("SELECT total_amount FROM invoices WHERE id = $1").bind(inv_uuid).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let total: rust_decimal::Decimal = inv_row.get(0);
     
-    // إذا كانت فاتورة بيع (موجبة)، أرجع الكميات
+    // إذا كانت فاتورة بيع (موجبة)، أرجع الكميات للدفعات FIFO (الأقرب انتهاءً أولاً)
     if total > rust_decimal::Decimal::ZERO {
         for item in items {
             let med_id: uuid::Uuid = item.get(0);
             let qty: i32 = item.get(1);
+            // إرجاع للدفعات: الأقرب انتهاءً أولاً (FEFO) حتى نستوعب الكمية
+            let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 ORDER BY expiry_date ASC")
+                .bind(med_id).fetch_all(&mut *tx).await.map_err(|e| e.to_string())?;
+            let mut remaining = qty;
+            for batch in batches {
+                if remaining <= 0 { break; }
+                let batch_id: uuid::Uuid = batch.get(0);
+                sqlx::query("UPDATE medicine_batches SET quantity = quantity + $1 WHERE id = $2")
+                    .bind(remaining).bind(batch_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                remaining = 0; // وضع كل الكمية في أول دفعة متاحة
+            }
+            // إذا لم توجد دفعات، أنشئ واحدة جديدة
+            if remaining > 0 {
+                let med_data = sqlx::query("SELECT batch_number, expiry_date FROM medicines WHERE id = $1").bind(med_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+                let bn: Option<String> = med_data.get(0);
+                let ed: Option<chrono::NaiveDate> = med_data.get(1);
+                sqlx::query("INSERT INTO medicine_batches (medicine_id, batch_number, expiry_date, quantity) VALUES ($1, $2, $3, $4)")
+                    .bind(med_id).bind(bn).bind(ed).bind(remaining).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+            }
+            // تحديث إجمالي كمية الدواء
             sqlx::query("UPDATE medicines SET quantity = quantity + $1 WHERE id = $2").bind(qty).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+    } else if total < rust_decimal::Decimal::ZERO {
+        // فاتورة مرتجع (سالبة): نطرح الكميات من المخزون + الدفعات FIFO
+        for item in items {
+            let med_id: uuid::Uuid = item.get(0);
+            let qty: i32 = item.get(1);
+            // طرح من الدفعات FIFO (الأقدم انتهاءً أولاً)
+            let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 AND quantity > 0 ORDER BY expiry_date ASC")
+                .bind(med_id).fetch_all(&mut *tx).await.map_err(|e| e.to_string())?;
+            let mut remaining = qty;
+            for batch in batches {
+                if remaining <= 0 { break; }
+                let batch_id: uuid::Uuid = batch.get(0);
+                let batch_qty: i32 = batch.get(1);
+                let deduct = std::cmp::min(batch_qty, remaining);
+                sqlx::query("UPDATE medicine_batches SET quantity = quantity - $1 WHERE id = $2")
+                    .bind(deduct).bind(batch_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                remaining -= deduct;
+            }
+            sqlx::query("UPDATE medicines SET quantity = quantity - $1 WHERE id = $2").bind(qty).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
         }
     }
     
