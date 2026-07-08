@@ -93,10 +93,21 @@ function connectWS() {
 }
 
 // التحقق من دعم الكاميرا — السيرفر الآن HTTPS بشهادة self-signed
-// إذا رأيت هذا الخطأ، تأكد إنك فتحت https:// (وليس http://) ووافقت على الشهادة
+// إذا فتحت http:// بدلاً من https://، أعد التوجيه تلقائياً
+if (window.location.protocol === 'http:') {
+  window.location.replace('https://' + window.location.host + window.location.pathname + window.location.search);
+}
+
+// إذا الكاميرا غير مدعومة (عادة بسبب HTTP)، اعرض رسالة واضحة
 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-  document.getElementById('connStatus').innerHTML = '⚠️ الكاميرا غير مدعومة — تأكد إنك فتحت <strong>https://</strong> (وليس http://) ووافقت على الشهادة';
+  document.getElementById('connStatus').innerHTML = '⚠️ الكاميرا محجوبة — تأكد إنك فتحت <strong>https://</strong> (وليس http://) ووافقت على الشهادة';
   document.getElementById('connStatus').className = 'status disconnected';
+  document.querySelector('#reader').innerHTML =
+    '<div style="padding:30px;text-align:center;color:#ef4444;background:#1e293b;border-radius:12px;margin:20px;">' +
+    '<h3 style="margin-bottom:12px;">🚫 الكاميرا محجوبة</h3>' +
+    '<p style="color:#94a3b8;margin-bottom:8px;">المتصفح يطلب HTTPS لتشغيل الكاميرا</p>' +
+    '<p style="color:#94a3b8;">تأكد إنك فتحت <strong style="color:#10b981;">https://</strong> في الرابط</p>' +
+    '</div>';
 }
 
 function startScanner() {
