@@ -44,7 +44,7 @@ fn create_tls_acceptor(ip: &str) -> Result<TlsAcceptor, String> {
 }
 
 pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let local_ip = crate::mobile_scanner::mod::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+    let local_ip = crate::mobile_scanner::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
 
     println!("[MobileScanner] ====================================");
     println!("[MobileScanner] Starting HTTPS/WSS server");
