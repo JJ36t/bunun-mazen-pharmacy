@@ -1651,6 +1651,39 @@ async fn get_cashier_report_db(state: tauri::State<'_, PgPool>, start_date: Stri
     Ok(results)
 }
 
+// --- 10. نقطة نهاية مخصصة للمرتجعات (بديل عن جلب كل الفواتير) ---
+#[tauri::command]
+async fn get_refunds_db(state: tauri::State<'_, PgPool>, limit: Option<i64>) -> Result<Vec<serde_json::Value>, String> {
+    let lim = limit.unwrap_or(100);
+    let rows = sqlx::query(
+        "SELECT id, total_amount, profit_amount, user_role, created_at, is_reversed, refund_reason_code, refund_notes \
+         FROM invoices WHERE total_amount < 0 AND is_reversed = FALSE \
+         ORDER BY created_at DESC LIMIT $1"
+    ).bind(lim).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
+    let mut refunds = Vec::new();
+    for row in rows {
+        let inv_id: uuid::Uuid = row.get(0);
+        let item_rows = sqlx::query("SELECT name_ar, quantity, price FROM invoice_items WHERE invoice_id = $1")
+            .bind(inv_id).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
+        let items: Vec<serde_json::Value> = item_rows.iter().map(|r| serde_json::json!({
+            "name": r.get::<String, _>(0), "qty": r.get::<i32, _>(1),
+            "price": r.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0)
+        })).collect();
+        refunds.push(serde_json::json!({
+            "id": inv_id.to_string(),
+            "totalAmount": row.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0),
+            "profitAmount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
+            "userRole": row.get::<Option<String>, _>(3).unwrap_or_else(|| "N/A".to_string()),
+            "date": row.get::<chrono::NaiveDateTime, _>(4).to_string(),
+            "isReversed": row.get::<bool, _>(5),
+            "refundReasonCode": row.get::<Option<String>, _>(6),
+            "refundNotes": row.get::<Option<String>, _>(7),
+            "items": items,
+        }));
+    }
+    Ok(refunds)
+}
+
 fn main() {
     init_logging();
     tauri::Builder::default()

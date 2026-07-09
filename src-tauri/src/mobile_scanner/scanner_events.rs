@@ -1,6 +1,6 @@
 // Scanner Events — معالجة أحداث المسح
 use sqlx::{PgPool, Row};
-use crate::mobile_scanner::barcode_parser;
+use crate::mobile_scanner::barcode_parser::{normalize_barcode, detect_barcode_type};
 
 /// فحص الباركود من الـ POS (استدعاء مباشر بدون WebSocket)
 #[tauri::command]
@@ -10,8 +10,8 @@ pub async fn scan_barcode_direct(
     device_name: Option<String>,
     user_role: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let normalized = crate::mobile_scanner::barcode_parser::normalize_barcode(&barcode);
-    let barcode_type = crate::mobile_scanner::barcode_parser::detect_barcode_type(&barcode);
+    let normalized = normalize_barcode(&barcode);
+    let barcode_type = detect_barcode_type(&barcode);
 
     // ابحث في medicine_barcodes
     let med_row = sqlx::query(

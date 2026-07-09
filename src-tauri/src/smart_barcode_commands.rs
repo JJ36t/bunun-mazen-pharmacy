@@ -273,8 +273,8 @@ pub async fn add_medicine_from_global_db(
         barcode.trim().to_string()
     };
 
-    // تحويل الشكل الدوائي للعربي
-    let dosage_form_ar = match dosage_form.as_deref() {
+    // تحويل الشكل الدوائي للعربي — يُستخدم في اسم_عربي احتياطي
+    let _dosage_form_ar = match dosage_form.as_deref() {
         Some("tablet") | Some("comprimé") | Some("comprimé pelliculé") => Some("قرص".to_string()),
         Some("capsule") | Some("gélule") => Some("كبسولة".to_string()),
         Some("syrup") | Some("sirop") | Some("solution buvable") => Some("شراب".to_string()),
@@ -287,8 +287,12 @@ pub async fn add_medicine_from_global_db(
         _ => dosage_form.clone(),
     };
 
-    // اسم عربي (نستخدم الاسم العلمي كاسم عربي مؤقتاً)
-    let name_ar = active_ingredient.clone().unwrap_or_else(|| name.clone());
+    // اسم عربي (نستخدم الاسم العلمي + التركيز كاسم عربي مؤقتاً)
+    let name_ar = match (&active_ingredient, &strength) {
+        (Some(ai), Some(st)) if !ai.is_empty() && !st.is_empty() => format!("{} {}", ai, st),
+        (Some(ai), _) => ai.clone(),
+        _ => name.clone(),
+    };
 
     let row = sqlx::query(
         "INSERT INTO medicines (name_ar, name_en, scientific_name, barcode, price, wholesale_price, cost_price, quantity, batch_number, expiry_date)
