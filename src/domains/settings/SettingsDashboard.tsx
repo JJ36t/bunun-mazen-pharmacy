@@ -8,25 +8,25 @@ import { toast } from 'sonner';
 import { PrinterSetupSection } from './PrinterSetup';
 
 export function SettingsDashboard() {
-  const { pharmacyName, phone, address, maxDiscount, fetchSettings, saveSettings } = useSettingsStore();
+  const { pharmacyName, phone, address, maxDiscountAmount, fetchSettings, saveSettings } = useSettingsStore();
   const { fetchMedicines } = useInventoryStore();
   const { role } = useAuthStore();
   
   const [name, setName] = useState('');
   const [ph, setPh] = useState('');
   const [addr, setAddr] = useState('');
-  const [mDiscount, setMDiscount] = useState(10);
+  const [mDiscountAmount, setMDiscountAmount] = useState(1000);
   const [saved, setSaved] = useState(false);
 
   const [bulkType, setBulkType] = useState<'percentage' | 'amount'>('percentage');
   const [bulkValue, setBulkValue] = useState('');
 
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
-  useEffect(() => { setName(pharmacyName); setPh(phone); setAddr(address); setMDiscount(maxDiscount); }, [pharmacyName, phone, address, maxDiscount]);
+  useEffect(() => { setName(pharmacyName); setPh(phone); setAddr(address); setMDiscountAmount(maxDiscountAmount); }, [pharmacyName, phone, address, maxDiscountAmount]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    await saveSettings(name, ph, addr, mDiscount);
+    await saveSettings(name, ph, addr, mDiscountAmount);
     setSaved(true); setTimeout(() => setSaved(false), 3000);
     toast.success('تم حفظ الإعدادات بنجاح.');
   };
@@ -73,8 +73,9 @@ export function SettingsDashboard() {
               <input className="input" value={addr} onChange={e => setAddr(e.target.value)} required />
             </div>
             <div>
-              <label className="label"><Percent className="w-3 h-3 inline ml-1" />حد الخصم الأقصى للكاشير (%)</label>
-              <input type="number" min="0" max="100" className="input tabular" value={mDiscount} onChange={e => setMDiscount(parseFloat(e.target.value))} required />
+              <label className="label"><Percent className="w-3 h-3 inline ml-1" />حد الخصم اليومي للكاشير (د.ع)</label>
+              <input type="number" min="0" className="input tabular" value={mDiscountAmount} onChange={e => setMDiscountAmount(parseFloat(e.target.value) || 0)} required />
+              <p className="text-xs text-slate-400 mt-1">الحد الأقصى للخصم المسموح به للكاشير في اليوم الواحد (بالدينار العراقي)</p>
             </div>
           </div>
           <div className="flex items-center gap-3 mt-6">
