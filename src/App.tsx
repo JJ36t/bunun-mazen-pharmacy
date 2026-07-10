@@ -431,7 +431,8 @@ function PosDashboard() {
 
   const handleConfirmPayment = async () => {
     const currentItems = [...cart];
-    const finalTotal = calculateTotal();
+    // finalTotal = المجموع الفرعي - الخصم المطلق (لأن discountPercentage = 0 دائماً)
+    const finalTotal = Math.max(0, calculateTotal() - (discountAmount || 0));
     const newInvoiceNum = `INV-${Date.now()}`;
 
     // التحقق من اسم الزبون عند الدفع الآجل
@@ -538,7 +539,7 @@ function PosDashboard() {
   const handlePrintOnly = async () => {
     if (cart.length === 0) return;
     const currentItems = [...cart];
-    const finalTotal = calculateTotal();
+    const finalTotal = Math.max(0, calculateTotal() - (discountAmount || 0));
     const newInvoiceNum = `PRINT-${Date.now()}`;
     
     try {
@@ -861,7 +862,7 @@ function PosDashboard() {
 
       {showPayment && (
         <PaymentModal
-          total={calculateTotal()}
+          total={Math.max(0, calculateTotal() - (discountAmount || 0))}
           paymentMethods={paymentMethods}
           selectedMethod={selectedPaymentMethod}
           setSelectedMethod={setSelectedPaymentMethod}
