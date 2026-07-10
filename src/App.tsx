@@ -28,7 +28,7 @@ import { RefundDashboard } from './domains/pos/RefundDashboard';
 import { PatientsDashboard } from './domains/patients/PatientsDashboard';
 import { Receipt } from './domains/pos/Receipt';
 
-import { searchMedicines } from './lib/utils/search';
+import { searchMedicinesIndexed as searchMedicines } from './lib/utils/search';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { SmartBarcodeLookup } from './domains/pos/SmartBarcodeLookup';
@@ -55,9 +55,9 @@ import { registerAllPlugins } from './plugins';
 
 // تهيئة الـ plugins مرة واحدة
 let pluginsInitialized = false;
-function ensurePluginsInitialized() {
+async function ensurePluginsInitialized() {
   if (!pluginsInitialized) {
-    registerAllPlugins();
+    await registerAllPlugins();
     pluginsInitialized = true;
   }
 }
@@ -911,11 +911,14 @@ function App() {
   // تهيئة الأنظمة المؤسسية عند بدء التشغيل
   useEffect(() => {
     if (isLicensed && isAuthenticated) {
-      // تهيئة الـ plugins
-      ensurePluginsInitialized();
+      // تهيئة الـ plugins + بدء الجلسة
+      (async () => {
+        await ensurePluginsInitialized();
+      })();
       
-      // بدء جلسة المستخدم
-      sessionManager.startSession('user-id', username || 'unknown');
+      // بدء جلسة المستخدم — استخدم userId من auth store
+      const userId = useAuthStore.getState().userId || 'user-id';
+      sessionManager.startSession(userId, username || 'unknown');
       
       // استرجاع العمليات المعلقة (Crash Recovery)
       crashRecovery.recoverPendingOperations().then(result => {
@@ -950,14 +953,21 @@ function App() {
     }
   }, [isLicensed, isAuthenticated, fetchMedicines, fetchSummary, fetchSettings, fetchDebts, fetchSuppliers, checkShift, username, role]);
   
-  // Cleanup عند الخروج
+  // Cleanup عند الخروج — يُنفَّذ عند unmount أو عند تغيّر isAuthenticated
   useEffect(() => {
+    if (!isAuthenticated && !isLicensed) {
+      // عند تسجيل الخروج: نظّف الجلسة والكاش
+      sessionManager.endSession();
+      fraudDetector.resetSession();
+      cache.clear();
+    }
     return () => {
+      // عند إغلاق التطبيق نهائياً
       sessionManager.endSession();
       fraudDetector.resetSession();
       cache.clear();
     };
-  }, []);
+  }, [isAuthenticated, isLicensed]);
 
   if (!isLicensed || !isAuthenticated) return <><Login /><Toaster richColors position="bottom-left" /></>;
 

@@ -835,19 +835,36 @@ async fn get_filtered_sales_report(state: tauri::State<'_, PgPool>, start_date: 
 
 #[tauri::command]
 async fn get_invoice_details_report(state: tauri::State<'_, PgPool>, start_date: String, end_date: String, user_filter: String) -> Result<Vec<serde_json::Value>, String> {
+    // Single query with LEFT JOIN + json_agg to avoid N+1 (one query per invoice for items).
+    // The items JSON column is cast to ::text and parsed on the Rust side because the
+    // sqlx `json` feature is not enabled in this project (no direct serde_json::Value decode).
     let rows = if user_filter == "all" {
-        sqlx::query("SELECT id, total_amount, profit_amount, user_role, created_at FROM invoices WHERE created_at::date >= $1::date AND created_at::date <= $2::date ORDER BY created_at DESC").bind(&start_date).bind(&end_date).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
+        sqlx::query(
+            "SELECT i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at, \
+             COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
+             FROM invoices i \
+             LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
+             WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date \
+             GROUP BY i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at \
+             ORDER BY i.created_at DESC"
+        ).bind(&start_date).bind(&end_date).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
     } else {
-        sqlx::query("SELECT id, total_amount, profit_amount, user_role, created_at FROM invoices WHERE created_at::date >= $1::date AND created_at::date <= $2::date AND user_role = $3 ORDER BY created_at DESC").bind(&start_date).bind(&end_date).bind(&user_filter).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
+        sqlx::query(
+            "SELECT i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at, \
+             COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
+             FROM invoices i \
+             LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
+             WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date AND i.user_role = $3 \
+             GROUP BY i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at \
+             ORDER BY i.created_at DESC"
+        ).bind(&start_date).bind(&end_date).bind(&user_filter).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
     };
     let mut invoices = Vec::new();
     for row in rows {
         let inv_id: uuid::Uuid = row.get(0);
-        let item_rows = sqlx::query("SELECT name_ar, quantity, price FROM invoice_items WHERE invoice_id = $1").bind(inv_id).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
-        let mut items = Vec::new();
-        for ir in item_rows {
-            items.push(serde_json::json!({ "name": ir.get::<String, _>(0), "qty": ir.get::<i32, _>(1), "price": ir.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0) }));
-        }
+        let items_str: String = row.get(5);
+        let items: serde_json::Value = serde_json::from_str(&items_str)
+            .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
         invoices.push(serde_json::json!({
             "id": inv_id.to_string(), "totalAmount": row.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0),
             "profitAmount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0), 
@@ -1809,20 +1826,24 @@ async fn get_cashier_report_db(state: tauri::State<'_, PgPool>, start_date: Stri
 #[tauri::command]
 async fn get_refunds_db(state: tauri::State<'_, PgPool>, limit: Option<i64>) -> Result<Vec<serde_json::Value>, String> {
     let lim = limit.unwrap_or(100);
+    // Single query with LEFT JOIN + json_agg to avoid N+1 (one query per refund for items).
+    // The items JSON column is cast to ::text and parsed on the Rust side because the
+    // sqlx `json` feature is not enabled in this project (no direct serde_json::Value decode).
     let rows = sqlx::query(
-        "SELECT id, total_amount, profit_amount, user_role, created_at, is_reversed, refund_reason_code, refund_notes \
-         FROM invoices WHERE total_amount < 0 AND is_reversed = FALSE \
-         ORDER BY created_at DESC LIMIT $1"
+        "SELECT i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.is_reversed, i.refund_reason_code, i.refund_notes, \
+         COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
+         FROM invoices i \
+         LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
+         WHERE i.total_amount < 0 AND i.is_reversed = FALSE \
+         GROUP BY i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.is_reversed, i.refund_reason_code, i.refund_notes \
+         ORDER BY i.created_at DESC LIMIT $1"
     ).bind(lim).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut refunds = Vec::new();
     for row in rows {
         let inv_id: uuid::Uuid = row.get(0);
-        let item_rows = sqlx::query("SELECT name_ar, quantity, price FROM invoice_items WHERE invoice_id = $1")
-            .bind(inv_id).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
-        let items: Vec<serde_json::Value> = item_rows.iter().map(|r| serde_json::json!({
-            "name": r.get::<String, _>(0), "qty": r.get::<i32, _>(1),
-            "price": r.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0)
-        })).collect();
+        let items_str: String = row.get(8);
+        let items: serde_json::Value = serde_json::from_str(&items_str)
+            .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
         refunds.push(serde_json::json!({
             "id": inv_id.to_string(),
             "totalAmount": row.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0),

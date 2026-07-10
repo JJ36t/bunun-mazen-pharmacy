@@ -10,27 +10,39 @@ use chrono;
 
 #[tauri::command]
 pub async fn get_all_invoices_with_details_db(state: tauri::State<'_, PgPool>, start_date: String, end_date: String, user_filter: String) -> Result<Vec<serde_json::Value>, String> {
+    // Single query with LEFT JOIN + json_agg to avoid N+1 (one query per invoice for items).
+    // The items JSON column is cast to ::text and parsed on the Rust side because the
+    // sqlx `json` feature is not enabled in this project (no direct serde_json::Value decode).
     let rows = if user_filter == "all" {
-        sqlx::query("SELECT i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed FROM invoices i WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date ORDER BY i.created_at DESC LIMIT 500")
+        sqlx::query(
+            "SELECT i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed, \
+             COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
+             FROM invoices i \
+             LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
+             WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date \
+             GROUP BY i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed \
+             ORDER BY i.created_at DESC LIMIT 500"
+        )
             .bind(&start_date).bind(&end_date).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
     } else {
-        sqlx::query("SELECT i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed FROM invoices i WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date AND i.user_role = $3 ORDER BY i.created_at DESC LIMIT 500")
+        sqlx::query(
+            "SELECT i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed, \
+             COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
+             FROM invoices i \
+             LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
+             WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date AND i.user_role = $3 \
+             GROUP BY i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed \
+             ORDER BY i.created_at DESC LIMIT 500"
+        )
             .bind(&start_date).bind(&end_date).bind(&user_filter).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
     };
-    
+
     let mut results = Vec::new();
     for row in rows {
         let inv_id: uuid::Uuid = row.get(0);
-        let items = sqlx::query("SELECT name_ar, quantity, price FROM invoice_items WHERE invoice_id = $1")
-            .bind(inv_id).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
-        let mut items_list = Vec::new();
-        for ir in items {
-            items_list.push(serde_json::json!({
-                "name": ir.get::<String, _>(0),
-                "qty": ir.get::<i32, _>(1),
-                "price": ir.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
-            }));
-        }
+        let items_str: String = row.get(9);
+        let items: serde_json::Value = serde_json::from_str(&items_str)
+            .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
         results.push(serde_json::json!({
             "id": inv_id.to_string(),
             "dailyReceiptNumber": row.get::<Option<i32>, _>(1).unwrap_or(0),
@@ -41,7 +53,7 @@ pub async fn get_all_invoices_with_details_db(state: tauri::State<'_, PgPool>, s
             "printedBy": row.get::<Option<String>, _>(6),
             "printedAt": row.get::<Option<chrono::NaiveDateTime>, _>(7).map(|d| d.to_string()),
             "isReversed": row.get::<bool, _>(8),
-            "items": items_list,
+            "items": items,
         }));
     }
     Ok(results)

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-// CartItem يدعم batch + expiry لإتاحة FEFO في المستقبل
+// CartItem يدعم batch + expiry لإتاحة FEFO
 interface CartItem {
   id: string;
   nameAr: string;
@@ -10,7 +10,6 @@ interface CartItem {
   batchId?: string;
   batchNumber?: string;
   expiryDate?: string;
-  scientificName?: string;
 }
 
 interface PosState {
@@ -39,9 +38,9 @@ export const usePosStore = create<PosState>((set, get) => ({
       batchId: item.batchId,
       batchNumber: item.batchNumber,
       expiryDate: item.expiryDate,
-      scientificName: item.scientificName,
     };
-    const existing = state.cart.find(i => i.id === safeItem.id);
+    // FEFO: لا تدمج أصنافاً من دفعات مختلفة
+    const existing = state.cart.find(i => i.id === safeItem.id && i.batchId === safeItem.batchId);
     if (existing) {
       return { cart: state.cart.map(i => i.id === safeItem.id ? { ...i, quantity: i.quantity + safeItem.quantity } : i) };
     }

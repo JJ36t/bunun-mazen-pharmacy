@@ -9,6 +9,7 @@ import { eventBus, EventNames } from '../core/eventBus';
 import { cache, CacheInvalidator } from '../cache/MemoryCache';
 import { perfMonitor } from '../perf/PerformanceMonitor';
 import { fraudDetector } from '../core/fraudDetector';
+import { crashRecovery } from '../core/crashRecovery';
 
 // ========================================
 // Inventory Service
@@ -60,25 +61,39 @@ export const inventoryService = {
 // POS Service
 // ========================================
 export const posService = {
-  async recordSale(items: any[], discountPercentage: number, userRole: string) {
+  async recordSale(items: any[], discountPercentage: number, userRole: string, discountAmount?: number) {
     return perfMonitor.measure('pos_record_sale', async () => {
       // فحص الاحتيال
       const subtotal = items.reduce((s, i) => s + (i.price * i.quantity), 0);
       fraudDetector.checkDiscount(userRole, discountPercentage, subtotal);
       fraudDetector.checkRapidSuccession(userRole, 'sale');
       
-      await invoke('record_sale_db', {
-        discountPercentage,
-        itemsJson: JSON.stringify(items),
-        userRole,
-      });
+      // Idempotency: سجّل العملية في journal قبل التنفيذ
+      const operationId = crypto.randomUUID();
+      await crashRecovery.startOperation('sale', { items, discountPercentage }, userRole);
       
-      CacheInvalidator.invalidateMedicines();
-      CacheInvalidator.invalidateAccounting();
-      CacheInvalidator.invalidateDashboard();
-      
-      eventBus.emit(EventNames.INVOICE_CREATED, { items, discountPercentage, userRole, total: subtotal });
-      eventBus.emit(EventNames.DASHBOARD_REFRESH);
+      try {
+        const result = await invoke<any>('record_sale_db', {
+          discountPercentage,
+          itemsJson: JSON.stringify(items),
+          userRole,
+          operationId,
+          discountAmount: discountAmount || null,
+        });
+        await crashRecovery.completeOperation(operationId);
+        
+        CacheInvalidator.invalidateMedicines();
+        CacheInvalidator.invalidateAccounting();
+        CacheInvalidator.invalidateDashboard();
+        
+        const total = discountAmount ? subtotal - discountAmount : subtotal * (1 - discountPercentage / 100);
+        eventBus.emit(EventNames.INVOICE_CREATED, { invoiceId: result?.invoiceId, items, discountPercentage, userRole, total });
+        eventBus.emit(EventNames.DASHBOARD_REFRESH);
+        return result;
+      } catch (e) {
+        await crashRecovery.failOperation(operationId, String(e));
+        throw e;
+      }
     });
   },
 
