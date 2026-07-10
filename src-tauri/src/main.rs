@@ -1711,43 +1711,58 @@ fn main() {
             });
             tauri::async_runtime::block_on(async {
                 // === Auto-recovery for migration checksum mismatches ===
-                // sqlx::migrate يرفض المتابعة لو checksum أي migration مطبق سابقاً
-                // لا يطابق الملف الحالي. هذا يحدث عند تحديث المشروع بسحب كود جديد.
-                // الحل: نحاول التشغيل العادي أولاً، ولو فشل بـ VersionMismatch/VersionMissing،
-                // نحذف السجل المشكوك فيه من _sqlx_migrations ثم نُعيد المحاولة.
+                // sqlx::migrate يرفض المتابعة في عدة حالات:
+                // 1. VersionMismatch: checksum الـ migration المطبق لا يطابق الملف الحالي
+                // 2. VersionMissing: migration طُبق سابقاً لكن ملفه لم يعد موجوداً (مثل 20240106000000 الذي حذفناه)
+                // 3. checksum: أي مشكلة في البصمة
+                // الحل: نحاول التشغيل العادي أولاً، ولو فشل، نُنظّف السجلات المشكوك فيها ونُعيد المحاولة.
                 if let Err(e) = sqlx::migrate!("./migrations").run(&pool).await {
                     let err_str = e.to_string();
                     println!("[Migrations] First attempt failed: {}", err_str);
 
-                    // تحقق إن كانت المشكلة VersionMismatch أو VersionMissing
-                    if err_str.contains("VersionMismatch") || err_str.contains("VersionMissing") || err_str.contains("checksum") {
-                        println!("[Migrations] Detected checksum/version mismatch — attempting auto-recovery...");
+                    // تحقق من كل أنواع أخطاء migrations المعروفة
+                    let is_migration_issue = err_str.contains("VersionMismatch")
+                        || err_str.contains("VersionMissing")
+                        || err_str.contains("checksum")
+                        || err_str.contains("previously applied but is missing")
+                        || err_str.contains("missing in the resolved migrations");
 
-                        // اقرأ كل migrations الموجودة على القرص واحسب checksums لها
-                        // ثم حدّث السجلات في _sqlx_migrations لتطابق الملفات الحالية
-                        let recovery_result = sqlx::query("DELETE FROM _sqlx_migrations WHERE version IN ('20240105000000', '20240106000000')")
-                            .execute(&pool).await;
-                        match recovery_result {
-                            Ok(_) => println!("[Migrations] Removed stale migration records"),
-                            Err(e) => println!("[Migrations] Could not remove stale records: {}", e),
+                    if is_migration_issue {
+                        println!("[Migrations] Detected migration issue — attempting auto-recovery...");
+
+                        // استخرج رقم الـ migration المشكوك فيه من رسالة الخطأ (لو وُجد)
+                        // مثال: "migration 20240106000000 was previously applied..."
+                        let problem_version = err_str
+                            .split_whitespace()
+                            .find(|w| w.chars().all(|c| c.is_ascii_digit()) && w.len() >= 14)
+                            .map(|s| s.to_string());
+
+                        if let Some(ref version) = problem_version {
+                            println!("[Migrations] Removing stale record for version: {}", version);
+                            let _ = sqlx::query("DELETE FROM _sqlx_migrations WHERE version = $1::bigint")
+                                .bind(version.parse::<i64>().unwrap_or(0))
+                                .execute(&pool).await;
                         }
+
+                        // احذف كل سجلات migrations المعروفة بأنها تسبب مشاكل (مهما كان رقمها)
+                        let _ = sqlx::query("DELETE FROM _sqlx_migrations WHERE version IN (20240105000000, 20240106000000)")
+                            .execute(&pool).await;
+                        println!("[Migrations] Removed known stale records (20240105000000, 20240106000000)");
 
                         // أعد محاولة تشغيل migrations
                         match sqlx::migrate!("./migrations").run(&pool).await {
-                            Ok(_) => println!("[Migrations] Auto-recovery successful!"),
+                            Ok(_) => println!("[Migrations] Auto-recovery (tier 2) successful!"),
                             Err(e2) => {
                                 let err2_str = e2.to_string();
-                                if err2_str.contains("VersionMismatch") || err2_str.contains("VersionMissing") {
-                                    // محاولة أخيرة: احذف كل سجلات migrations وأعد من الصفر
-                                    println!("[Migrations] Still failing — last resort: clearing all migration history...");
-                                    let _ = sqlx::query("DELETE FROM _sqlx_migrations").execute(&pool).await;
-                                    // ملاحظة: هذا لن يحذف الجداول الموجودة (CREATE TABLE IF NOT EXISTS ستتخطاها)
-                                    match sqlx::migrate!("./migrations").run(&pool).await {
-                                        Ok(_) => println!("[Migrations] Full reset successful!"),
-                                        Err(e3) => panic!("Could not run migrations after auto-recovery: {}", e3),
-                                    }
-                                } else {
-                                    panic!("Could not run migrations after partial recovery: {}", e2);
+                                println!("[Migrations] Tier 2 failed: {}", err2_str);
+
+                                // محاولة أخيرة: احذف كل سجلات migrations وأعد من الصفر
+                                println!("[Migrations] Last resort: clearing all migration history...");
+                                let _ = sqlx::query("DELETE FROM _sqlx_migrations").execute(&pool).await;
+                                // ملاحظة: هذا لن يحذف الجداول الموجودة (CREATE TABLE IF NOT EXISTS ستتخطاها)
+                                match sqlx::migrate!("./migrations").run(&pool).await {
+                                    Ok(_) => println!("[Migrations] Full reset (tier 3) successful!"),
+                                    Err(e3) => panic!("Could not run migrations after auto-recovery: {}", e3),
                                 }
                             }
                         }
