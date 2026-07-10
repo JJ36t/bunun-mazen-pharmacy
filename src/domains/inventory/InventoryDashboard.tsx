@@ -72,8 +72,12 @@ export function InventoryDashboard() {
   
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`هل أنت متأكد من حذف (أرشفة) الدواء: ${name}؟`)) {
-      await softDeleteMedicine(id, role || 'Unknown', name);
-      toast.success("تمت أرشفة الدواء.");
+      try {
+        await softDeleteMedicine(id, role || 'Unknown', name);
+        toast.success("تمت أرشفة الدواء.");
+      } catch (e: any) {
+        toast.error('فشل الحذف: ' + e);
+      }
     }
   };
 
@@ -86,8 +90,15 @@ export function InventoryDashboard() {
   // إحصائيات سريعة
   const totalItems = filteredMeds.length;
   const lowStockCount = filteredMeds.filter(m => m.quantity < 50).length;
-  const expiringCount = filteredMeds.filter(m => new Date(m.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)).length;
-  const totalValue = filteredMeds.reduce((sum, m) => sum + (m.price * m.quantity), 0);
+  // قرب الانتهاء: بين اليوم وبعد 90 يوماً (يستثني المنتهي فعلاً)
+  const now = new Date();
+  const ninetyDaysLater = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+  const expiringCount = filteredMeds.filter(m => {
+    const d = new Date(m.expiryDate);
+    return d >= now && d <= ninetyDaysLater;
+  }).length;
+  // قيمة المخزون بسعر التكلفة (محاسبياً صحيح)
+  const totalValue = filteredMeds.reduce((sum, m) => sum + (m.costPrice * m.quantity), 0);
 
   // Pagination لعرض المخزون (تجنّب تجمّد 5000+ صف)
   const { currentPage, paginatedItems, totalPages, goToPage, hasNext, hasPrev } = usePagination(filteredMeds, 50);

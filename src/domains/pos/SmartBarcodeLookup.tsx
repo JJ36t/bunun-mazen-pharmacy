@@ -150,7 +150,7 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
               <div className="space-y-2 mb-4">
                 {results.results.map((r: any, i: number) => (
                   <button
-                    key={i}
+                    key={r.source + "-" + i}
                     onClick={() => setSelected(r)}
                     className={`w-full text-right p-3 rounded-xl border-2 transition-all ${
                       selected === r

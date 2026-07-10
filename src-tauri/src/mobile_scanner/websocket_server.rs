@@ -160,6 +160,8 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle,
 
     // انتظر cancellation بدل sleep forever
     cancel_token.cancelled().await;
+    // أعطِ المهام وقتاً قصيراً لإغلاق الـ listeners قبل العودة
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     println!("[MobileScanner] Server fully stopped");
     Ok(())
 }

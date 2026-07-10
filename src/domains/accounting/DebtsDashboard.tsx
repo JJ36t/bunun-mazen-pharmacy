@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDebtsStore } from './debts.store';
 import { useAuthStore } from '../security/auth.store';
 import { useAccountingStore } from './accounting.store';
@@ -16,29 +16,42 @@ export function DebtsDashboard() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [payAmount, setPayAmount] = useState<{ [key: string]: string }>({});
+  
+
+  useEffect(() => { fetchDebts(); }, [fetchDebts]);
 
   const handleAddDebt = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
     if (!customerName || isNaN(numAmount) || numAmount <= 0) return;
-    await addDebt(customerName, numAmount, note, role || 'Unknown');
-    setCustomerName(''); setAmount(''); setNote(''); setShowForm(false);
+    try {
+      await addDebt(customerName, numAmount, note, role || 'Unknown');
+      setCustomerName(''); setAmount(''); setNote(''); setShowForm(false);
+      toast.success('تم تسجيل الدين');
+    } catch (e: any) { toast.error('فشل: ' + e); }
   };
 
   const handlePay = async (debtId: string) => {
     const amt = parseFloat(payAmount[debtId] || '0');
     if (isNaN(amt) || amt <= 0) { toast.error("أدخل مبلغاً صحيحاً"); return; }
-    await payDebt(debtId, amt, role || 'Unknown');
-    await fetchDebts();
-    await fetchSummary();
-    setPayAmount({ ...payAmount, [debtId]: '' });
+    try {
+      await payDebt(debtId, amt, role || 'Unknown');
+      await fetchDebts();
+      await fetchSummary();
+      setPayAmount({ ...payAmount, [debtId]: '' });
+      toast.success('تم تسجيل الدفعة');
+    } catch (e: any) { toast.error('فشل: ' + e); }
   };
 
   const handleDelete = async (debtId: string) => {
-    if (window.confirm("هل أنت متأكد من حذف هذا الدين نهائياً؟")) {
+    if (!window.confirm("هل أنت متأكد من حذف هذا الدين نهائياً؟")) return;
+    try {
       await invoke('delete_customer_debt_db', { debtId });
-      fetchDebts();
+      await fetchDebts();
       toast.success("تم حذف الدين.");
+    } catch (e: any) {
+      toast.error('فشل الحذف: ' + e);
+    } finally {
     }
   };
 

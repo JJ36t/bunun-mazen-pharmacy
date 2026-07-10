@@ -475,6 +475,7 @@ function PosDashboard() {
           itemsJson: JSON.stringify(currentItems),
           userRole: username || 'Unknown',
           operationId,
+          discountAmount: discountAmount || null,
         });
 
         // إذا كان الدفع آجل، أضف دين للزبون (اسم الزبون إلزامي)

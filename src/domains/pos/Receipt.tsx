@@ -5,9 +5,9 @@ import { Printer, X, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface CartItem { id: string; nameAr: string; quantity: number; price: number; }
-interface ReceiptProps { invoiceNumber: string; items: CartItem[]; total: number; onClose: () => void; }
+interface ReceiptProps { invoiceNumber: string; items: CartItem[]; total: number; discountAmount?: number; onClose: () => void; }
 
-export function Receipt({ invoiceNumber, items, total, onClose }: ReceiptProps) {
+export function Receipt({ invoiceNumber, items, total, discountAmount, onClose }: ReceiptProps) {
   const { pharmacyName, phone, address } = useSettingsStore();
   const [printers, setPrinters] = useState<string[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState('');
@@ -60,11 +60,9 @@ export function Receipt({ invoiceNumber, items, total, onClose }: ReceiptProps) 
         <div id="receipt-print-area" className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-4 mb-5 text-right" dir="rtl">
           {/* رأس الفاتورة */}
           <div className="text-center border-b-2 border-slate-200 pb-3 mb-3">
-            {true && (
-              <div className="flex justify-center mb-2">
-                <img src="/logo.png" alt="شعار" className="w-16 h-16 object-contain" />
-              </div>
-            )}
+            <div className="flex justify-center mb-2">
+              <img src="/logo.png" alt="شعار" className="w-16 h-16 object-contain" />
+            </div>
             <p className="text-lg font-bold text-slate-800">{pharmacyName}</p>
             {phone && <p className="text-xs text-slate-500 tabular">هاتف: {phone}</p>}
             {address && <p className="text-xs text-slate-500">{address}</p>}
@@ -110,6 +108,12 @@ export function Receipt({ invoiceNumber, items, total, onClose }: ReceiptProps) 
               <span className="text-slate-500">المجموع الفرعي:</span>
               <span className="text-slate-700 tabular">{subtotal.toFixed(2)} د.ع</span>
             </div>
+            {discountAmount && discountAmount > 0 && (
+              <div className="flex justify-between text-sm mb-1 text-rose-600">
+                <span>الخصم:</span>
+                <span className="tabular">-{discountAmount.toFixed(2)} د.ع</span>
+              </div>
+            )}
             <div className="flex justify-between text-lg font-bold">
               <span className="text-slate-800">الإجمالي:</span>
               <span className="text-brand-700 tabular">{total.toFixed(2)} د.ع</span>
