@@ -120,7 +120,7 @@ function PosDashboard() {
   const { username } = useAuthStore();
   const { pharmacyName } = useSettingsStore();
   const [searchTerm, setSearchTerm] = useState('');
-  const [invoiceData, setInvoiceData] = useState<{ items: any[], total: number, invoiceNumber: string } | null>(null);
+  const [invoiceData, setInvoiceData] = useState<{ items: any[], total: number, invoiceNumber: string, discountAmount?: number } | null>(null);
   const [suspendedInvs, setSuspendedInvs] = useState<any[]>([]);
   const [showSuspended, setShowSuspended] = useState(false);
   const [keypadTarget, setKeypadTarget] = useState<string | null>(null);
@@ -512,6 +512,9 @@ function PosDashboard() {
           }
         } catch (e) { console.error('Print failed:', e); }
 
+        // اعرض إيصال الفاتورة بعد نجاح البيع
+        setInvoiceData({ items: currentItems, total: finalTotal, invoiceNumber: newInvoiceNum, discountAmount: discountAmount || undefined });
+
         clearCart();
         setShowPayment(false);
         setInteractionOverrideGranted(false); // reset للفاتورة الجاية
@@ -876,7 +879,7 @@ function PosDashboard() {
           onClose={() => setShowPayment(false)}
         />
       )}
-      {invoiceData && <Receipt invoiceNumber={invoiceData.invoiceNumber} items={invoiceData.items} total={invoiceData.total} onClose={() => setInvoiceData(null)} />}
+      {invoiceData && <Receipt invoiceNumber={invoiceData.invoiceNumber} items={invoiceData.items} total={invoiceData.total} discountAmount={invoiceData.discountAmount} onClose={() => setInvoiceData(null)} />}
 
       {/* نافذة تجاوز حد الخصم */}
       {showAdminDiscount && (
