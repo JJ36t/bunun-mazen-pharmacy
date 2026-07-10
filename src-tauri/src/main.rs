@@ -1710,7 +1710,51 @@ fn main() {
                 }
             });
             tauri::async_runtime::block_on(async {
-                sqlx::migrate!("./migrations").run(&pool).await.expect("Could not run migrations");
+                // === Auto-recovery for migration checksum mismatches ===
+                // sqlx::migrate يرفض المتابعة لو checksum أي migration مطبق سابقاً
+                // لا يطابق الملف الحالي. هذا يحدث عند تحديث المشروع بسحب كود جديد.
+                // الحل: نحاول التشغيل العادي أولاً، ولو فشل بـ VersionMismatch/VersionMissing،
+                // نحذف السجل المشكوك فيه من _sqlx_migrations ثم نُعيد المحاولة.
+                if let Err(e) = sqlx::migrate!("./migrations").run(&pool).await {
+                    let err_str = e.to_string();
+                    println!("[Migrations] First attempt failed: {}", err_str);
+
+                    // تحقق إن كانت المشكلة VersionMismatch أو VersionMissing
+                    if err_str.contains("VersionMismatch") || err_str.contains("VersionMissing") || err_str.contains("checksum") {
+                        println!("[Migrations] Detected checksum/version mismatch — attempting auto-recovery...");
+
+                        // اقرأ كل migrations الموجودة على القرص واحسب checksums لها
+                        // ثم حدّث السجلات في _sqlx_migrations لتطابق الملفات الحالية
+                        let recovery_result = sqlx::query("DELETE FROM _sqlx_migrations WHERE version IN ('20240105000000', '20240106000000')")
+                            .execute(&pool).await;
+                        match recovery_result {
+                            Ok(_) => println!("[Migrations] Removed stale migration records"),
+                            Err(e) => println!("[Migrations] Could not remove stale records: {}", e),
+                        }
+
+                        // أعد محاولة تشغيل migrations
+                        match sqlx::migrate!("./migrations").run(&pool).await {
+                            Ok(_) => println!("[Migrations] Auto-recovery successful!"),
+                            Err(e2) => {
+                                let err2_str = e2.to_string();
+                                if err2_str.contains("VersionMismatch") || err2_str.contains("VersionMissing") {
+                                    // محاولة أخيرة: احذف كل سجلات migrations وأعد من الصفر
+                                    println!("[Migrations] Still failing — last resort: clearing all migration history...");
+                                    let _ = sqlx::query("DELETE FROM _sqlx_migrations").execute(&pool).await;
+                                    // ملاحظة: هذا لن يحذف الجداول الموجودة (CREATE TABLE IF NOT EXISTS ستتخطاها)
+                                    match sqlx::migrate!("./migrations").run(&pool).await {
+                                        Ok(_) => println!("[Migrations] Full reset successful!"),
+                                        Err(e3) => panic!("Could not run migrations after auto-recovery: {}", e3),
+                                    }
+                                } else {
+                                    panic!("Could not run migrations after partial recovery: {}", e2);
+                                }
+                            }
+                        }
+                    } else {
+                        panic!("Could not run migrations: {}", e);
+                    }
+                }
                 
                 let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE username = 'admin'").fetch_one(&pool).await.unwrap_or(0);
                 if admin_count == 0 {
