@@ -180,7 +180,10 @@ fn save_csv_file(filename: String, content: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn create_backup(data: String, password: String) -> Result<String, String> {
+async fn create_backup(state: tauri::State<'_, PgPool>, data: String, password: String, session_token: String) -> Result<String, String> {
+    if verify_session_token(state.inner(), &session_token).await.is_err() {
+        return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
+    }
     let dir = desktop_dir()?;
     let path = dir.join(format!("Pharmacy_Backup_{}.enc", chrono::Local::now().format("%Y%m%d_%H%M%S")));
     let encrypted_data = encrypt_data(&data, &password)?;
@@ -260,7 +263,7 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
 }
 
 // تحقق من session token — يُستخدم كطبقة مصادقة على الأوامر الحساسة
-async fn verify_session_token(pool: &PgPool, session_token: &str) -> Result<(uuid::Uuid, String, String), String> {
+pub(crate) async fn verify_session_token(pool: &PgPool, session_token: &str) -> Result<(uuid::Uuid, String, String), String> {
     // session_token هنا يُمرّر كـ user_id كبديل بسيط (لأن الواجهة لا ترسل token فعلياً بعد)
     // في المستقبل: استبدل بجدول session_tokens منفصل
     let uuid_id = uuid::Uuid::parse_str(session_token)
@@ -337,7 +340,10 @@ async fn toggle_user_status_db(state: tauri::State<'_, PgPool>, user_id: String,
 }
 
 #[tauri::command]
-async fn delete_user_db(state: tauri::State<'_, PgPool>, user_id: String, deleted_by: String) -> Result<(), String> {
+async fn delete_user_db(state: tauri::State<'_, PgPool>, user_id: String, deleted_by: String, session_token: String) -> Result<(), String> {
+    if verify_session_token(state.inner(), &session_token).await.is_err() {
+        return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
+    }
     let uuid_id = uuid::Uuid::parse_str(&user_id).map_err(|e| e.to_string())?;
     // Soft delete - لا نحذف فعلياً
     sqlx::query("UPDATE users SET deleted_at = NOW(), deleted_by = $1, is_active = FALSE WHERE id = $2 AND username != 'admin'")
@@ -517,8 +523,11 @@ async fn update_medicine_db(state: tauri::State<'_, PgPool>, medicine_id: String
 }
 
 #[tauri::command]
-async fn bulk_update_prices_db(state: tauri::State<'_, PgPool>, update_type: String, value: f64, user_role: String) -> Result<(), String> {
+async fn bulk_update_prices_db(state: tauri::State<'_, PgPool>, update_type: String, value: f64, user_role: String, session_token: String) -> Result<(), String> {
     let pool = state.inner();
+    if verify_session_token(pool, &session_token).await.is_err() {
+        return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
+    }
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     if update_type == "percentage" {
         let factor = 1.0 + (value / 100.0);
@@ -625,8 +634,13 @@ async fn link_barcode_to_medicine_db(
 // --- أوامر المحاسقة (وإصلاح خصم المخزون المزدوج) ---
 // idempotency: operation_id يمنع تسجيل البيع مرتين عند إعادة المحاولة بعد انهيار
 #[tauri::command]
-async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount_param: Option<f64>) -> Result<serde_json::Value, String> {
+async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount_param: Option<f64>, session_token: Option<String>) -> Result<serde_json::Value, String> {
     let pool = state.inner();
+    if let Some(token) = &session_token {
+        if verify_session_token(pool, token).await.is_err() {
+            return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
+        }
+    }
 
     // ===== Idempotency check =====
     if let Some(op_id) = &operation_id {
@@ -705,8 +719,13 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
 }
 
 #[tauri::command]
-async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, items_json: String, user_role: String) -> Result<(), String> {
+async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, items_json: String, user_role: String, session_token: Option<String>) -> Result<(), String> {
     let pool = state.inner();
+    if let Some(token) = &session_token {
+        if verify_session_token(pool, token).await.is_err() {
+            return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
+        }
+    }
     let total_dec = rust_decimal::Decimal::from_f64(total_amount).ok_or("Invalid total")?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let mut total_refund_profit = rust_decimal::Decimal::ZERO;
@@ -808,7 +827,10 @@ async fn get_accounting_summary_db(state: tauri::State<'_, PgPool>) -> Result<se
 // الإغلاق اليومي — يصفّر ONLY اليوم الحالي وليس كل التاريخ
 // البيانات التاريخية تُنقل لجدول archive (إن وُجد) أو تُترك كما هي
 #[tauri::command]
-async fn reset_daily_db(state: tauri::State<'_, PgPool>, user_role: String) -> Result<(), String> {
+async fn reset_daily_db(state: tauri::State<'_, PgPool>, user_role: String, session_token: String) -> Result<(), String> {
+    if verify_session_token(state.inner(), &session_token).await.is_err() {
+        return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
+    }
     if user_role != "Super Admin" { return Err("صلاحية غير كافية: يجب أن تكون مديراً للقيام بالإغلاق اليومي.".to_string()); }
     let today = chrono::Local::now().date_naive();
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
@@ -1531,7 +1553,10 @@ fn get_or_create_auto_backup_password() -> Result<String, String> {
 
 // --- استعادة النسخة الاحتياطية إلى قاعدة البيانات ---
 #[tauri::command]
-async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String, password: String) -> Result<serde_json::Value, String> {
+async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String, password: String, session_token: String) -> Result<serde_json::Value, String> {
+    if verify_session_token(state.inner(), &session_token).await.is_err() {
+        return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
+    }
     let encrypted_data = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
     let plaintext = decrypt_data(&encrypted_data, &password)?;
     let backup: serde_json::Value = serde_json::from_str(&plaintext).map_err(|e| format!("فشل تحليل JSON: {}", e))?;

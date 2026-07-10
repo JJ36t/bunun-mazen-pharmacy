@@ -69,8 +69,7 @@ export const posService = {
       fraudDetector.checkRapidSuccession(userRole, 'sale');
       
       // Idempotency: سجّل العملية في journal قبل التنفيذ
-      const operationId = crypto.randomUUID();
-      await crashRecovery.startOperation('sale', { items, discountPercentage }, userRole);
+      const operationId = await crashRecovery.startOperation('sale', { items, discountPercentage }, userRole);
       
       try {
         const result = await invoke<any>('record_sale_db', {
@@ -99,19 +98,27 @@ export const posService = {
 
   async recordRefund(items: any[], totalAmount: number, userRole: string, invoiceId?: string) {
     fraudDetector.checkRefund(userRole, totalAmount, invoiceId);
-    
-    await invoke('record_refund_db', {
-      totalAmount,
-      itemsJson: JSON.stringify(items),
-      userRole,
-    });
-    
-    CacheInvalidator.invalidateMedicines();
-    CacheInvalidator.invalidateAccounting();
-    CacheInvalidator.invalidateDashboard();
-    
-    eventBus.emit(EventNames.INVOICE_REFUNDED, { items, totalAmount, userRole });
-    eventBus.emit(EventNames.DASHBOARD_REFRESH);
+
+    const operationId = await crashRecovery.startOperation('refund', { totalAmount, items }, userRole);
+
+    try {
+      await invoke('record_refund_db', {
+        totalAmount,
+        itemsJson: JSON.stringify(items),
+        userRole,
+      });
+      await crashRecovery.completeOperation(operationId);
+
+      CacheInvalidator.invalidateMedicines();
+      CacheInvalidator.invalidateAccounting();
+      CacheInvalidator.invalidateDashboard();
+
+      eventBus.emit(EventNames.INVOICE_REFUNDED, { items, totalAmount, userRole });
+      eventBus.emit(EventNames.DASHBOARD_REFRESH);
+    } catch (e) {
+      await crashRecovery.failOperation(operationId, String(e));
+      throw e;
+    }
   },
 
   async suspendInvoice(items: any[], userRole: string) {
@@ -216,15 +223,25 @@ export const suppliersService = {
     return id;
   },
 
-  async recordPurchase(supplierId: string, medicineId: string, quantity: number, 
-                       costPrice: number, sellingPrice: number, wholesalePrice: number, userRole: string) {
-    await invoke('record_purchase_db', {
-      supplierId, medicineId, quantity, costPrice, sellingPrice, wholesalePrice, userRole,
-    });
-    CacheInvalidator.invalidateMedicines();
-    CacheInvalidator.invalidateSuppliers();
-    CacheInvalidator.invalidateAccounting();
-    eventBus.emit(EventNames.PURCHASE_RECORDED, { supplierId, medicineId, quantity });
+  recordPurchase: async (supplierId: string, medicineId: string, quantity: number, costPrice: number, sellingPrice: number, wholesalePrice: number, userRole: string) => {
+    const operationId = await crashRecovery.startOperation('purchase', { supplierId, medicineId, quantity, costPrice, sellingPrice, wholesalePrice }, userRole);
+
+    try {
+      await invoke('record_purchase_db', {
+        supplierId, medicineId, quantity, costPrice, sellingPrice, wholesalePrice, userRole,
+      });
+      await crashRecovery.completeOperation(operationId);
+
+      CacheInvalidator.invalidateMedicines();
+      CacheInvalidator.invalidateSuppliers();
+      CacheInvalidator.invalidateAccounting();
+
+      eventBus.emit(EventNames.PURCHASE_RECORDED, { supplierId, medicineId, quantity });
+      eventBus.emit(EventNames.DASHBOARD_REFRESH);
+    } catch (e) {
+      await crashRecovery.failOperation(operationId, String(e));
+      throw e;
+    }
   },
 
   async pay(supplierId: string, amount: number, userRole: string) {

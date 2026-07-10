@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 export function RefundDashboard() {
   const [refunds, setRefunds] = useState<any[]>([]);
   const [showRefundForm, setShowRefundForm] = useState(false);
+  const [reversing, setReversing] = useState<string | null>(null);
   const { role } = useAuthStore();
   const { medicines, fetchMedicines } = useInventoryStore();
 
@@ -41,15 +42,17 @@ export function RefundDashboard() {
   };
 
   const handleReverse = async (invoiceId: string) => {
-    if (window.confirm("هل أنت متأكد من التراجع عن هذا المرتجع؟")) {
-      try {
-        await invoke('reverse_refund_db', { invoiceId, userRole: role || 'Unknown' });
-        toast.success("تم التراجع عن المرتجع بنجاح.");
-        fetchRefunds();
-        fetchMedicines();
-      } catch (e: any) {
-        toast.error(e.toString());
-      }
+    if (!window.confirm("هل أنت متأكد من التراجع عن هذا المرتجع؟")) return;
+    setReversing(invoiceId);
+    try {
+      await invoke('reverse_refund_db', { invoiceId, userRole: role || 'Unknown' });
+      toast.success("تم التراجع عن المرتجع بنجاح.");
+      fetchRefunds();
+      fetchMedicines();
+    } catch (e: any) {
+      toast.error(e.toString());
+    } finally {
+      setReversing(null);
     }
   };
 
@@ -121,8 +124,16 @@ export function RefundDashboard() {
                 <td className="p-4 text-sm text-slate-600">{ref.userRole || '-'}</td>
                 <td className="p-4 text-xs text-slate-400 tabular">{new Date(ref.date).toLocaleString('en-GB')}</td>
                 <td className="p-4">
-                  <button onClick={() => handleReverse(ref.id)} className="text-xs font-semibold px-3 py-2 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 flex items-center gap-1.5">
-                    <Undo2 className="w-3.5 h-3.5" /> تراجع
+                  <button 
+                    onClick={() => handleReverse(ref.id)} 
+                    disabled={reversing === ref.id}
+                    className="text-xs font-semibold px-3 py-2 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {reversing === ref.id ? (
+                      <><span className="inline-block w-3.5 h-3.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" /> جاري...</>
+                    ) : (
+                      <><Undo2 className="w-3.5 h-3.5" /> تراجع</>
+                    )}
                   </button>
                 </td>
               </tr>

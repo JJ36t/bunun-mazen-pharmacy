@@ -24,6 +24,7 @@ export function SuppliersDashboard() {
   const [medSearch, setMedSearch] = useState('');
   
   const [payAmount, setPayAmount] = useState<{ [key: string]: string }>({});
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchSuppliers();
@@ -45,11 +46,16 @@ export function SuppliersDashboard() {
       alert("يرجى ملء جميع الحقول بشكل صحيح");
       return;
     }
-    // سعر الجملة = 0 (تم إلغاؤه)
-    await recordPurchase(pSupplier, pMedicine, qty, cost, sell, 0, role || 'Unknown');
-    await fetchMedicines();
-    setPSupplier(''); setPMedicine(''); setPQty(''); setPCost(''); setPSell(''); setMedSearch('');
-    setShowPurchaseForm(false);
+    setSubmitting(true);
+    try {
+      // سعر الجملة = 0 (تم إلغاؤه)
+      await recordPurchase(pSupplier, pMedicine, qty, cost, sell, 0, role || 'Unknown');
+      await fetchMedicines();
+      setPSupplier(''); setPMedicine(''); setPQty(''); setPCost(''); setPSell(''); setMedSearch('');
+      setShowPurchaseForm(false);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handlePay = async (supId: string) => {
@@ -170,11 +176,11 @@ export function SuppliersDashboard() {
             </div>
           </div>
           <div className="flex gap-2 mt-5">
-            <button type="submit" className="btn-primary">
+            <button type="submit" disabled={submitting} className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
               <PackagePlus className="w-4 h-4" />
-              تسجيل الشراء
+              {submitting ? 'جاري التسجيل...' : 'تسجيل الشراء'}
             </button>
-            <button type="button" onClick={() => setShowPurchaseForm(false)} className="btn-ghost">إلغاء</button>
+            <button type="button" onClick={() => setShowPurchaseForm(false)} className="btn-ghost" disabled={submitting}>إلغاء</button>
           </div>
         </form>
       )}

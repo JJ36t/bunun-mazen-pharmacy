@@ -14,6 +14,7 @@ export function InventoryDashboard() {
   const [editId, setEditId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [showBulkBarcode, setShowBulkBarcode] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<any>({ nameAr: '', nameEn: '', scientificName: '', barcode: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
 
   const handleAddNew = () => { 
@@ -65,9 +66,14 @@ export function InventoryDashboard() {
         return;
       }
     }
-    if (editId) { await updateMedicine(editId, form); toast.success("تم تحديث الدواء بنجاح."); }
-    else { await addMedicine(form); toast.success("تمت إضافة الدواء بنجاح."); }
-    setShowForm(false);
+    setSubmitting(true);
+    try {
+      if (editId) { await updateMedicine(editId, form); toast.success("تم تحديث الدواء بنجاح."); }
+      else { await addMedicine(form); toast.success("تمت إضافة الدواء بنجاح."); }
+      setShowForm(false);
+    } finally {
+      setSubmitting(false);
+    }
   };
   
   const handleDelete = async (id: string, name: string) => {
@@ -212,11 +218,11 @@ export function InventoryDashboard() {
             </div>
           </div>
           <div className="flex gap-2 mt-6">
-            <button type="submit" className="btn-success">
+            <button type="submit" disabled={submitting} className="btn-success disabled:opacity-50 disabled:cursor-not-allowed">
               <Plus className="w-4 h-4" />
-              حفظ
+              {submitting ? 'جاري الحفظ...' : 'حفظ'}
             </button>
-            <button type="button" onClick={() => setShowForm(false)} className="btn-ghost">إلغاء</button>
+            <button type="button" onClick={() => setShowForm(false)} className="btn-ghost" disabled={submitting}>إلغاء</button>
           </div>
         </form>
       )}
