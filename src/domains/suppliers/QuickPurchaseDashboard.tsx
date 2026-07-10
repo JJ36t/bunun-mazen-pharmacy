@@ -17,17 +17,12 @@ export function QuickPurchaseDashboard() {
   const [cart, setCart] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
-  const [usdRate, setUsdRate] = useState(1310);
-  const [currency, setCurrency] = useState<'IQD' | 'USD'>('IQD');
   const [loading, setLoading] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchSuppliers();
     fetchMedicines();
-    invoke<any>('get_settings_db').then((s: any) => {
-      if (s?.usd_exchange_rate) setUsdRate(parseFloat(s.usd_exchange_rate));
-    }).catch(() => {});
     barcodeRef.current?.focus();
   }, []);
 
@@ -60,8 +55,7 @@ export function QuickPurchaseDashboard() {
     } else {
       const cost = med.costPrice || Math.round(med.price * 0.7);
       const sell = med.price || Math.round(cost * 1.4);
-      const wholesale = med.wholesalePrice || Math.round(cost * 1.2);
-      setCart(prev => [...prev, { id: med.id, name: med.nameAr, barcode: med.barcode, qty: 1, cost, sell, wholesale }]);
+      setCart(prev => [...prev, { id: med.id, name: med.nameAr, barcode: med.barcode, qty: 1, cost, sell }]);
     }
     toast.success('تمت إضافة: ' + med.nameAr);
   };
@@ -71,7 +65,7 @@ export function QuickPurchaseDashboard() {
     setCart(prev => prev.map(i => i.id === id ? { ...i, qty } : i));
   };
 
-  const updatePrice = (id: string, field: 'cost' | 'sell' | 'wholesale', value: number) => {
+  const updatePrice = (id: string, field: 'cost' | 'sell', value: number) => {
     setCart(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
   };
 
@@ -95,14 +89,13 @@ export function QuickPurchaseDashboard() {
         const qty = parseInt(fields[2]) || 1;
         const cost = parseFloat(fields[3]) || 0;
         const sell = parseFloat(fields[4]) || cost * 1.4;
-        const wholesale = parseFloat(fields[5]) || cost * 1.2;
         const med = medicines.find((m: any) => !m.isDeleted && (m.nameAr === name || m.barcode === barcode));
         if (med) {
           const existing = cart.find(i => i.id === med.id);
           if (existing) {
-            setCart(prev => prev.map(i => i.id === med.id ? { ...i, qty: i.qty + qty, cost, sell, wholesale } : i));
+            setCart(prev => prev.map(i => i.id === med.id ? { ...i, qty: i.qty + qty, cost, sell } : i));
           } else {
-            setCart(prev => [...prev, { id: med.id, name: med.nameAr, barcode: med.barcode, qty, cost, sell, wholesale }]);
+            setCart(prev => [...prev, { id: med.id, name: med.nameAr, barcode: med.barcode, qty, cost, sell }]);
           }
           imported++;
         }
@@ -114,8 +107,8 @@ export function QuickPurchaseDashboard() {
   };
 
   const downloadTemplate = () => {
-    const header = 'name,barcode,qty,cost_price,sell_price,wholesale_price\n';
-    const sample = 'باراسيتامول,6000000001,50,300,500,400\nبنادول,6000000002,30,400,600,500';
+    const header = 'name,barcode,qty,cost_price,sell_price\n';
+    const sample = 'باراسيتامول,6000000001,50,300,500\nبنادول,6000000002,30,400,600';
     const blob = new Blob([header + sample], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -133,11 +126,9 @@ export function QuickPurchaseDashboard() {
     let failed = 0;
     for (const item of cart) {
       try {
-        let cost = item.cost;
-        if (currency === 'USD') cost = cost * usdRate;
         await invoke('record_purchase_db', {
           supplierId, medicineId: item.id, quantity: item.qty,
-          costPrice: cost, sellingPrice: item.sell, wholesalePrice: item.wholesale,
+          costPrice: item.cost, sellingPrice: item.sell, wholesalePrice: 0,
           userRole: role || 'Unknown',
         });
         success++;
@@ -151,12 +142,9 @@ export function QuickPurchaseDashboard() {
     setLoading(false);
   };
 
-  const totalCost = cart.reduce((s, i) => s + (i.cost * i.qty), 0);
-  const totalSell = cart.reduce((s, i) => s + (i.sell * i.qty), 0);
+  const totalCost = cart.reduce((sum, i) => sum + i.cost * i.qty, 0);
+  const totalSell = cart.reduce((sum, i) => sum + i.sell * i.qty, 0);
   const totalProfit = totalSell - totalCost;
-
-  const iqdBtnClass = currency === 'IQD' ? 'px-4 py-2.5 rounded-xl text-sm font-bold bg-brand-600 text-white' : 'px-4 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600';
-  const usdBtnClass = currency === 'USD' ? 'px-4 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white' : 'px-4 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600';
 
   return (
     <div className="p-8 overflow-auto h-full bg-slate-50 animate-fade-in">
@@ -173,14 +161,6 @@ export function QuickPurchaseDashboard() {
             {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
-        <div>
-          <label className="label">العملة</label>
-          <div className="flex gap-2">
-            <button onClick={() => setCurrency('IQD')} className={iqdBtnClass}>IQD</button>
-            <button onClick={() => setCurrency('USD')} className={usdBtnClass}>USD</button>
-          </div>
-        </div>
-        <div className="text-xs text-slate-400">1 USD = {usdRate} IQD</div>
       </div>
 
       <div className="grid grid-cols-2 gap-5">
@@ -239,7 +219,7 @@ export function QuickPurchaseDashboard() {
             </div>
             <div className="mt-3 p-3 rounded-xl bg-slate-50 text-xs text-slate-500">
               <p className="font-semibold mb-1">تنسيق الملف:</p>
-              <p className="font-mono" dir="ltr">name, barcode, qty, cost_price, sell_price, wholesale_price</p>
+              <p className="font-mono" dir="ltr">name, barcode, qty, cost_price, sell_price</p>
             </div>
           </div>
         </div>
@@ -282,10 +262,6 @@ export function QuickPurchaseDashboard() {
                       <div>
                         <label className="text-[10px] text-slate-400">مفرد</label>
                         <input type="number" value={item.sell} onChange={e => updatePrice(item.id, 'sell', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1 border border-slate-200 rounded-lg text-sm tabular text-center" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-slate-400">جملة</label>
-                        <input type="number" value={item.wholesale} onChange={e => updatePrice(item.id, 'wholesale', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1 border border-slate-200 rounded-lg text-sm tabular text-center" />
                       </div>
                     </div>
                   </div>

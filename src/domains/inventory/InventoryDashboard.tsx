@@ -14,17 +14,17 @@ export function InventoryDashboard() {
   const [editId, setEditId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [showBulkBarcode, setShowBulkBarcode] = useState(false);
-  const [form, setForm] = useState<any>({ nameAr: '', nameEn: '', scientificName: '', barcode: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
+  const [form, setForm] = useState<any>({ nameAr: '', nameEn: '', barcode: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
 
   const handleAddNew = () => { 
     setEditId(null); 
-    setForm({ nameAr: '', nameEn: '', scientificName: '', barcode: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' }); 
+    setForm({ nameAr: '', nameEn: '', barcode: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' }); 
     setShowForm(true); 
   };
 
   const handleEdit = (med: Medicine) => { 
     setEditId(med.id); 
-    setForm({ nameAr: med.nameAr, nameEn: med.nameEn, scientificName: med.scientificName || '', barcode: med.barcode, price: med.price, wholesalePrice: med.wholesalePrice, costPrice: med.costPrice, quantity: med.quantity, batchNumber: med.batchNumber, expiryDate: med.expiryDate }); 
+    setForm({ nameAr: med.nameAr, nameEn: med.nameEn, barcode: med.barcode, price: med.price, costPrice: med.costPrice, quantity: med.quantity, batchNumber: med.batchNumber, expiryDate: med.expiryDate }); 
     setShowForm(true); 
   };
 
@@ -183,7 +183,6 @@ export function InventoryDashboard() {
           <div className="grid grid-cols-4 gap-4">
             <div><label className="label">الاسم بالعربي *</label><input className="input" value={form.nameAr} onChange={e => setForm({...form, nameAr: e.target.value})} required /></div>
             <div><label className="label">الاسم بالإنجليزي</label><input className="input" value={form.nameEn} onChange={e => setForm({...form, nameEn: e.target.value})} /></div>
-            <div className="col-span-2"><label className="label">الاسم العلمي (لربط البدائل)</label><input className="input" value={form.scientificName} onChange={e => setForm({...form, scientificName: e.target.value})} placeholder="مثال: Paracetamol" /></div>
             <div>
               <label className="label">الباركود (EAN-13) — يُولّد تلقائياً إذا تُرك فارغاً</label>
               <div className="flex gap-2">
@@ -192,8 +191,7 @@ export function InventoryDashboard() {
               </div>
             </div>
             <div><label className="label">رقم الدفعة</label><input className="input" value={form.batchNumber} onChange={e => setForm({...form, batchNumber: e.target.value})} /></div>
-            <div><label className="label">سعر البيع (مفرد) *</label><input type="number" className="input tabular" value={form.price} onChange={e => setForm({...form, price: parseFloat(e.target.value)})} required /></div>
-            <div><label className="label">سعر الجملة *</label><input type="number" className="input tabular" value={form.wholesalePrice} onChange={e => setForm({...form, wholesalePrice: parseFloat(e.target.value)})} required /></div>
+            <div><label className="label">سعر البيع *</label><input type="number" className="input tabular" value={form.price} onChange={e => setForm({...form, price: parseFloat(e.target.value)})} required /></div>
             <div><label className="label">سعر التكلفة *</label><input type="number" className="input tabular" value={form.costPrice} onChange={e => setForm({...form, costPrice: parseFloat(e.target.value)})} required /></div>
             <div><label className="label">الكمية *</label><input type="number" className="input tabular" value={form.quantity} onChange={e => setForm({...form, quantity: parseInt(e.target.value)})} required /></div>
             <div className="col-span-4">
@@ -220,8 +218,8 @@ export function InventoryDashboard() {
               <th className="table-header text-right p-4">الباركود</th>
               <th className="table-header text-right p-4">الكمية</th>
               <th className="table-header text-right p-4">الانتهاء</th>
-              <th className="table-header text-right p-4">سعر المفرد</th>
-              <th className="table-header text-right p-4">سعر الجملة</th>
+              <th className="table-header text-right p-4">سعر البيع</th>
+              <th className="table-header text-right p-4">سعر التكلفة</th>
               <th className="table-header text-right p-4">إجراءات</th>
             </tr>
           </thead>
@@ -258,7 +256,6 @@ export function InventoryDashboard() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-slate-800">{med.nameAr}</p>
-                        {med.scientificName && <p className="text-xs text-slate-400">{med.scientificName}</p>}
                       </div>
                     </div>
                   </td>
@@ -272,7 +269,7 @@ export function InventoryDashboard() {
                     : <span className="text-sm text-slate-500 tabular">{med.expiryDate}</span>}
                   </td>
                   <td className="p-4 text-sm font-bold text-brand-700 tabular">{med.price.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></td>
-                  <td className="p-4 text-sm font-bold text-emerald-700 tabular">{med.wholesalePrice.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></td>
+                  <td className="p-4 text-sm font-bold text-emerald-700 tabular">{med.costPrice.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></td>
                   <td className="p-4">
                     <div className="flex items-center gap-1">
                       <button onClick={() => handleEdit(med)} className="btn-icon" title="تعديل"><Pencil className="w-3.5 h-3.5" /></button>

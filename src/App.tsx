@@ -219,11 +219,7 @@ function PosDashboard() {
   
   const handleAddToCart = async (med: any) => {
     if (med.quantity <= 0) {
-      if (med.scientificName) {
-        const substitutes = medicines.filter((m:any) => !m.isDeleted && m.scientificName === med.scientificName && m.quantity > 0 && m.id !== med.id);
-        if (substitutes.length > 0) toast.info(`نفد الدواء. البدائل: ${substitutes.map((s:any) => s.nameAr).join('، ')}`);
-        else toast.error("نفد هذا الدواء ولا يوجد بدائل متوفرة.");
-      } else toast.error("نفد هذا الدواء.");
+      toast.error("نفد هذا الدواء.");
       return;
     }
 
@@ -249,7 +245,7 @@ function PosDashboard() {
     const activeIngredients = newCartItems
       .map(item => {
         const m = medicines.find((med: any) => med.id === item.id);
-        return m?.scientificName || '';
+        return m?.nameAr || '';
       })
       .filter(name => name && name.trim().length > 0);
 
@@ -453,7 +449,7 @@ function PosDashboard() {
       const activeIngredients = currentItems
         .map(item => {
           const med = medicines.find((m: any) => m.id === item.id);
-          return med?.scientificName || med?.nameAr || '';
+          return med?.nameAr || '';
         })
         .filter(name => name && name.trim().length > 0);
 
@@ -833,7 +829,7 @@ function PosDashboard() {
         <DrugInteractionChecker
           drugNames={cart.map(item => {
             const med = medicines.find((m: any) => m.id === item.id);
-            return med?.scientificName || med?.nameAr || '';
+            return med?.nameAr || '';
           }).filter(name => name && name.trim().length > 0)}
           onOverride={() => {
             setInteractionOverrideGranted(true);

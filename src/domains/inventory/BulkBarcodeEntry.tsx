@@ -45,7 +45,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
   const [pasteText, setPasteText] = useState('');
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const [showNewMedForm, setShowNewMedForm] = useState(false);
-  const [newMed, setNewMed] = useState<any>({ nameAr: '', nameEn: '', scientificName: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
+  const [newMed, setNewMed] = useState<any>({ nameAr: '', nameEn: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
   const [selectedMedId, setSelectedMedId] = useState<string | null>(null);
   const [scanBuffer, setScanBuffer] = useState('');
   const [lastScan, setLastScan] = useState<{ name: string; barcode: string } | null>(null);
@@ -163,7 +163,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
               console.log('[BulkBarcode] >>> SHOWING NEW MEDICINE FORM <<<');
               console.log('[BulkBarcode] Setting pendingBarcode:', barcode);
               setPendingBarcode(barcode);
-              setNewMed({ nameAr: '', nameEn: '', scientificName: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
+              setNewMed({ nameAr: '', nameEn: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
               setShowNewMedForm(true);
               console.log('[BulkBarcode] showNewMedForm set to true');
               toast.info(`الباركود ${barcode} غير مرتبط — أضف دواءً جديداً`);
@@ -307,7 +307,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
     } else {
       // لا يوجد دواء بدون باركود → اعرض خيار إضافة دواء جديد
       setPendingBarcode(barcode);
-      setNewMed({ nameAr: '', nameEn: '', scientificName: '', price: 0, wholesalePrice: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
+      setNewMed({ nameAr: '', nameEn: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
       setShowNewMedForm(true);
       toast.info(`الباركود ${barcode} غير مرتبط — أضف دواءً جديداً`);
     }
@@ -326,10 +326,10 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
       const newId = await invoke<string>('add_medicine_db', {
         nameAr: newMed.nameAr,
         nameEn: newMed.nameEn || null,
-        scientificName: newMed.scientificName || null,
+        scientificName: null,
         barcode: pendingBarcode,
         price: newMed.price,
-        wholesalePrice: newMed.wholesalePrice || 0,
+        wholesalePrice: 0,
         costPrice: newMed.costPrice || 0,
         quantity: newMed.quantity,
         batchNumber: newMed.batchNumber || null,
@@ -846,10 +846,6 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
                   <div className="col-span-2">
                     <label className="label">الاسم بالعربي *</label>
                     <input className="input" value={newMed.nameAr} onChange={e => setNewMed({...newMed, nameAr: e.target.value})} placeholder="مثلاً: بنادول 500mg" autoFocus />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="label">الاسم العلمي</label>
-                    <input className="input" value={newMed.scientificName} onChange={e => setNewMed({...newMed, scientificName: e.target.value})} placeholder="Paracetamol" />
                   </div>
                   <div>
                     <label className="label">سعر البيع (د.ع) *</label>

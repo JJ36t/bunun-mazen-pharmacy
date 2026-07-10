@@ -93,9 +93,9 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
     try {
       const medId = await invoke<string>('add_medicine_from_global_db', {
         barcode,
-        name: finalName,
-        activeIngredient: data.activeIngredient || manualActiveIngredient || null,
-        dosageForm: data.dosageForm || manualDosageForm || null,
+        name: data.name || data.brandName || 'دواء جديد',
+        activeIngredient: null, // تم إلغاء الاسم العلمي
+        dosageForm: data.dosageForm || null,
         strength: data.strength || null,
         price: p,
         costPrice: cp,
@@ -251,8 +251,8 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
 }
 
 // Manual add form (when barcode not found anywhere)
-// يستخدم state من parent (manualName/manualActiveIngredient/manualDosageForm) بدل state محلي
-function ManualAddForm({ barcode, onSave, saving, price, setPrice, costPrice, setCostPrice, quantity, setQuantity, batchNumber, setBatchNumber, expiryDate, setExpiryDate, manualName, setManualName, manualActiveIngredient, setManualActiveIngredient, manualDosageForm, setManualDosageForm }: any) {
+// يستخدم state من parent (manualName/manualDosageForm) — لا state محلي
+function ManualAddForm({ barcode, onSave, saving, price, setPrice, costPrice, setCostPrice, quantity, setQuantity, batchNumber, setBatchNumber, expiryDate, setExpiryDate, manualName, setManualName, manualDosageForm, setManualDosageForm }: any) {
   return (
     <div>
       <h4 className="text-sm font-bold text-slate-800 mb-2">إضافة دواء جديد يدوياً:</h4>
@@ -267,10 +267,6 @@ function ManualAddForm({ barcode, onSave, saving, price, setPrice, costPrice, se
         <div className="col-span-2">
           <label className="label">اسم الدواء *</label>
           <input type="text" value={manualName} onChange={e => setManualName(e.target.value)} className="input" placeholder="مثلاً: بنادول 500mg" autoFocus />
-        </div>
-        <div className="col-span-2">
-          <label className="label">المادة الفعالة</label>
-          <input type="text" value={manualActiveIngredient} onChange={e => setManualActiveIngredient(e.target.value)} className="input" placeholder="Paracetamol" />
         </div>
         <div>
           <label className="label">الشكل الدوائي</label>
@@ -306,7 +302,7 @@ function ManualAddForm({ barcode, onSave, saving, price, setPrice, costPrice, se
           <input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} className="input" />
         </div>
       </div>
-      <button onClick={() => onSave({ name: manualName, activeIngredient: manualActiveIngredient, dosageForm: manualDosageForm, source: 'manual' })} disabled={saving || !manualName} className="btn-primary w-full py-3 disabled:opacity-50">
+      <button onClick={() => onSave({ name: manualName, dosageForm: manualDosageForm, source: 'manual' })} disabled={saving || !manualName} className="btn-primary w-full py-3 disabled:opacity-50">
         {saving ? <Loader className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
         إضافة للمخزون + متابعة البيع
       </button>
