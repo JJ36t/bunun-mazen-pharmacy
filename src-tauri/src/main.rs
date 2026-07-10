@@ -625,7 +625,7 @@ async fn link_barcode_to_medicine_db(
 // --- أوامر المحاسقة (وإصلاح خصم المخزون المزدوج) ---
 // idempotency: operation_id يمنع تسجيل البيع مرتين عند إعادة المحاولة بعد انهيار
 #[tauri::command]
-async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>) -> Result<serde_json::Value, String> {
+async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount_param: Option<f64>) -> Result<serde_json::Value, String> {
     let pool = state.inner();
 
     // ===== Idempotency check =====
@@ -658,13 +658,12 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
     }
 
     let discount_factor = rust_decimal::Decimal::from_f64(discount_percentage).ok_or("Err")? / rust_decimal::Decimal::from(100);
-    let discount_amount = subtotal * discount_factor;
+    let discount_amount = match discount_amount_param {
+        Some(amt) if amt > 0.0 => rust_decimal::Decimal::from_f64(amt).unwrap_or(subtotal * discount_factor),
+        _ => subtotal * discount_factor,
+    };
     let final_total = subtotal - discount_amount;
-    // تصحيح: الخصم يُخصم من الربح بنسبة نسبية وليس كاملاً
-    // إذا كان الربح = (price - cost) * qty والخصم = subtotal * factor
-    // فالخصم يُتقاسم بين الربح والتكلفة بنسبة هامش الربح
-    let margin_ratio = if subtotal > rust_decimal::Decimal::ZERO { total_profit / subtotal } else { rust_decimal::Decimal::ZERO };
-    let final_profit = total_profit - (discount_amount * margin_ratio);
+    let final_profit = total_profit - discount_amount;
 
     let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number, idempotency_key) VALUES ($1, $2, $3, get_daily_receipt_number(), $4) RETURNING id")
         .bind(final_total).bind(final_profit).bind(&user_role).bind(&operation_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -944,7 +943,9 @@ async fn record_purchase_db(state: tauri::State<'_, PgPool>, supplier_id: String
     let expiry: Option<chrono::NaiveDate> = med_row.get(0);
     let batch_num: Option<String> = med_row.get(1);
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    sqlx::query("UPDATE medicines SET quantity = quantity + $1, cost_price = $2, price = $3, wholesale_price = $4 WHERE id = $5").bind(quantity).bind(cost_dec).bind(sell_dec).bind(wholesale_dec).bind(med_uuid).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    sqlx::query("UPDATE medicines SET quantity = quantity + $1, cost_price = $2, price = $3 WHERE id = $4").bind(quantity).bind(cost_dec).bind(sell_dec).bind(med_uuid).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    // wholesale_dec محسوب للتحقق من صحة الإدخال فقط؛ لا نُحدث wholesale_price عند الشراء حتى لا نُلغي قيمة السعر المُعدّلة يدوياً
+    let _ = wholesale_dec;
     sqlx::query("INSERT INTO medicine_batches (medicine_id, batch_number, expiry_date, quantity) VALUES ($1, $2, $3, $4)").bind(med_uuid).bind(&batch_num).bind(expiry).bind(quantity).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     sqlx::query("UPDATE suppliers SET balance = balance + $1 WHERE id = $2").bind(total_amount_dec).bind(sup_uuid).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     let desc = format!("تسجيل شراء من مورد بقيمة {}. (الدواء: {}, الكمية: {})", total_amount_dec, medicine_id, quantity);
@@ -1883,7 +1884,12 @@ fn main() {
             mobile_scanner::generate_pairing_qr,
             mobile_scanner::get_connected_devices,
             mobile_scanner::get_scan_audit_logs,
-            mobile_scanner::scanner_events::scan_barcode_direct
+            mobile_scanner::scanner_events::scan_barcode_direct,
+            start_session_db, end_session_db, update_session_activity_db, get_active_sessions_db,
+            create_fraud_alert_db, get_fraud_alerts_db, resolve_fraud_alert_db,
+            create_journal_entry_db, complete_journal_entry_db, fail_journal_entry_db, get_pending_journal_entries_db,
+            create_print_job_db, get_print_jobs_db,
+            record_performance_metric_db, get_performance_metrics_db,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

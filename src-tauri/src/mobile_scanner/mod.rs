@@ -144,7 +144,7 @@ pub async fn generate_pairing_qr(
         .await
         .map_err(|e| e.to_string())?;
 
-    let mobile_url = format!("http://{}:{}", local_ip, port);
+    let mobile_url = format!("https://{}:{}", local_ip, port);
 
     // توليد QR code كـ SVG string
     let qr = qrcode::QrCode::new(&mobile_url).map_err(|e| e.to_string())?;

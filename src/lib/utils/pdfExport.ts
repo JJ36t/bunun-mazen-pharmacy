@@ -135,7 +135,17 @@ function formatValue(value: any): string {
   if (typeof value === 'string' && /^\d+(\.\d+)?$/.test(value)) {
     return parseFloat(value).toLocaleString('en-US');
   }
-  return String(value);
+  return escapeHtml(String(value));
+}
+
+// دالة تهريب HTML لمنع XSS في تصدير PDF
+function escapeHtml(v: string): string {
+  return v
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /**

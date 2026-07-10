@@ -93,9 +93,9 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
     try {
       const medId = await invoke<string>('add_medicine_from_global_db', {
         barcode,
-        name: data.name || data.brandName || 'دواء جديد',
-        activeIngredient: null, // تم إلغاء الاسم العلمي
-        dosageForm: data.dosageForm || null,
+        name: finalName,
+        activeIngredient: data.activeIngredient || null,
+        dosageForm: data.dosageForm || manualDosageForm || null,
         strength: data.strength || null,
         price: p,
         costPrice: cp,

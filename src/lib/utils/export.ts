@@ -1,5 +1,20 @@
 import { invoke } from '@tauri-apps/api/core';
 
+// دالة تهريب HTML لمنع XSS و CSV injection
+const escapeCell = (v: any): string => {
+  if (v === null || v === undefined) return '';
+  let s = String(v);
+  // منع CSV injection: إذا الخلية تبدأ بـ = + - @ أضف '
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  // تهريب HTML
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 // أداة تصدير تعتمد على توليد جدول HTML ليقوم Excel بقراءته في خلايا مفصولة ومرتبة
 export const exportToCSV = async (filename: string, headers: string[], rows: any[]) => {
   // بناء هيكل HTML يفهمه Excel
@@ -10,18 +25,18 @@ export const exportToCSV = async (filename: string, headers: string[], rows: any
         <tr style="background-color: #1e40af; color: white; font-weight: bold;">
   `;
   
-  // إضافة العناوين (Headers)
+  // إضافة العناوين (Headers) — مُهربة
   headers.forEach(h => {
-    htmlContent += `<th style="padding: 8px;">${h}</th>`;
+    htmlContent += `<th style="padding: 8px;">${escapeCell(h)}</th>`;
   });
   
   htmlContent += `</tr></thead><tbody>`;
   
-  // إضافة الصفوف (Rows)
+  // إضافة الصفوف (Rows) — مُهربة
   rows.forEach(row => {
     htmlContent += `<tr>`;
     row.forEach((cell: any) => {
-      htmlContent += `<td style="padding: 8px; text-align: center;">${cell ?? ''}</td>`;
+      htmlContent += `<td style="padding: 8px; text-align: center;">${escapeCell(cell)}</td>`;
     });
     htmlContent += `</tr>`;
   });

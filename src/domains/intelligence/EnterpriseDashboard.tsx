@@ -7,12 +7,14 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useInventoryStore } from '../inventory/inventory.store';
+import { useAuthStore } from '../security/auth.store';
 import { Shield, Activity, Flag, History, Lock, TrendingDown, RotateCcw, RefreshCw, Heart, Database, Server } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function EnterpriseDashboard() {
   const [activeTab, setActiveTab] = useState<'health' | 'ledger' | 'quarantine' | 'flags' | 'pricing' | 'expiry' | 'recall'>('health');
   const { medicines, fetchMedicines } = useInventoryStore();
+  const { username } = useAuthStore();
 
   useEffect(() => { fetchMedicines(); }, []);
 
@@ -46,7 +48,7 @@ export function EnterpriseDashboard() {
 
       {activeTab === 'health' && <SystemHealthTab />}
       {activeTab === 'ledger' && <LedgerTab />}
-      {activeTab === 'quarantine' && <QuarantineTab medicines={medicines} />}
+      {activeTab === 'quarantine' && <QuarantineTab medicines={medicines} username={username} />}
       {activeTab === 'flags' && <FeatureFlagsTab />}
       {activeTab === 'pricing' && <PricingHistoryTab medicines={medicines} />}
       {activeTab === 'expiry' && <ExpirySalesTab />}
@@ -179,7 +181,7 @@ function LedgerTab() {
 }
 
 // ===== 3. Quarantine =====
-function QuarantineTab({ medicines }: { medicines: any[] }) {
+function QuarantineTab({ medicines, username }: { medicines: any[]; username: string | null }) {
   const [quarantined, setQuarantined] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [medId, setMedId] = useState('');
@@ -196,7 +198,7 @@ function QuarantineTab({ medicines }: { medicines: any[] }) {
   const handleQuarantine = async () => {
     if (!medId || qty <= 0) { toast.error('اختر دواءً وكمية'); return; }
     try {
-      await invoke('quarantine_stock_db', { medicineId: medId, batchNumber: null, quantity: qty, reason, notes, quarantinedBy: 'admin' });
+      await invoke('quarantine_stock_db', { medicineId: medId, batchNumber: null, quantity: qty, reason, notes, quarantinedBy: username || 'unknown' });
       toast.success('تم عزل الدواء');
       setShowForm(false); setMedId(''); setQty(1); setNotes('');
       load();
@@ -205,7 +207,7 @@ function QuarantineTab({ medicines }: { medicines: any[] }) {
 
   const handleResolve = async (id: string, resolution: string) => {
     try {
-      await invoke('resolve_quarantine_db', { quarantineId: id, resolution, notes: '', resolvedBy: 'admin' });
+      await invoke('resolve_quarantine_db', { quarantineId: id, resolution, notes: '', resolvedBy: username || 'unknown' });
       toast.success('تم الحل');
       load();
     } catch (e: any) { toast.error('فشل: ' + e); }

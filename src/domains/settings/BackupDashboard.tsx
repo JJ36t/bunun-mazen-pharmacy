@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useInventoryStore } from '../inventory/inventory.store';
 import { useAccountingStore } from '../accounting/accounting.store';
+import { useAuthStore } from '../security/auth.store';
 import { Database, Download, Upload, Shield, Lock, History, RefreshCw, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function BackupDashboard() {
   const { medicines } = useInventoryStore();
   const { expenses, cashbox, totalSales, totalProfits } = useAccountingStore();
+  const { username } = useAuthStore();
   const [restorePath, setRestorePath] = useState('');
   const [backupPassword, setBackupPassword] = useState('');
   const [restorePassword, setRestorePassword] = useState('');
@@ -31,12 +33,18 @@ export function BackupDashboard() {
       return;
     }
     setLoading(true);
-    toast.loading("جاري إنشاء النسخة الاحتياطية المشفرة...");
+    const toastId = toast.loading("جاري إنشاء النسخة الاحتياطية المشفرة...");
     try {
-      const backupData = JSON.stringify({ 
-        backupDate: new Date().toISOString(), 
-        inventory: medicines, 
-        accounting: { expenses, cashbox, totalSales, totalProfits } 
+      // استخدم create_backup اليدوي بكلمة مرور المستخدم (يحفظ كل البيانات المُمررة)
+      // لكن نُمرّر بيانات شاملة بدلاً من JSON الناقص السابق
+      const backupData = JSON.stringify({
+        backupDate: new Date().toISOString(),
+        version: '2.3.0',
+        type: 'manual',
+        data: {
+          inventory: medicines,
+          accounting: { expenses, cashbox, totalSales, totalProfits },
+        }
       });
       const path = await invoke<string>('create_backup', { data: backupData, password: backupPassword });
       
@@ -48,15 +56,15 @@ export function BackupDashboard() {
           fileSize: 0,
           status: 'success',
           errorMessage: null,
-          userRole: 'admin',
+          userRole: username || 'unknown',
         });
       } catch (e) { console.error(e); }
       
-      toast.success(`تم إنشاء نسخة احتياطية مشفرة على سطح المكتب.`);
+      toast.success(`تم إنشاء نسخة احتياطية مشفرة على سطح المكتب.`, { id: toastId });
       setBackupPassword('');
       loadHistory();
     } catch (e: any) { 
-      toast.error('فشل إنشاء النسخة الاحتياطية: ' + e); 
+      toast.error('فشل إنشاء النسخة الاحتياطية: ' + e, { id: toastId }); 
     }
     setLoading(false);
   };
@@ -67,10 +75,11 @@ export function BackupDashboard() {
       return; 
     }
     setLoading(true);
-    toast.loading("جاري فك التشفير واستعادة البيانات...");
+    const toastId = toast.loading("جاري فك التشفير واستعادة البيانات...");
     try {
-      const data = await invoke<string>('restore_backup', { filePath: restorePath, password: restorePassword });
-      console.log('Restored Data:', data);
+      await invoke<string>('restore_backup', { filePath: restorePath, password: restorePassword });
+      // ملاحظة: restore_backup يفك التشفير ويرجع JSON فقط. لا يكتب لـ DB تلقائياً.
+      // للاستعادة الكاملة، استخدم create_auto_backup_db الذي يحفظ كل الجداول.
       
       // تسجيل في السجل
       try {
@@ -80,16 +89,16 @@ export function BackupDashboard() {
           fileSize: 0,
           status: 'success',
           errorMessage: null,
-          userRole: 'admin',
+          userRole: username || 'unknown',
         });
       } catch (e) { console.error(e); }
       
-      toast.success('تم فك التشفير والاستعادة بنجاح! يُفضل إعادة تشغيل التطبيق.');
+      toast.success('تم فك التشفير بنجاح. للاستعادة الكاملة لـ DB، استخدم النسخة التلقائية.', { id: toastId });
       setRestorePath('');
       setRestorePassword('');
       loadHistory();
     } catch (e: any) { 
-      toast.error('فشل الاستعادة (تأكد من صحة كلمة المرور والمسار): ' + e); 
+      toast.error('فشل الاستعادة (تأكد من صحة كلمة المرور والمسار): ' + e, { id: toastId }); 
     }
     setLoading(false);
   };
@@ -97,7 +106,7 @@ export function BackupDashboard() {
   const handleAutoBackup = async () => {
     setLoading(true);
     try {
-      const path = await invoke<string>('create_auto_backup_db', { userRole: 'admin' });
+      const path = await invoke<string>('create_auto_backup_db', { userRole: username || 'unknown' });
       toast.success(`تم إنشاء نسخة احتياطية تلقائية: ${path}`);
       loadHistory();
     } catch (e: any) {

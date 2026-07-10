@@ -5,6 +5,8 @@ interface AuthState {
   isAuthenticated: boolean;
   role: string | null;
   username: string | null;
+  userId: string | null;        // معرّف المستخدم من DB (لإدارة الجلسات)
+  sessionToken: string | null;  // token الجلسة (للتحقق من الأوامر الحساسة)
   isLicensed: boolean;
   deviceId: string;
   activationError: string | null;
@@ -22,7 +24,8 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  isAuthenticated: false, role: null, username: null, isLicensed: false, deviceId: '', activationError: null, error: null,
+  isAuthenticated: false, role: null, username: null, userId: null, sessionToken: null,
+  isLicensed: false, deviceId: '', activationError: null, error: null,
   shiftId: null, shiftOpeningAmount: 0,
 
   checkLicense: async () => {
@@ -30,8 +33,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const licensed = await invoke<boolean>('check_license');
       set({ isLicensed: licensed });
       if (!licensed) { get().getDeviceId(); }
-      const shouldBackup = await invoke<boolean>('check_auto_backup');
-      if (shouldBackup) { console.log("Auto-backup triggered."); }
     } catch (e) { set({ isLicensed: false, activationError: 'فشل التحقق من الترخيص' }); }
   },
 
@@ -50,7 +51,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (username: string, password: string) => {
     try {
       const userData = await invoke<any>('login', { username, password });
-      set({ isAuthenticated: true, role: userData.role, username: userData.username, error: null });
+      set({
+        isAuthenticated: true,
+        role: userData.role,
+        username: userData.username,
+        userId: userData.userId || null,
+        sessionToken: userData.sessionToken || null,
+        error: null,
+      });
       return true;
     } catch (e: any) { set({ error: e.toString() }); return false; }
   },
@@ -85,13 +93,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    // إغلاق الشفت قبل تسجيل الخروج
+    // إغلاق الشفت قبل تسجيل الخروج (بمبلغ 0 — المستخدم يجب أن يُغلق الشفت يدوياً قبل الخروج)
     const shiftId = get().shiftId;
     if (shiftId) {
       try {
         await invoke('close_shift_db', { shiftId, closingAmount: 0 });
       } catch (e) { console.error(e); }
     }
-    set({ isAuthenticated: false, role: null, username: null, shiftId: null });
+    set({
+      isAuthenticated: false, role: null, username: null, userId: null, sessionToken: null,
+      shiftId: null, shiftOpeningAmount: 0,
+    });
   },
 }));
