@@ -1506,6 +1506,159 @@ fn get_or_create_auto_backup_password() -> Result<String, String> {
     Ok(password)
 }
 
+// --- استعادة النسخة الاحتياطية إلى قاعدة البيانات ---
+#[tauri::command]
+async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String, password: String) -> Result<serde_json::Value, String> {
+    let encrypted_data = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
+    let plaintext = decrypt_data(&encrypted_data, &password)?;
+    let backup: serde_json::Value = serde_json::from_str(&plaintext).map_err(|e| format!("فشل تحليل JSON: {}", e))?;
+
+    let pool = state.inner();
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let mut restored_counts = serde_json::Map::new();
+
+    // استعادة الأدوية
+    if let Some(medicines) = backup.get("tables").and_then(|t| t.get("medicines")).and_then(|m| m.as_array()) {
+        let mut count = 0;
+        for med in medicines {
+            let id_str = med["id"].as_str().unwrap_or("");
+            let id = uuid::Uuid::parse_str(id_str).unwrap_or_else(|_| uuid::Uuid::new_v4());
+            let name_ar = med["name_ar"].as_str().unwrap_or("");
+            let name_en = med["name_en"].as_str();
+            let scientific_name = med["scientific_name"].as_str();
+            let barcode = med["barcode"].as_str();
+            let price: rust_decimal::Decimal = med["price"].as_str().and_then(|s| s.parse().ok()).unwrap_or(rust_decimal::Decimal::ZERO);
+            let cost_price: rust_decimal::Decimal = med["cost_price"].as_str().and_then(|s| s.parse().ok()).unwrap_or(rust_decimal::Decimal::ZERO);
+            let quantity: i32 = med["quantity"].as_i64().unwrap_or(0) as i32;
+            let batch_number = med["batch_number"].as_str();
+            let expiry_date: Option<chrono::NaiveDate> = med["expiry_date"].as_str().and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+            let is_deleted = med["is_deleted"].as_bool().unwrap_or(false);
+
+            let _ = sqlx::query(
+                "INSERT INTO medicines (id, name_ar, name_en, scientific_name, barcode, price, cost_price, quantity, batch_number, expiry_date, is_deleted)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                 ON CONFLICT (id) DO UPDATE SET quantity = EXCLUDED.quantity, price = EXCLUDED.price, cost_price = EXCLUDED.cost_price"
+            )
+            .bind(id).bind(name_ar).bind(name_en).bind(scientific_name).bind(barcode)
+            .bind(price).bind(cost_price).bind(quantity).bind(batch_number).bind(expiry_date).bind(is_deleted)
+            .execute(&mut *tx).await;
+            count += 1;
+        }
+        restored_counts.insert("medicines".to_string(), serde_json::Value::Number(count.into()));
+    }
+
+    // استعادة الفواتير
+    if let Some(invoices) = backup.get("tables").and_then(|t| t.get("invoices")).and_then(|m| m.as_array()) {
+        let mut count = 0;
+        for inv in invoices {
+            let id_str = inv["id"].as_str().unwrap_or("");
+            let id = uuid::Uuid::parse_str(id_str).unwrap_or_else(|_| uuid::Uuid::new_v4());
+            let total: rust_decimal::Decimal = inv["total_amount"].as_str().and_then(|s| s.parse().ok()).unwrap_or(rust_decimal::Decimal::ZERO);
+            let profit: rust_decimal::Decimal = inv["profit_amount"].as_str().and_then(|s| s.parse().ok()).unwrap_or(rust_decimal::Decimal::ZERO);
+            let user_role = inv["user_role"].as_str().unwrap_or("unknown");
+            let created_at: Option<chrono::NaiveDateTime> = inv["created_at"].as_str().and_then(|s| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").ok());
+            let is_reversed = inv["is_reversed"].as_bool().unwrap_or(false);
+
+            let _ = sqlx::query(
+                "INSERT INTO invoices (id, total_amount, profit_amount, user_role, created_at, is_reversed)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind(id).bind(total).bind(profit).bind(user_role).bind(created_at).bind(is_reversed)
+            .execute(&mut *tx).await;
+            count += 1;
+        }
+        restored_counts.insert("invoices".to_string(), serde_json::Value::Number(count.into()));
+    }
+
+    // استعادة عناصر الفواتير
+    if let Some(items) = backup.get("tables").and_then(|t| t.get("invoice_items")).and_then(|m| m.as_array()) {
+        let mut count = 0;
+        for item in items {
+            let inv_id_str = item["invoice_id"].as_str().unwrap_or("");
+            let inv_id = uuid::Uuid::parse_str(inv_id_str).unwrap_or_else(|_| uuid::Uuid::new_v4());
+            let med_id: Option<uuid::Uuid> = item["medicine_id"].as_str().and_then(|s| uuid::Uuid::parse_str(s).ok());
+            let name_ar = item["name_ar"].as_str().unwrap_or("");
+            let quantity: i32 = item["quantity"].as_i64().unwrap_or(0) as i32;
+            let price: rust_decimal::Decimal = item["price"].as_str().and_then(|s| s.parse().ok()).unwrap_or(rust_decimal::Decimal::ZERO);
+
+            let _ = sqlx::query(
+                "INSERT INTO invoice_items (invoice_id, medicine_id, name_ar, quantity, price)
+                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING"
+            )
+            .bind(inv_id).bind(med_id).bind(name_ar).bind(quantity).bind(price)
+            .execute(&mut *tx).await;
+            count += 1;
+        }
+        restored_counts.insert("invoice_items".to_string(), serde_json::Value::Number(count.into()));
+    }
+
+    // استعادة الديون
+    if let Some(debts) = backup.get("tables").and_then(|t| t.get("customer_debts")).and_then(|m| m.as_array()) {
+        let mut count = 0;
+        for debt in debts {
+            let customer_name = debt["customer_name"].as_str().unwrap_or("");
+            let amount: rust_decimal::Decimal = debt["amount"].as_str().and_then(|s| s.parse().ok()).unwrap_or(rust_decimal::Decimal::ZERO);
+            let is_paid = debt["is_paid"].as_bool().unwrap_or(false);
+            let note = debt["note"].as_str();
+            let created_at: Option<chrono::NaiveDateTime> = debt["created_at"].as_str().and_then(|s| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").ok());
+
+            let _ = sqlx::query(
+                "INSERT INTO customer_debts (customer_name, amount, is_paid, note, created_at)
+                 VALUES ($1, $2, $3, $4, $5)"
+            )
+            .bind(customer_name).bind(amount).bind(is_paid).bind(note).bind(created_at)
+            .execute(&mut *tx).await;
+            count += 1;
+        }
+        restored_counts.insert("customer_debts".to_string(), serde_json::Value::Number(count.into()));
+    }
+
+    // استعادة الموردين
+    if let Some(suppliers) = backup.get("tables").and_then(|t| t.get("suppliers")).and_then(|m| m.as_array()) {
+        let mut count = 0;
+        for sup in suppliers {
+            let name = sup["name"].as_str().unwrap_or("");
+            let phone = sup["phone"].as_str();
+            let address = sup["address"].as_str();
+            let balance: rust_decimal::Decimal = sup["balance"].as_str().and_then(|s| s.parse().ok()).unwrap_or(rust_decimal::Decimal::ZERO);
+            let is_active = sup["is_active"].as_bool().unwrap_or(true);
+
+            let _ = sqlx::query(
+                "INSERT INTO suppliers (name, phone, address, balance, is_active)
+                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (name) DO UPDATE SET balance = EXCLUDED.balance"
+            )
+            .bind(name).bind(phone).bind(address).bind(balance).bind(is_active)
+            .execute(&mut *tx).await;
+            count += 1;
+        }
+        restored_counts.insert("suppliers".to_string(), serde_json::Value::Number(count.into()));
+    }
+
+    // استعادة الإعدادات
+    if let Some(settings) = backup.get("tables").and_then(|t| t.get("settings")).and_then(|m| m.as_array()) {
+        let mut count = 0;
+        for setting in settings {
+            let key = setting["key"].as_str().unwrap_or("");
+            let value = setting["value"].as_str().unwrap_or("");
+            if !key.is_empty() {
+                let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2")
+                    .bind(key).bind(value).execute(&mut *tx).await;
+                count += 1;
+            }
+        }
+        restored_counts.insert("settings".to_string(), serde_json::Value::Number(count.into()));
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "success": true,
+        "restored": restored_counts,
+        "message": "تمت الاستعادة بنجاح. أعد تشغيل التطبيق لرؤية التغييرات."
+    }))
+}
+
 // --- 7. RBAC ---
 #[tauri::command]
 async fn get_roles_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_json::Value>, String> {
@@ -1784,7 +1937,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            check_license, login, save_csv_file, get_device_id, activate_license, create_backup, restore_backup, check_auto_backup,
+            check_license, login, save_csv_file, get_device_id, activate_license, create_backup, restore_backup, restore_backup_to_db, check_auto_backup,
             get_medicines_db, add_medicine_db, update_medicine_db, adjust_stock_db, soft_delete_medicine_db, bulk_update_prices_db,
             link_barcode_to_medicine_db,
             record_sale_db, record_refund_db, reverse_refund_db, add_expense_db, get_accounting_summary_db, reset_daily_db,

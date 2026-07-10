@@ -3,8 +3,9 @@
 // ========================================
 
 import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { prescriptionService } from '../../lib/services/pharmiq';
-import { FileText, Plus, Pill, AlertTriangle, X, Trash2 } from 'lucide-react';
+import { FileText, Plus, Pill, AlertTriangle, X, Trash2, User } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function PrescriptionsDashboard() {
@@ -68,7 +69,7 @@ export function PrescriptionsDashboard() {
               <tr><td colSpan={6}><div className="empty-state py-12"><div className="empty-state-icon"><FileText className="w-8 h-8 text-slate-300" /></div><p className="text-slate-400 text-sm">لا توجد وصفات مسجّلة</p></div></td></tr>
             ) : prescriptions.map(p => (
               <tr key={p.id} className="table-row">
-                <td className="p-4 text-sm font-semibold text-slate-800">{p.patientName}</td>
+                <td className="p-4 text-sm font-semibold text-slate-800">{p.patientName || 'غير محدد'}</td>
                 <td className="p-4 text-sm text-slate-600">{p.doctorName}</td>
                 <td className="p-4 text-sm text-slate-500 tabular">{p.prescriptionDate}</td>
                 <td className="p-4 text-sm text-slate-600">{p.diagnosis || '-'}</td>
@@ -84,21 +85,74 @@ export function PrescriptionsDashboard() {
 }
 
 function PrescriptionForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [patientName, setPatientName] = useState('');
+  const [patients, setPatients] = useState<any[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState('');
+  const [newPatientName, setNewPatientName] = useState('');
+  const [newPatientPhone, setNewPatientPhone] = useState('');
+  const [showNewPatient, setShowNewPatient] = useState(false);
   const [doctorName, setDoctorName] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [diagnosis, setDiagnosis] = useState('');
   const [isAntibiotic, setIsAntibiotic] = useState(false);
-  const [items, setItems] = useState<any[]>([{ drugName: '', dosage: '', frequency: '', duration: '', quantity: 0 }]);
+  const [items, setItems] = useState<any[]>([{ medicineName: '', dosage: '', duration: '', instructions: '' }]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { fetchPatients(); }, []);
+
+  const fetchPatients = async () => {
+    try {
+      const data = await invoke<any[]>('get_patients_db');
+      setPatients(data);
+    } catch (e) { console.error(e); }
+  };
+
+  const handleCreatePatient = async () => {
+    if (!newPatientName.trim()) { toast.error('أدخل اسم المريض'); return; }
+    try {
+      const newId = await invoke<string>('add_patient_db', {
+        name: newPatientName.trim(),
+        nationalId: '-',
+        phone: newPatientPhone.trim() || '-',
+        notes: null,
+      });
+      toast.success('تم إضافة المريض');
+      await fetchPatients();
+      setSelectedPatientId(newId);
+      setShowNewPatient(false);
+      setNewPatientName('');
+      setNewPatientPhone('');
+    } catch (e: any) { toast.error('فشل إضافة المريض: ' + e); }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // ملاحظة: يحتاج patient_id - نستخدم قيمة مؤقتة
+    if (!selectedPatientId) { toast.error('اختر مريضاً أو أنشئ مريضاً جديداً'); return; }
+    if (!doctorName.trim()) { toast.error('أدخل اسم الطبيب'); return; }
+    if (items.length === 0 || !items[0].medicineName) { toast.error('أضف دواءً واحداً على الأقل'); return; }
+
+    setSaving(true);
     try {
-      await prescriptionService.add('00000000-0000-0000-0000-000000000000', doctorName, undefined, date, diagnosis, undefined, isAntibiotic, items);
+      // ربط أسماء الحقول بما يتوقعه الـ backend
+      const backendItems = items.map(it => ({
+        medicineName: it.medicineName,
+        dosage: it.dosage || '',
+        duration: it.duration || '',
+        instructions: it.instructions || '',
+      }));
+      await prescriptionService.add(
+        selectedPatientId,
+        doctorName,
+        undefined,
+        date,
+        diagnosis || undefined,
+        undefined,
+        isAntibiotic,
+        backendItems
+      );
       toast.success('تم تسجيل الوصفة بنجاح');
       onSaved();
-    } catch (e) { toast.error('فشل التسجيل: ' + e); }
+    } catch (e: any) { toast.error('فشل التسجيل: ' + e); }
+    setSaving(false);
   };
 
   return (
@@ -107,13 +161,33 @@ function PrescriptionForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
         <h3 className="text-lg font-bold text-slate-800">وصفة طبية جديدة</h3>
         <button type="button" onClick={onClose} className="btn-icon"><X className="w-4 h-4" /></button>
       </div>
-      <div className="grid grid-cols-3 gap-4 mb-4">
-        <div><label className="label">اسم المريض</label><input className="input" value={patientName} onChange={(e) => setPatientName(e.target.value)} required /></div>
-        <div><label className="label">اسم الطبيب</label><input className="input" value={doctorName} onChange={(e) => setDoctorName(e.target.value)} required /></div>
-        <div><label className="label">التاريخ</label><input type="date" className="input tabular" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
+
+      {/* اختيار المريض */}
+      <div className="mb-4">
+        <label className="label">المريض *</label>
+        {!showNewPatient ? (
+          <div className="flex gap-2">
+            <select className="input flex-1" value={selectedPatientId} onChange={(e) => setSelectedPatientId(e.target.value)} required>
+              <option value="">اختر مريضاً...</option>
+              {patients.map(p => <option key={p.id} value={p.id}>{p.name} {p.phone && p.phone !== '-' ? `(${p.phone})` : ''}</option>)}
+            </select>
+            <button type="button" onClick={() => setShowNewPatient(true)} className="btn-ghost border border-slate-200 whitespace-nowrap">
+              <User className="w-4 h-4" /> مريض جديد
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input className="input flex-1" placeholder="اسم المريض" value={newPatientName} onChange={(e) => setNewPatientName(e.target.value)} autoFocus />
+            <input className="input flex-1" placeholder="الهاتف (اختياري)" value={newPatientPhone} onChange={(e) => setNewPatientPhone(e.target.value)} />
+            <button type="button" onClick={handleCreatePatient} className="btn-success whitespace-nowrap">إضافة</button>
+            <button type="button" onClick={() => setShowNewPatient(false)} className="btn-ghost border border-slate-200">إلغاء</button>
+          </div>
+        )}
       </div>
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div><label className="label">التشخيص</label><input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} /></div>
+
+      <div className="grid grid-cols-3 gap-4 mb-4">
+        <div><label className="label">اسم الطبيب *</label><input className="input" value={doctorName} onChange={(e) => setDoctorName(e.target.value)} required /></div>
+        <div><label className="label">التاريخ</label><input type="date" className="input tabular" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
         <div className="flex items-end">
           <label className="flex items-center gap-2 pb-2.5">
             <input type="checkbox" checked={isAntibiotic} onChange={(e) => setIsAntibiotic(e.target.checked)} className="w-4 h-4" />
@@ -121,26 +195,30 @@ function PrescriptionForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
           </label>
         </div>
       </div>
+      <div className="mb-4">
+        <label className="label">التشخيص</label><input className="input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} />
+      </div>
       
       <p className="label-lg mb-3">الأدوية الموصوفة</p>
       {items.map((item, i) => (
         <div key={i} className="grid grid-cols-12 gap-2 mb-2 items-center">
-          <input className="input col-span-4" placeholder="اسم الدواء" value={item.drugName} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, drugName: e.target.value } : it))} />
+          <input className="input col-span-4" placeholder="اسم الدواء" value={item.medicineName} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, medicineName: e.target.value } : it))} />
           <input className="input col-span-2" placeholder="الجرعة" value={item.dosage} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, dosage: e.target.value } : it))} />
-          <input className="input col-span-2" placeholder="التكرار" value={item.frequency} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, frequency: e.target.value } : it))} />
           <input className="input col-span-2" placeholder="المدة" value={item.duration} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, duration: e.target.value } : it))} />
-          <input type="number" className="input col-span-1 tabular" placeholder="الكمية" value={item.quantity || ''} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, quantity: parseInt(e.target.value) || 0 } : it))} />
+          <input className="input col-span-3" placeholder="تعليمات" value={item.instructions} onChange={(e) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, instructions: e.target.value } : it))} />
           <button type="button" onClick={() => setItems(prev => prev.filter((_, idx) => idx !== i))} className="col-span-1 p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center">
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
       ))}
-      <button type="button" onClick={() => setItems([...items, { drugName: '', dosage: '', frequency: '', duration: '', quantity: 0 }])} className="btn-ghost mt-2">
+      <button type="button" onClick={() => setItems([...items, { medicineName: '', dosage: '', duration: '', instructions: '' }])} className="btn-ghost mt-2">
         <Plus className="w-4 h-4" /> إضافة دواء
       </button>
 
       <div className="flex gap-2 mt-5">
-        <button type="submit" className="btn-success"><FileText className="w-4 h-4" /> حفظ الوصفة</button>
+        <button type="submit" disabled={saving} className="btn-success disabled:opacity-50">
+          {saving ? 'جاري الحفظ...' : 'حفظ الوصفة'}
+        </button>
         <button type="button" onClick={onClose} className="btn-ghost">إلغاء</button>
       </div>
     </form>

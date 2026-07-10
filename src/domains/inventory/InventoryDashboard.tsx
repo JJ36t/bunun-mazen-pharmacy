@@ -14,17 +14,17 @@ export function InventoryDashboard() {
   const [editId, setEditId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [showBulkBarcode, setShowBulkBarcode] = useState(false);
-  const [form, setForm] = useState<any>({ nameAr: '', nameEn: '', barcode: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
+  const [form, setForm] = useState<any>({ nameAr: '', nameEn: '', scientificName: '', barcode: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
 
   const handleAddNew = () => { 
     setEditId(null); 
-    setForm({ nameAr: '', nameEn: '', barcode: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' }); 
+    setForm({ nameAr: '', nameEn: '', scientificName: '', barcode: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' }); 
     setShowForm(true); 
   };
 
   const handleEdit = (med: Medicine) => { 
     setEditId(med.id); 
-    setForm({ nameAr: med.nameAr, nameEn: med.nameEn, barcode: med.barcode, price: med.price, costPrice: med.costPrice, quantity: med.quantity, batchNumber: med.batchNumber, expiryDate: med.expiryDate }); 
+    setForm({ nameAr: med.nameAr, nameEn: med.nameEn, scientificName: med.scientificName || '', barcode: med.barcode, price: med.price, costPrice: med.costPrice, quantity: med.quantity, batchNumber: med.batchNumber, expiryDate: med.expiryDate }); 
     setShowForm(true); 
   };
 
@@ -183,6 +183,7 @@ export function InventoryDashboard() {
           <div className="grid grid-cols-4 gap-4">
             <div><label className="label">الاسم بالعربي *</label><input className="input" value={form.nameAr} onChange={e => setForm({...form, nameAr: e.target.value})} required /></div>
             <div><label className="label">الاسم بالإنجليزي</label><input className="input" value={form.nameEn} onChange={e => setForm({...form, nameEn: e.target.value})} /></div>
+            <div className="col-span-2"><label className="label">الاسم العلمي (اختياري — لفحص تفاعلات الأدوية)</label><input className="input" value={form.scientificName} onChange={e => setForm({...form, scientificName: e.target.value})} placeholder="Paracetamol" /></div>
             <div>
               <label className="label">الباركود (EAN-13) — يُولّد تلقائياً إذا تُرك فارغاً</label>
               <div className="flex gap-2">

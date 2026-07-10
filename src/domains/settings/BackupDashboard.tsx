@@ -77,9 +77,8 @@ export function BackupDashboard() {
     setLoading(true);
     const toastId = toast.loading("جاري فك التشفير واستعادة البيانات...");
     try {
-      await invoke<string>('restore_backup', { filePath: restorePath, password: restorePassword });
-      // ملاحظة: restore_backup يفك التشفير ويرجع JSON فقط. لا يكتب لـ DB تلقائياً.
-      // للاستعادة الكاملة، استخدم create_auto_backup_db الذي يحفظ كل الجداول.
+      // استدعاء restore_backup_to_db الذي يكتب البيانات فعلياً لـ DB
+      const result = await invoke<any>('restore_backup_to_db', { filePath: restorePath, password: restorePassword });
       
       // تسجيل في السجل
       try {
@@ -93,7 +92,8 @@ export function BackupDashboard() {
         });
       } catch (e) { console.error(e); }
       
-      toast.success('تم فك التشفير بنجاح. للاستعادة الكاملة لـ DB، استخدم النسخة التلقائية.', { id: toastId });
+      const restoredSummary = result.restored ? Object.entries(result.restored).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
+      toast.success(`تمت الاستعادة بنجاح! ${restoredSummary}. أعد تشغيل التطبيق.`, { id: toastId });
       setRestorePath('');
       setRestorePassword('');
       loadHistory();

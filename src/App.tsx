@@ -245,7 +245,7 @@ function PosDashboard() {
     const activeIngredients = newCartItems
       .map(item => {
         const m = medicines.find((med: any) => med.id === item.id);
-        return m?.nameAr || '';
+        return m?.scientificName || m?.nameAr || '';
       })
       .filter(name => name && name.trim().length > 0);
 
@@ -449,7 +449,7 @@ function PosDashboard() {
       const activeIngredients = currentItems
         .map(item => {
           const med = medicines.find((m: any) => m.id === item.id);
-          return med?.nameAr || '';
+          return med?.scientificName || med?.nameAr || '';
         })
         .filter(name => name && name.trim().length > 0);
 
@@ -829,7 +829,7 @@ function PosDashboard() {
         <DrugInteractionChecker
           drugNames={cart.map(item => {
             const med = medicines.find((m: any) => m.id === item.id);
-            return med?.nameAr || '';
+            return med?.scientificName || med?.nameAr || '';
           }).filter(name => name && name.trim().length > 0)}
           onOverride={() => {
             setInteractionOverrideGranted(true);

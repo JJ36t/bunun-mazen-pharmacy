@@ -5,6 +5,7 @@ export interface Medicine {
   id: string;
   nameAr: string;
   nameEn: string;
+  scientificName?: string;  // اختياري — يُستخدم لفحص تفاعلات الأدوية (بالإنجليزية)
   barcode: string;
   price: number;          // سعر البيع
   costPrice: number;      // سعر التكلفة
@@ -44,7 +45,7 @@ export const useInventoryStore = create<InventoryState>((set) => ({
       const newId = await invoke<string>('add_medicine_db', {
         nameAr: med.nameAr,
         nameEn: med.nameEn,
-        scientificName: null,        // لم يعد مستخدماً
+        scientificName: med.scientificName || null,
         barcode: med.barcode,
         price: med.price,
         wholesalePrice: 0,           // لم يعد مستخدماً (نمرّر 0 للتوافق مع Rust)
@@ -65,7 +66,7 @@ export const useInventoryStore = create<InventoryState>((set) => ({
   
   updateMedicine: async (id, med) => {
     try {
-      await invoke('update_medicine_db', { medicineId: id, ...med, scientificName: null, wholesalePrice: 0 });
+      await invoke('update_medicine_db', { medicineId: id, ...med, scientificName: med.scientificName || null, wholesalePrice: 0 });
       set((state) => ({
         medicines: state.medicines.map(m => m.id === id ? { ...m, ...med } : m)
       }));
