@@ -256,9 +256,33 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
   // معالجة باركود ممسوح (للوضع اليدوي/USB)
   const processScannedBarcode = async (barcode: string) => {
     // تحقق إن الباركود مُستخدم بالفعل
-    const existing = medicines.find(m => m.currentBarcode === barcode || m.newBarcode === barcode);
+    // استخدم الأدوية من DB مباشرة (وليس فقط state) لأن state قد يكون قديماً
+    let allMedicines = medicines;
+    try {
+      const freshMeds = await invoke<any[]>('get_medicines_db');
+      const freshItems = freshMeds.filter((m: any) => !m.isDeleted).map((m: any) => ({
+        id: m.id,
+        nameAr: m.nameAr,
+        currentBarcode: m.barcode || null,
+        newBarcode: '',
+        status: 'idle' as const,
+        matched: false,
+      }));
+      // ادمج مع state الحالي للحفاظ على الحالات (saving/error)
+      const existingState = new Map(medicines.map(m => [m.id, m]));
+      allMedicines = freshItems.map((m: any) => {
+        const prev = existingState.get(m.id);
+        return prev ? { ...m, status: prev.status, newBarcode: prev.newBarcode } : m;
+      });
+      setMedicines(allMedicines);
+      setFilteredMeds(allMedicines);
+    } catch (e) {
+      console.error('Failed to refresh medicines:', e);
+    }
+
+    const existing = allMedicines.find(m => m.currentBarcode === barcode || m.newBarcode === barcode);
     if (existing) {
-      toast.warning(`الباركود ${barcode} مُسجّل بالفعل للدواء: ${existing.nameAr}`);
+      toast.info(`الباركود ${barcode} مُسجّل بالفعل للدواء: ${existing.nameAr}`);
       setLastScan({ name: existing.nameAr, barcode });
       setPendingBarcode(null);
       setShowNewMedForm(false);
@@ -267,7 +291,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
 
     // لو دواء محدد يدوياً، اربط به مباشرة
     if (selectedMedId) {
-      const target = medicines.find(m => m.id === selectedMedId);
+      const target = allMedicines.find(m => m.id === selectedMedId);
       if (target && !target.currentBarcode) {
         await saveBarcodeForMedicine(target.id, barcode);
         setPendingBarcode(null);
@@ -276,7 +300,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
     }
 
     // ابحث عن أول دواء بدون باركود
-    const target = medicines.find(m => !m.currentBarcode && m.status !== 'saved');
+    const target = allMedicines.find(m => !m.currentBarcode && m.status !== 'saved');
     if (target) {
       await saveBarcodeForMedicine(target.id, barcode);
       setPendingBarcode(null);
