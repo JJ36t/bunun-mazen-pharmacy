@@ -15,23 +15,23 @@ pub async fn get_all_invoices_with_details_db(state: tauri::State<'_, PgPool>, s
     // sqlx `json` feature is not enabled in this project (no direct serde_json::Value decode).
     let rows = if user_filter == "all" {
         sqlx::query(
-            "SELECT i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed, \
+            "SELECT i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed, \
              COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
              FROM invoices i \
              LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
              WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date \
-             GROUP BY i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed \
+             GROUP BY i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed \
              ORDER BY i.created_at DESC LIMIT 500"
         )
             .bind(&start_date).bind(&end_date).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
     } else {
         sqlx::query(
-            "SELECT i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed, \
+            "SELECT i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed, \
              COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
              FROM invoices i \
              LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
              WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date AND i.user_role = $3 \
-             GROUP BY i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed \
+             GROUP BY i.id, i.daily_receipt_number, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at, i.printed_by, i.printed_at, i.is_reversed \
              ORDER BY i.created_at DESC LIMIT 500"
         )
             .bind(&start_date).bind(&end_date).bind(&user_filter).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
@@ -40,7 +40,7 @@ pub async fn get_all_invoices_with_details_db(state: tauri::State<'_, PgPool>, s
     let mut results = Vec::new();
     for row in rows {
         let inv_id: uuid::Uuid = row.get(0);
-        let items_str: String = row.get(9);
+        let items_str: String = row.get(10);
         let items: serde_json::Value = serde_json::from_str(&items_str)
             .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
         results.push(serde_json::json!({
@@ -48,11 +48,12 @@ pub async fn get_all_invoices_with_details_db(state: tauri::State<'_, PgPool>, s
             "dailyReceiptNumber": row.get::<Option<i32>, _>(1).unwrap_or(0),
             "totalAmount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
             "profitAmount": row.get::<rust_decimal::Decimal, _>(3).to_string().parse::<f64>().unwrap_or(0.0),
-            "userRole": row.get::<Option<String>, _>(4).unwrap_or_else(|| "N/A".to_string()),
-            "createdAt": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
-            "printedBy": row.get::<Option<String>, _>(6),
-            "printedAt": row.get::<Option<chrono::NaiveDateTime>, _>(7).map(|d| d.to_string()),
-            "isReversed": row.get::<bool, _>(8),
+            "discountAmount": row.get::<Option<rust_decimal::Decimal>, _>(4).map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0),
+            "userRole": row.get::<Option<String>, _>(5).unwrap_or_else(|| "N/A".to_string()),
+            "createdAt": row.get::<chrono::NaiveDateTime, _>(6).to_string(),
+            "printedBy": row.get::<Option<String>, _>(7),
+            "printedAt": row.get::<Option<chrono::NaiveDateTime>, _>(8).map(|d| d.to_string()),
+            "isReversed": row.get::<bool, _>(9),
             "items": items,
         }));
     }

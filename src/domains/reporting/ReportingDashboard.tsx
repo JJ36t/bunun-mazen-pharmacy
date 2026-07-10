@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import { useInventoryStore } from '../inventory/inventory.store';
 import { exportToCSV } from '../../lib/utils/export';
 import { invoke } from '@tauri-apps/api/core';
-import { TrendingUp, FileDown, Trophy, Calendar, Users, Receipt, Warehouse, AlertTriangle } from 'lucide-react';
+import { TrendingUp, FileDown, Trophy, Calendar, Users, Receipt, Warehouse, AlertTriangle, Percent } from 'lucide-react';
 
 export function ReportingDashboard() {
   const { medicines } = useInventoryStore();
   const [topMeds, setTopMeds] = useState<any[]>([]);
-  const [reportData, setReportData] = useState({ totalSales: 0, totalProfits: 0, invoiceCount: 0 });
+  const [reportData, setReportData] = useState({ totalSales: 0, totalProfits: 0, totalDiscounts: 0, invoiceCount: 0 });
   const [invoiceDetails, setInvoiceDetails] = useState<any[]>([]);
   const [timeRange, setTimeRange] = useState('today');
   const [customStart, setCustomStart] = useState(new Date().toISOString().split('T')[0]);
@@ -54,7 +54,7 @@ export function ReportingDashboard() {
     } catch (e) { console.error(e); }
   };
 
-  const handleExportSales = () => { exportToCSV("تقرير_المبيعات", ["رقم الفاتورة", "المبلغ", "الربح", "الكاشير", "التاريخ"], invoiceDetails.map(inv => [inv.id, inv.totalAmount, inv.profitAmount, inv.userRole, inv.date])); };
+  const handleExportSales = () => { exportToCSV("تقرير_المبيعات", ["رقم الفاتورة", "المبلغ", "الخصم", "الربح", "الكاشير", "التاريخ"], invoiceDetails.map(inv => [inv.id, inv.totalAmount, inv.discountAmount || 0, inv.profitAmount, inv.userRole, inv.date])); };
   const handleExportInventory = () => { exportToCSV("تقرير_المخزون", ["الدواء", "الكمية", "السعر"], medicines.filter((m:any) => !m.isDeleted).map((m:any) => [m.nameAr, m.quantity, m.price])); };
 
   const lowStockMeds = medicines.filter((m:any) => !m.isDeleted && m.quantity < 50);
@@ -105,7 +105,7 @@ export function ReportingDashboard() {
 
       {reportType === 'sales' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-3 gap-5">
             <div className="card-elegant p-6 animate-slide-up">
               <div className="flex justify-between items-start mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
@@ -116,6 +116,15 @@ export function ReportingDashboard() {
               <p className="text-sm text-slate-500">إجمالي المبيعات {cashierFilter !== 'all' ? `لـ ${cashierFilter}` : ''} (د.ع)</p>
             </div>
             <div className="card-elegant p-6 animate-slide-up" style={{ animationDelay: '50ms' }}>
+              <div className="flex justify-between items-start mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                  <Percent className="w-6 h-6" />
+                </div>
+              </div>
+              <p className="text-3xl font-bold text-slate-800 mb-1 tabular">{reportData.totalDiscounts.toFixed(0)}</p>
+              <p className="text-sm text-slate-500">إجمالي الخصومات (د.ع)</p>
+            </div>
+            <div className="card-elegant p-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
               <div className="flex justify-between items-start mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-600 flex items-center justify-center">
                   <Receipt className="w-6 h-6" />
@@ -140,6 +149,7 @@ export function ReportingDashboard() {
                   <th className="table-header text-right p-4">العدد</th>
                   <th className="table-header text-right p-4">السعر</th>
                   <th className="table-header text-right p-4">الإجمالي</th>
+                  <th className="table-header text-right p-4">الخصم</th>
                   <th className="table-header text-right p-4">الكاشير</th>
                   <th className="table-header text-right p-4">رقم الفاتورة</th>
                   <th className="table-header text-right p-4">التوقيت</th>
@@ -147,7 +157,7 @@ export function ReportingDashboard() {
               </thead>
               <tbody>
                 {invoiceDetails.length === 0 ? (
-                  <tr><td colSpan={7}>
+                  <tr><td colSpan={8}>
                     <div className="empty-state py-12">
                       <div className="empty-state-icon"><Receipt className="w-8 h-8 text-slate-300" /></div>
                       <p className="text-slate-400 text-sm">لا توجد فواتير في هذه الفترة</p>
@@ -160,6 +170,13 @@ export function ReportingDashboard() {
                       <td className="p-4 text-sm text-slate-600 text-center tabular">{it.qty}</td>
                       <td className="p-4 text-sm text-slate-600 tabular">{it.price.toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></td>
                       <td className="p-4 text-sm font-bold text-brand-700 tabular">{(it.price * it.qty).toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></td>
+                      <td className="p-4 text-sm font-semibold text-purple-600 tabular">
+                        {i === 0 && inv.discountAmount && inv.discountAmount > 0 ? (
+                          <span>{inv.discountAmount.toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
                       <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
                       <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
                       <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
@@ -172,6 +189,7 @@ export function ReportingDashboard() {
                   <tr>
                     <td colSpan={3} className="p-4 text-sm font-bold text-slate-800">الإجمالي الكلي للمبيعات</td>
                     <td className="p-4 text-sm font-extrabold text-brand-700 tabular">{reportData.totalSales.toFixed(0)} د.ع</td>
+                    <td className="p-4 text-sm font-extrabold text-purple-600 tabular">{reportData.totalDiscounts.toFixed(0)} د.ع</td>
                     <td colSpan={3}></td>
                   </tr>
                 </tfoot>
@@ -183,7 +201,7 @@ export function ReportingDashboard() {
 
       {reportType === 'profits' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-3 gap-5">
             <div className="card-elegant p-6">
               <div className="flex justify-between items-start mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -192,6 +210,15 @@ export function ReportingDashboard() {
               </div>
               <p className="text-3xl font-bold text-slate-800 mb-1 tabular">{reportData.totalProfits.toFixed(0)}</p>
               <p className="text-sm text-slate-500">صافي الأرباح (د.ع)</p>
+            </div>
+            <div className="card-elegant p-6">
+              <div className="flex justify-between items-start mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                  <Percent className="w-6 h-6" />
+                </div>
+              </div>
+              <p className="text-3xl font-bold text-slate-800 mb-1 tabular">{reportData.totalDiscounts.toFixed(0)}</p>
+              <p className="text-sm text-slate-500">إجمالي الخصومات (د.ع)</p>
             </div>
             <div className="card-elegant p-6">
               <div className="flex justify-between items-start mb-4">
@@ -218,6 +245,7 @@ export function ReportingDashboard() {
                   <th className="table-header text-right p-4">العدد</th>
                   <th className="table-header text-right p-4">السعر</th>
                   <th className="table-header text-right p-4">الإجمالي</th>
+                  <th className="table-header text-right p-4">الخصم</th>
                   <th className="table-header text-right p-4">الكاشير</th>
                   <th className="table-header text-right p-4">رقم الفاتورة</th>
                   <th className="table-header text-right p-4">التوقيت</th>
@@ -225,7 +253,7 @@ export function ReportingDashboard() {
               </thead>
               <tbody>
                 {invoiceDetails.length === 0 ? (
-                  <tr><td colSpan={7}>
+                  <tr><td colSpan={8}>
                     <div className="empty-state py-12">
                       <div className="empty-state-icon"><TrendingUp className="w-8 h-8 text-slate-300" /></div>
                       <p className="text-slate-400 text-sm">لا توجد فواتير في هذه الفترة</p>
@@ -238,6 +266,13 @@ export function ReportingDashboard() {
                       <td className="p-4 text-sm text-slate-600 text-center tabular">{it.qty}</td>
                       <td className="p-4 text-sm text-slate-600 tabular">{it.price.toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></td>
                       <td className="p-4 text-sm font-bold text-emerald-700 tabular">{(it.price * it.qty).toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></td>
+                      <td className="p-4 text-sm font-semibold text-purple-600 tabular">
+                        {i === 0 && inv.discountAmount && inv.discountAmount > 0 ? (
+                          <span>{inv.discountAmount.toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
                       <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
                       <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
                       <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
@@ -250,6 +285,7 @@ export function ReportingDashboard() {
                   <tr>
                     <td colSpan={3} className="p-4 text-sm font-bold text-slate-800">الإجمالي الكلي للأرباح</td>
                     <td className="p-4 text-sm font-extrabold text-emerald-700 tabular">{reportData.totalProfits.toFixed(0)} د.ع</td>
+                    <td className="p-4 text-sm font-extrabold text-purple-600 tabular">{reportData.totalDiscounts.toFixed(0)} د.ع</td>
                     <td colSpan={3}></td>
                   </tr>
                 </tfoot>

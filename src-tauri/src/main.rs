@@ -665,8 +665,8 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
     let final_total = subtotal - discount_amount;
     let final_profit = total_profit - discount_amount;
 
-    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number, idempotency_key) VALUES ($1, $2, $3, get_daily_receipt_number(), $4) RETURNING id")
-        .bind(final_total).bind(final_profit).bind(&user_role).bind(&operation_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number, idempotency_key, discount_amount) VALUES ($1, $2, $3, get_daily_receipt_number(), $4, $5) RETURNING id")
+        .bind(final_total).bind(final_profit).bind(&user_role).bind(&operation_id).bind(discount_amount).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let invoice_id: uuid::Uuid = row.get(0);
 
     let mut items_desc = Vec::new();
@@ -694,7 +694,11 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
         items_desc.push(format!("{} (x{})", name, qty));
     }
     
-    let desc = format!("بيع فاتورة بمبلغ {}. الأصناف: {}", final_total, items_desc.join(", "));
+    let desc = if discount_amount > rust_decimal::Decimal::ZERO {
+        format!("بيع فاتورة بمبلغ {} (بعد خصم {} د.ع). الأصناف: {}", final_total, discount_amount, items_desc.join(", "))
+    } else {
+        format!("بيع فاتورة بمبلغ {}. الأصناف: {}", final_total, items_desc.join(", "))
+    };
     sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("SALE_INVOICE").bind(desc).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "invoiceId": invoice_id.to_string(), "replayed": false }))
@@ -789,16 +793,16 @@ async fn add_expense_db(state: tauri::State<'_, PgPool>, description: String, am
 
 #[tauri::command]
 async fn get_accounting_summary_db(state: tauri::State<'_, PgPool>) -> Result<serde_json::Value, String> {
-    let sales_row = sqlx::query("SELECT COALESCE(SUM(total_amount), 0), COALESCE(SUM(profit_amount), 0) FROM invoices").fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
+    let sales_row = sqlx::query("SELECT COALESCE(SUM(total_amount), 0), COALESCE(SUM(profit_amount), 0), COALESCE(SUM(discount_amount), 0) FROM invoices").fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
     let exp_row = sqlx::query("SELECT COALESCE(SUM(amount), 0) FROM expenses").fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
-    let total_sales: rust_decimal::Decimal = sales_row.get(0); let total_profits: rust_decimal::Decimal = sales_row.get(1);
+    let total_sales: rust_decimal::Decimal = sales_row.get(0); let total_profits: rust_decimal::Decimal = sales_row.get(1); let total_discounts: rust_decimal::Decimal = sales_row.get(2);
     let total_expenses: rust_decimal::Decimal = exp_row.get(0); let cashbox = total_sales - total_expenses;
     let exp_rows = sqlx::query("SELECT id, description, amount, created_at FROM expenses ORDER BY created_at DESC LIMIT 10").fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut expenses_list = Vec::new();
     for row in exp_rows {
         expenses_list.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "description": row.get::<String, _>(1), "amount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0), "date": row.get::<chrono::NaiveDateTime, _>(3).to_string() }));
     }
-    Ok(serde_json::json!({ "totalSales": total_sales.to_string().parse::<f64>().unwrap_or(0.0), "totalProfits": total_profits.to_string().parse::<f64>().unwrap_or(0.0), "totalExpenses": total_expenses.to_string().parse::<f64>().unwrap_or(0.0), "cashbox": cashbox.to_string().parse::<f64>().unwrap_or(0.0), "expenses": expenses_list }))
+    Ok(serde_json::json!({ "totalSales": total_sales.to_string().parse::<f64>().unwrap_or(0.0), "totalProfits": total_profits.to_string().parse::<f64>().unwrap_or(0.0), "totalDiscounts": total_discounts.to_string().parse::<f64>().unwrap_or(0.0), "totalExpenses": total_expenses.to_string().parse::<f64>().unwrap_or(0.0), "cashbox": cashbox.to_string().parse::<f64>().unwrap_or(0.0), "expenses": expenses_list }))
 }
 
 // الإغلاق اليومي — يصفّر ONLY اليوم الحالي وليس كل التاريخ
@@ -822,14 +826,15 @@ async fn reset_daily_db(state: tauri::State<'_, PgPool>, user_role: String) -> R
 #[tauri::command]
 async fn get_filtered_sales_report(state: tauri::State<'_, PgPool>, start_date: String, end_date: String, user_filter: String) -> Result<serde_json::Value, String> {
     let row = if user_filter == "all" {
-        sqlx::query("SELECT COALESCE(SUM(total_amount), 0), COALESCE(SUM(profit_amount), 0), COUNT(id) FROM invoices WHERE created_at::date >= $1::date AND created_at::date <= $2::date").bind(&start_date).bind(&end_date).fetch_one(state.inner()).await.map_err(|e| e.to_string())?
+        sqlx::query("SELECT COALESCE(SUM(total_amount), 0), COALESCE(SUM(profit_amount), 0), COALESCE(SUM(discount_amount), 0), COUNT(id) FROM invoices WHERE created_at::date >= $1::date AND created_at::date <= $2::date").bind(&start_date).bind(&end_date).fetch_one(state.inner()).await.map_err(|e| e.to_string())?
     } else {
-        sqlx::query("SELECT COALESCE(SUM(total_amount), 0), COALESCE(SUM(profit_amount), 0), COUNT(id) FROM invoices WHERE created_at::date >= $1::date AND created_at::date <= $2::date AND user_role = $3").bind(&start_date).bind(&end_date).bind(&user_filter).fetch_one(state.inner()).await.map_err(|e| e.to_string())?
+        sqlx::query("SELECT COALESCE(SUM(total_amount), 0), COALESCE(SUM(profit_amount), 0), COALESCE(SUM(discount_amount), 0), COUNT(id) FROM invoices WHERE created_at::date >= $1::date AND created_at::date <= $2::date AND user_role = $3").bind(&start_date).bind(&end_date).bind(&user_filter).fetch_one(state.inner()).await.map_err(|e| e.to_string())?
     };
     Ok(serde_json::json!({
         "totalSales": row.get::<rust_decimal::Decimal, _>(0).to_string().parse::<f64>().unwrap_or(0.0),
         "totalProfits": row.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0),
-        "invoiceCount": row.get::<i64, _>(2)
+        "totalDiscounts": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
+        "invoiceCount": row.get::<i64, _>(3)
     }))
 }
 
@@ -840,36 +845,37 @@ async fn get_invoice_details_report(state: tauri::State<'_, PgPool>, start_date:
     // sqlx `json` feature is not enabled in this project (no direct serde_json::Value decode).
     let rows = if user_filter == "all" {
         sqlx::query(
-            "SELECT i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at, \
+            "SELECT i.id, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at, \
              COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
              FROM invoices i \
              LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
              WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date \
-             GROUP BY i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at \
+             GROUP BY i.id, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at \
              ORDER BY i.created_at DESC"
         ).bind(&start_date).bind(&end_date).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
     } else {
         sqlx::query(
-            "SELECT i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at, \
+            "SELECT i.id, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at, \
              COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
              FROM invoices i \
              LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
              WHERE i.created_at::date >= $1::date AND i.created_at::date <= $2::date AND i.user_role = $3 \
-             GROUP BY i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at \
+             GROUP BY i.id, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at \
              ORDER BY i.created_at DESC"
         ).bind(&start_date).bind(&end_date).bind(&user_filter).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
     };
     let mut invoices = Vec::new();
     for row in rows {
         let inv_id: uuid::Uuid = row.get(0);
-        let items_str: String = row.get(5);
+        let items_str: String = row.get(6);
         let items: serde_json::Value = serde_json::from_str(&items_str)
             .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
         invoices.push(serde_json::json!({
             "id": inv_id.to_string(), "totalAmount": row.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0),
-            "profitAmount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0), 
-            "userRole": row.get::<Option<String>, _>(3).unwrap_or_else(|| "N/A".to_string()),
-            "date": row.get::<chrono::NaiveDateTime, _>(4).to_string(), "items": items
+            "profitAmount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
+            "discountAmount": row.get::<Option<rust_decimal::Decimal>, _>(3).map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0),
+            "userRole": row.get::<Option<String>, _>(4).unwrap_or_else(|| "N/A".to_string()),
+            "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(), "items": items
         }));
     }
     Ok(invoices)
@@ -1830,29 +1836,30 @@ async fn get_refunds_db(state: tauri::State<'_, PgPool>, limit: Option<i64>) -> 
     // The items JSON column is cast to ::text and parsed on the Rust side because the
     // sqlx `json` feature is not enabled in this project (no direct serde_json::Value decode).
     let rows = sqlx::query(
-        "SELECT i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.is_reversed, i.refund_reason_code, i.refund_notes, \
+        "SELECT i.id, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at, i.is_reversed, i.refund_reason_code, i.refund_notes, \
          COALESCE(json_agg(json_build_object('name', ii.name_ar, 'qty', ii.quantity, 'price', ii.price)) FILTER (WHERE ii.id IS NOT NULL), '[]'::json)::text as items \
          FROM invoices i \
          LEFT JOIN invoice_items ii ON ii.invoice_id = i.id \
          WHERE i.total_amount < 0 AND i.is_reversed = FALSE \
-         GROUP BY i.id, i.total_amount, i.profit_amount, i.user_role, i.created_at, i.is_reversed, i.refund_reason_code, i.refund_notes \
+         GROUP BY i.id, i.total_amount, i.profit_amount, i.discount_amount, i.user_role, i.created_at, i.is_reversed, i.refund_reason_code, i.refund_notes \
          ORDER BY i.created_at DESC LIMIT $1"
     ).bind(lim).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut refunds = Vec::new();
     for row in rows {
         let inv_id: uuid::Uuid = row.get(0);
-        let items_str: String = row.get(8);
+        let items_str: String = row.get(9);
         let items: serde_json::Value = serde_json::from_str(&items_str)
             .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
         refunds.push(serde_json::json!({
             "id": inv_id.to_string(),
             "totalAmount": row.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0),
             "profitAmount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
-            "userRole": row.get::<Option<String>, _>(3).unwrap_or_else(|| "N/A".to_string()),
-            "date": row.get::<chrono::NaiveDateTime, _>(4).to_string(),
-            "isReversed": row.get::<bool, _>(5),
-            "refundReasonCode": row.get::<Option<String>, _>(6),
-            "refundNotes": row.get::<Option<String>, _>(7),
+            "discountAmount": row.get::<Option<rust_decimal::Decimal>, _>(3).map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0),
+            "userRole": row.get::<Option<String>, _>(4).unwrap_or_else(|| "N/A".to_string()),
+            "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
+            "isReversed": row.get::<bool, _>(6),
+            "refundReasonCode": row.get::<Option<String>, _>(7),
+            "refundNotes": row.get::<Option<String>, _>(8),
             "items": items,
         }));
     }

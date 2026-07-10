@@ -89,6 +89,7 @@ export function InvoicesDashboard() {
         { key: 'dailyReceiptNumber', label: 'رقم الوصل', align: 'center' },
         { key: 'items_text', label: 'الأصناف' },
         { key: 'totalAmount', label: 'المبلغ', align: 'left' },
+        { key: 'discountAmount', label: 'الخصم', align: 'left' },
         { key: 'userRole', label: 'الكاشير' },
         { key: 'createdAt', label: 'التوقيت' },
       ],
@@ -96,12 +97,14 @@ export function InvoicesDashboard() {
         dailyReceiptNumber: `#${inv.dailyReceiptNumber}`,
         items_text: inv.items.map((it: any) => `${it.name} (${it.qty})`).join('، '),
         totalAmount: `${inv.totalAmount.toFixed(0)} د.ع`,
+        discountAmount: inv.discountAmount && inv.discountAmount > 0 ? `${inv.discountAmount.toFixed(0)} د.ع` : '-',
         userRole: inv.userRole,
         createdAt: new Date(inv.createdAt).toLocaleString('en-GB'),
       })),
       summary: [
         { label: 'عدد الفواتير', value: `${filteredInvoices.length}` },
         { label: 'إجمالي المبيعات', value: `${filteredInvoices.reduce((s, i) => s + i.totalAmount, 0).toFixed(0)} د.ع` },
+        { label: 'إجمالي الخصومات', value: `${filteredInvoices.reduce((s, i) => s + (i.discountAmount || 0), 0).toFixed(0)} د.ع` },
         { label: 'إجمالي الأرباح', value: `${filteredInvoices.reduce((s, i) => s + i.profitAmount, 0).toFixed(0)} د.ع` },
       ],
     });
@@ -183,6 +186,7 @@ export function InvoicesDashboard() {
                 <th className="table-header text-right p-3">رقم الوصل</th>
                 <th className="table-header text-right p-3">الأصناف</th>
                 <th className="table-header text-right p-3">المبلغ</th>
+                <th className="table-header text-right p-3">الخصم</th>
                 <th className="table-header text-right p-3">الربح</th>
                 <th className="table-header text-right p-3">الكاشير</th>
                 <th className="table-header text-right p-3">طبع بواسطة</th>
@@ -192,7 +196,7 @@ export function InvoicesDashboard() {
             </thead>
             <tbody>
               {filteredInvoices.length === 0 ? (
-                <tr><td colSpan={8}>
+                <tr><td colSpan={9}>
                   <div className="empty-state py-12"><div className="empty-state-icon"><Receipt className="w-8 h-8 text-slate-300" /></div><p className="text-slate-400 text-sm">لا توجد فواتير</p></div>
                 </td></tr>
               ) : filteredInvoices.map(inv => (
@@ -211,6 +215,13 @@ export function InvoicesDashboard() {
                     </div>
                   </td>
                   <td className="p-3 text-sm font-bold text-brand-700 tabular">{inv.totalAmount.toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></td>
+                  <td className="p-3 text-sm font-semibold text-purple-600 tabular">
+                    {inv.discountAmount && inv.discountAmount > 0 ? (
+                      <span>{inv.discountAmount.toFixed(0)} <span className="text-xs text-slate-400">د.ع</span></span>
+                    ) : (
+                      <span className="text-slate-300">-</span>
+                    )}
+                  </td>
                   <td className="p-3 text-sm font-semibold text-emerald-600 tabular">{inv.profitAmount.toFixed(0)}</td>
                   <td className="p-3 text-sm text-slate-600">{inv.userRole}</td>
                   <td className="p-3 text-xs text-slate-400">

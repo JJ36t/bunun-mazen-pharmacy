@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAccountingStore } from './accounting.store';
 import { useAuthStore } from '../security/auth.store';
-import { Wallet, TrendingUp, DollarSign, Plus, RotateCcw, Receipt, Coins, BarChart3, FileDown, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
+import { Wallet, TrendingUp, DollarSign, Plus, RotateCcw, Receipt, Coins, BarChart3, FileDown, ArrowUpCircle, ArrowDownCircle, Percent } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToPdf } from '../../lib/utils/pdfExport';
 
 export function AccountingDashboard() {
-  const { cashbox, totalSales, totalProfits, expenses, addExpense, resetDaily, fetchSummary } = useAccountingStore();
+  const { cashbox, totalSales, totalProfits, totalDiscounts, expenses, addExpense, resetDaily, fetchSummary } = useAccountingStore();
   const { role } = useAuthStore();
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
@@ -65,6 +65,7 @@ export function AccountingDashboard() {
       rows: expenses.map(e => ({ date: e.date, description: e.description, amount: e.amount.toFixed(2) })),
       summary: [
         { label: 'إجمالي المبيعات', value: `${totalSales.toFixed(0)} د.ع` },
+        { label: 'إجمالي الخصومات', value: `${totalDiscounts.toFixed(0)} د.ع` },
         { label: 'إجمالي المصاريف', value: `${expenses.reduce((s, e) => s + e.amount, 0).toFixed(0)} د.ع` },
         { label: 'صافي الأرباح', value: `${totalProfits.toFixed(0)} د.ع` },
         { label: 'رصيد الصندوق', value: `${cashbox.toFixed(0)} د.ع` },
@@ -75,6 +76,7 @@ export function AccountingDashboard() {
   const statCards = [
     { title: 'الصندوق النقدي', value: cashbox.toFixed(0), icon: Wallet, iconBg: 'bg-emerald-50 text-emerald-600' },
     { title: 'إجمالي المبيعات', value: totalSales.toFixed(0), icon: TrendingUp, iconBg: 'bg-brand-50 text-brand-600' },
+    { title: 'إجمالي الخصومات', value: totalDiscounts.toFixed(0), icon: Percent, iconBg: 'bg-purple-50 text-purple-600' },
     { title: 'صافي الأرباح', value: totalProfits.toFixed(0), icon: DollarSign, iconBg: 'bg-amber-50 text-amber-600' },
     { title: 'إجمالي المصاريف', value: expenses.reduce((s, e) => s + e.amount, 0).toFixed(0), icon: Coins, iconBg: 'bg-rose-50 text-rose-600' },
   ];
@@ -105,7 +107,7 @@ export function AccountingDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-5 mb-8">
+      <div className="grid grid-cols-5 gap-4 mb-8">
         {statCards.map((stat, i) => {
           const Icon = stat.icon;
           return (
