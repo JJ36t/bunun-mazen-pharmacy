@@ -399,11 +399,7 @@ function PosDashboard() {
         setShowAdminDiscount(true);
         return;
       }
-      // ضمن الحد — سجل الاستخدام
-      try {
-        await invoke('record_discount_usage_db', { userRole: username || 'cashier', amount: val });
-        invoke<any>('get_discount_limit_db', { userRole: username || 'cashier' }).then(setDiscountLimit);
-      } catch (e) { console.error(e); }
+      // ضمن الحد — لا تسجل الاستخدام هنا! سيُسجَّل بعد إتمام البيع في handleConfirmPayment
     }
   };
 
@@ -416,11 +412,12 @@ function PosDashboard() {
       });
       if (ok) {
         setDiscountAmount(pendingDiscount);
-        await invoke('record_discount_usage_db', { userRole: username || 'cashier', amount: pendingDiscount });
-        invoke<any>('get_discount_limit_db', { userRole: username || 'cashier' }).then(setDiscountLimit);
+        // لا تسجل الاستخدام هنا — سيُسجَّل بعد إتمام البيع في handleConfirmPayment
         toast.success('تم تجاوز حد الخصم بإذن المدير');
         setShowAdminDiscount(false);
         setAdminDiscountPass('');
+      } else {
+        toast.error('كلمة مرور المدير غير صحيحة');
       }
     } catch (e: any) {
       toast.error('فشل: ' + e);
@@ -519,6 +516,16 @@ function PosDashboard() {
         setShowPayment(false);
         setInteractionOverrideGranted(false); // reset للفاتورة الجاية
         setPaidAmount(''); setMixedCash(''); setMixedCard(''); setChequeNumber(''); setCustomerName('');
+
+        // سجّل استخدام الخصم بعد نجاح البيع فعلياً (وليس عند كتابة الخصم)
+        if (discountAmount && discountAmount > 0) {
+          try {
+            await invoke('record_discount_usage_db', { userRole: username || 'cashier', amount: discountAmount });
+            invoke<any>('get_discount_limit_db', { userRole: username || 'cashier' }).then(setDiscountLimit);
+          } catch (e) { console.error('Failed to record discount usage:', e); }
+        }
+        setDiscountAmount(0); // صفر الخصم للفاتورة الجديدة
+
         toast.success("تم تسجيل البيع والطباعة بنجاح.");
     } catch (e: any) {
         toast.error(e.toString() || "فشل تسجيل الفاتورة! تحقق من الصلاحيات.");
