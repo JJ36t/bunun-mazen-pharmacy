@@ -527,8 +527,10 @@ async fn update_medicine_db(state: tauri::State<'_, PgPool>, medicine_id: String
 #[tauri::command]
 async fn bulk_update_prices_db(state: tauri::State<'_, PgPool>, update_type: String, value: f64, user_role: String, session_token: Option<String>) -> Result<(), String> {
     let pool = state.inner();
-    if verify_session_token(pool, &session_token).await.is_err() {
-        return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
+    if let Some(ref token) = session_token {
+        if verify_session_token(pool, token).await.is_err() {
+            return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
+        }
     }
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     if update_type == "percentage" {
