@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "algorithm": "Ed25519",
+  "keys": [],
+  "legacy": {
+    "algorithm": "HMAC-SHA256",
+    "enabled": true,
+    "comment": "Backward compatibility for old HMAC licenses — disable after migration"
+  },
+  "_notice": "Run 'cargo run --bin generate_keys' to generate a keypair, then add PUBLIC key to 'keys' array. NEVER commit the private key."
+}

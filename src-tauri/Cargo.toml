@@ -4,6 +4,7 @@ version = "2.3.0"
 description = "Bunun Mazen Pharmacy Management System"
 authors = ["you"]
 edition = "2021"
+default-run = "bunun-mazen-pharmacy"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -51,6 +52,10 @@ rustls = { version = "0.23", features = ["ring"] }
 rustls-pki-types = "1"
 # tokio-util - CancellationToken لإيقاف سيرفر الموبايل
 tokio-util = "0.7"
+# thiserror - أنواع أخطاء موحّدة
+thiserror = "1.0"
+# ed25519-dalek - توقيع ترخيص بمفتاح غير متماثل
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

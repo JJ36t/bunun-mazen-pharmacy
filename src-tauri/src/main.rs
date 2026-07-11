@@ -31,6 +31,10 @@ use base64::{engine::general_purpose, Engine as _};
 use tracing_subscriber;
 
 // إضافة وحدة PharmIQ Intelligence
+mod errors;
+mod sale_logic;
+mod licensing;
+mod validation;
 mod pharmiq_commands;
 mod pharmiq_complete;
 mod pharmiq_enterprise_complete;
@@ -48,31 +52,26 @@ fn init_logging() {
         .init();
 }
 
-// --- نظام الترخيص المعماري (HMAC-SHA256) ---
+// --- نظام الترخيص (مفوّض لـ licensing module) ---
+// تم نقل منطق الترخيص لـ licensing/ module يستخدم Ed25519 غير المتماثل
+// مع fallback لـ HMAC القديم للتوافق
+
 fn generate_device_fingerprint() -> String {
-    let mut sys = System::new_all(); sys.refresh_all();
-    let mut fingerprint = String::new();
-    if let Some(cpu) = sys.cpus().first() { fingerprint.push_str(&cpu.brand()); }
-    if let Some(host) = sys.host_name() { fingerprint.push_str(&host); }
-    let alg = digest::digest(&digest::SHA256, fingerprint.as_bytes());
-    hex::encode(alg).to_uppercase()
+    licensing::generate_device_fingerprint()
 }
 
-fn generate_activation_key(device_id: &str) -> String {
-    // السر مشفّر وقت البناء (obfstr) لمنع استخراجه بسهولة من الـ binary
-    // نحوّل إلى Vec<u8> مملوك لتجنب مشكلة القيمة المؤقتة
-    let secret: Vec<u8> = obfstr!("IRAQ_PHARMA_SECRET_2024_HMAC").as_bytes().to_vec();
-    let key = hmac::Key::new(hmac::HMAC_SHA256, &secret);
-    let tag = hmac::sign(&key, device_id.as_bytes());
-    let hex_tag = hex::encode(tag).to_uppercase();
-    format!("{}-{}-{}", &hex_tag[0..4], &hex_tag[4..8], &hex_tag[8..12])
-}
+// ملاحظة: generate_activation_key محذوفة عمداً — لم تعد التطبيق يولّد مفاتيح
+// المفاتيح تُولّد بالمفتاح الخاص عند المالك فقط
 
-fn is_valid_key(device_id: &str, input_key: &str) -> bool { 
-    let expected_key = generate_activation_key(device_id);
-    // استخدام subtle::ConstantTimeEq بدلاً من ring::constant_time المُهمَل
-    // ct_eq تُعيد Choice، نحولها لـ u8 ونقارن بـ 1
-    expected_key.as_bytes().ct_eq(input_key.to_uppercase().as_bytes()).unwrap_u8() == 1
+fn is_valid_key(device_id: &str, input_key: &str) -> bool {
+    // Try new Ed25519 system first
+    if let Ok(keyring) = licensing::load_manifest() {
+        if licensing::verify_license(&keyring, device_id, input_key) {
+            return true;
+        }
+    }
+    // Fall back to legacy HMAC
+    licensing::legacy::verify_hmac_license(device_id, input_key)
 }
 
 fn get_license_file_path() -> PathBuf {
@@ -239,11 +238,12 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
                 // تحديث آخر دخول
                 let _ = sqlx::query("UPDATE users SET last_login = NOW() WHERE username = $1")
                     .bind(&username).execute(state.inner()).await;
-                // توليد session token وإدراجه في user_sessions
+                // إصلاح P0-1: تخزين session_token الفعلي في user_sessions
                 let session_token = uuid::Uuid::new_v4().to_string();
                 let device_info = format!("os:{}", std::env::consts::OS);
-                let _ = sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at) VALUES ($1, $2, $3, TRUE, NOW())")
-                    .bind(user_id).bind(&username).bind(&device_info).execute(state.inner()).await;
+                let _ = sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at, token, expires_at, last_activity) VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW() + INTERVAL '8 hours', NOW())")
+                    .bind(user_id).bind(&username).bind(&device_info).bind(&session_token)
+                    .execute(state.inner()).await;
                 // تسجيل في سجل التدقيق
                 let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN', 'تسجيل دخول ناجح')")
                     .bind(&username).execute(state.inner()).await;
@@ -262,18 +262,20 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
     }
 }
 
-// تحقق من session token — يُستخدم كطبقة مصادقة على الأوامر الحساسة
+// تحقق من session token — إصلاح P0-1: فحص التوكن الفعلي في user_sessions
 pub(crate) async fn verify_session_token(pool: &PgPool, session_token: &str) -> Result<(uuid::Uuid, String, String), String> {
-    // session_token هنا يُمرّر كـ user_id كبديل بسيط (لأن الواجهة لا ترسل token فعلياً بعد)
-    // في المستقبل: استبدل بجدول session_tokens منفصل
-    let uuid_id = uuid::Uuid::parse_str(session_token)
-        .map_err(|_| "session token غير صالح".to_string())?;
-    let row = sqlx::query("SELECT id, username, role FROM users WHERE id = $1 AND is_active = TRUE AND deleted_at IS NULL")
-        .bind(uuid_id).fetch_optional(pool).await
-        .map_err(|e| e.to_string())?;
+    let row = sqlx::query(
+        "SELECT u.id, u.username, u.role FROM user_sessions s JOIN users u ON u.id = s.user_id \
+         WHERE s.token = $1 AND s.is_active = TRUE AND u.is_active = TRUE AND u.deleted_at IS NULL \
+         AND (s.expires_at IS NULL OR s.expires_at > NOW()) LIMIT 1"
+    ).bind(session_token).fetch_optional(pool).await.map_err(|e| e.to_string())?;
     match row {
-        Some(r) => Ok((r.get(0), r.get(1), r.get(2))),
-        None => Err("جلسة غير صالحة أو المستخدم موقوف".to_string()),
+        Some(r) => {
+            let _ = sqlx::query("UPDATE user_sessions SET last_activity = NOW(), expires_at = NOW() + INTERVAL '8 hours' WHERE token = $1")
+                .bind(session_token).execute(pool).await;
+            Ok((r.get(0), r.get(1), r.get(2)))
+        },
+        None => Err("جلسة غير صالحة أو انتهت صلاحيتها. يرجى إعادة تسجيل الدخول.".to_string()),
     }
 }
 
@@ -666,18 +668,32 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
         let price = rust_decimal::Decimal::from_f64(item["price"].as_f64().ok_or("Err")?).ok_or("Err")?;
         let qty = rust_decimal::Decimal::from(item["quantity"].as_i64().ok_or("Err")?);
         subtotal += price * qty;
-        let med_row = sqlx::query("SELECT cost_price FROM medicines WHERE id = $1").bind(med_uuid).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let med_row = sqlx::query("SELECT cost_price, quantity FROM medicines WHERE id = $1 FOR UPDATE").bind(med_uuid).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
         let cost_price: rust_decimal::Decimal = med_row.get(0);
+        let current_qty: i32 = med_row.get(1);
+        let qty_i32 = item["quantity"].as_i64().ok_or("Err")? as i32;
+        if current_qty < qty_i32 {
+            return Err(format!("الكمية غير كافية للدواء. المتوفر: {}، المطلوب: {}", current_qty, qty_i32));
+        }
         total_profit += (price - cost_price) * qty;
     }
 
-    let discount_factor = rust_decimal::Decimal::from_f64(discount_percentage).ok_or("Err")? / rust_decimal::Decimal::from(100);
-    let discount_amount = match discount_amount_param {
-        Some(amt) if amt > 0.0 => rust_decimal::Decimal::from_f64(amt).unwrap_or(subtotal * discount_factor),
-        _ => subtotal * discount_factor,
-    };
-    let final_total = subtotal - discount_amount;
-    let final_profit = total_profit - discount_amount;
+    // إصلاح P0-3: فحص الخصم المطلق لا يتجاوز subtotal
+    if let Some(amt) = discount_amount_param {
+        if amt > 0.0 {
+            let amt_dec = rust_decimal::Decimal::from_f64(amt).ok_or("Invalid discount amount")?;
+            if amt_dec > subtotal {
+                return Err(format!("مبلغ الخصم ({}) أكبر من المجموع الفرعي ({})", amt_dec, subtotal));
+            }
+        }
+    }
+
+    let (final_total, final_profit, discount_amount) = sale_logic::calculate_sale_totals(
+        subtotal, total_profit, discount_percentage, discount_amount_param
+    );
+    if final_total < rust_decimal::Decimal::ZERO {
+        return Err("الإجمالي النهائي سالب بعد الخصم".to_string());
+    }
 
     let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number, idempotency_key, discount_amount) VALUES ($1, $2, $3, get_daily_receipt_number(), $4, $5) RETURNING id")
         .bind(final_total).bind(final_profit).bind(&user_role).bind(&operation_id).bind(discount_amount).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -693,7 +709,7 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
         sqlx::query("INSERT INTO invoice_items (invoice_id, medicine_id, name_ar, quantity, price) VALUES ($1, $2, $3, $4, $5)")
             .bind(invoice_id).bind(med_uuid).bind(name).bind(qty).bind(price).execute(&mut *tx).await.map_err(|e| e.to_string())?;
             
-        let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 AND quantity > 0 ORDER BY expiry_date ASC")
+        let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 AND quantity > 0 ORDER BY expiry_date ASC FOR UPDATE")
             .bind(med_uuid).fetch_all(&mut *tx).await.map_err(|e| e.to_string())?;
         let mut remaining_qty = qty;
         for batch in batches {
@@ -704,7 +720,10 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
             sqlx::query("UPDATE medicine_batches SET quantity = quantity - $1 WHERE id = $2").bind(deduct).bind(batch_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
             remaining_qty -= deduct;
         }
-        sqlx::query("UPDATE medicines SET quantity = quantity - $1 WHERE id = $2").bind(qty).bind(med_uuid).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        // إصلاح P0-2: خصم مزدوج — نطرح remaining_qty فقط (ما لم تغطّه الدفعات)
+        if remaining_qty > 0 {
+            sqlx::query("UPDATE medicines SET quantity = quantity - $1 WHERE id = $2").bind(remaining_qty).bind(med_uuid).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
         items_desc.push(format!("{} (x{})", name, qty));
     }
     
@@ -783,7 +802,7 @@ async fn reverse_refund_db(state: tauri::State<'_, PgPool>, invoice_id: String, 
         let med_id: uuid::Uuid = item.get(0);
         let qty: i32 = item.get(1);
         sqlx::query("UPDATE medicines SET quantity = quantity - $1 WHERE id = $2").bind(qty).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-        let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 AND quantity > 0 ORDER BY expiry_date ASC").bind(med_id).fetch_all(&mut *tx).await.map_err(|e| e.to_string())?;
+        let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 AND quantity > 0 ORDER BY expiry_date ASC FOR UPDATE").bind(med_id).fetch_all(&mut *tx).await.map_err(|e| e.to_string())?;
         let mut remaining_qty = qty;
         for batch in batches {
             if remaining_qty <= 0 { break; }
@@ -795,8 +814,8 @@ async fn reverse_refund_db(state: tauri::State<'_, PgPool>, invoice_id: String, 
         }
     }
     sqlx::query("UPDATE invoices SET is_reversed = TRUE WHERE id = $1").bind(uuid_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    let desc = format!("تراجع عن مرتجع الفاتورة {}", invoice_id);
-    sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role) VALUES ($1, 0, $2)").bind(total_amount.abs()).bind(&user_role).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    let desc = format!("تراجع عن مرتجع الفاتورة {} (قيمة {})", invoice_id, total_amount.abs());
+    // إصلاح P1-8: لا نُنشئ فاتورة جديدة — فقط نُعلّم المرتجع كمعكوس
     sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("REVERSE_REFUND").bind(&desc).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
@@ -824,22 +843,27 @@ async fn get_accounting_summary_db(state: tauri::State<'_, PgPool>) -> Result<se
     Ok(serde_json::json!({ "totalSales": total_sales.to_string().parse::<f64>().unwrap_or(0.0), "totalProfits": total_profits.to_string().parse::<f64>().unwrap_or(0.0), "totalDiscounts": total_discounts.to_string().parse::<f64>().unwrap_or(0.0), "totalExpenses": total_expenses.to_string().parse::<f64>().unwrap_or(0.0), "cashbox": cashbox.to_string().parse::<f64>().unwrap_or(0.0), "expenses": expenses_list }))
 }
 
-// الإغلاق اليومي — يصفّر ONLY اليوم الحالي وليس كل التاريخ
-// البيانات التاريخية تُنقل لجدول archive (إن وُجد) أو تُترك كما هي
+// الإغلاق اليومي — إصلاح P1-7: أرشفة بدل حذف فيزيائي
 #[tauri::command]
 async fn reset_daily_db(state: tauri::State<'_, PgPool>, user_role: String, session_token: Option<String>) -> Result<(), String> {
     if let Some(ref token) = session_token { if verify_session_token(state.inner(), token).await.is_err() {
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-    }
+    }}
     if user_role != "Super Admin" { return Err("صلاحية غير كافية: يجب أن تكون مديراً للقيام بالإغلاق اليومي.".to_string()); }
     let today = chrono::Local::now().date_naive();
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
-    // حذف فقط إيصالات اليوم (total_amount >= 0 = بيع، < 0 = مرتجع — كلاهما اليومي)
-    sqlx::query("DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE created_at::date = $1)").bind(today).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    sqlx::query("DELETE FROM invoices WHERE created_at::date = $1").bind(today).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    sqlx::query("DELETE FROM expenses WHERE created_at::date = $1").bind(today).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    // نُبقي سجل التدقيق (لا نمسحه)
-    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("DAILY_CLOSING").bind("إغلاق يومي — مسح مبيعات اليوم فقط").execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    // إصلاح: تعليم الفواتير كمؤرشفة بدل حذفها
+    let _ = sqlx::query("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE").execute(&mut *tx).await;
+    sqlx::query("UPDATE invoices SET is_archived = TRUE WHERE created_at::date = $1").bind(today).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    // إنشاء سجل إغلاق يومي
+    let _ = sqlx::query("CREATE TABLE IF NOT EXISTS daily_closings (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), closing_date DATE NOT NULL UNIQUE, total_sales DECIMAL(12,2) DEFAULT 0, total_profit DECIMAL(12,2) DEFAULT 0, total_discount DECIMAL(12,2) DEFAULT 0, invoice_count INTEGER DEFAULT 0, closed_by VARCHAR(50), closed_at TIMESTAMP DEFAULT NOW())").execute(&mut *tx).await;
+    let summary_row = sqlx::query("SELECT COALESCE(SUM(total_amount), 0), COALESCE(SUM(profit_amount), 0), COALESCE(SUM(discount_amount), 0), COUNT(id) FROM invoices WHERE created_at::date = $1 AND total_amount > 0").bind(today).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    let total_sales: rust_decimal::Decimal = summary_row.get(0);
+    let total_profit: rust_decimal::Decimal = summary_row.get(1);
+    let total_discount: rust_decimal::Decimal = summary_row.get(2);
+    let invoice_count: i64 = summary_row.get(3);
+    sqlx::query("INSERT INTO daily_closings (closing_date, total_sales, total_profit, total_discount, invoice_count, closed_by) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (closing_date) DO UPDATE SET total_sales = EXCLUDED.total_sales, total_profit = EXCLUDED.total_profit, total_discount = EXCLUDED.total_discount, invoice_count = EXCLUDED.invoice_count, closed_by = EXCLUDED.closed_by, closed_at = NOW()").bind(today).bind(total_sales).bind(total_profit).bind(total_discount).bind(invoice_count as i32).bind(&user_role).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("DAILY_CLOSING").bind(format!("إغلاق يومي: {} فاتورة، مبيعات {}، ربح {}", invoice_count, total_sales, total_profit)).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -1891,6 +1915,16 @@ async fn get_refunds_db(state: tauri::State<'_, PgPool>, limit: Option<i64>) -> 
     Ok(refunds)
 }
 
+/// توليد كلمة مرور عشوائية قوية (A-Za-z0-9)
+fn generate_random_password(len: usize) -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
+                            abcdefghijklmnopqrstuvwxyz\
+                            0123456789";
+    let mut rng = rand::thread_rng();
+    (0..len).map(|_| { let idx = rng.gen_range(0..CHARSET.len()); CHARSET[idx] as char }).collect()
+}
+
 fn main() {
     init_logging();
     tauri::Builder::default()
@@ -1899,7 +1933,15 @@ fn main() {
             // إزالة طباعة مفتاح التفعيل في stdout — كان يسمح بتجاوز الترخيص فوراً
             let _device_fingerprint = generate_device_fingerprint();
             // قراءة بيانات DB من متغيرات البيئة (لا hardcoded)
-            let db_password = std::env::var("PHARMACY_DB_PASSWORD").unwrap_or_else(|_| "123456".to_string());
+            // إصلاح P0-4: في release، نرفض الإقلاع بدون PHARMACY_DB_PASSWORD
+            let db_password = std::env::var("PHARMACY_DB_PASSWORD").unwrap_or_else(|_| {
+                if cfg!(debug_assertions) {
+                    eprintln!("[SECURITY WARNING] PHARMACY_DB_PASSWORD not set — using dev default. THIS WILL FAIL in release builds.");
+                    "123456".to_string()
+                } else {
+                    panic!("[SECURITY] PHARMACY_DB_PASSWORD environment variable not set. Refusing to start in release mode.");
+                }
+            });
             let db_user = std::env::var("PHARMACY_DB_USER").unwrap_or_else(|_| "postgres".to_string());
             let db_host = std::env::var("PHARMACY_DB_HOST").unwrap_or_else(|_| "localhost".to_string());
             let db_port = std::env::var("PHARMACY_DB_PORT").unwrap_or_else(|_| "5432".to_string());
@@ -1980,10 +2022,21 @@ fn main() {
                 
                 let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE username = 'admin'").fetch_one(&pool).await.unwrap_or(0);
                 if admin_count == 0 {
-                    let admin_pass = bcrypt::hash("admin123", BCRYPT_COST).unwrap();
-                    let cashier_pass = bcrypt::hash("cashier123", BCRYPT_COST).unwrap();
-                    let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('admin', $1, 'Super Admin', TRUE)").bind(admin_pass).execute(&pool).await;
-                    let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('cashier', $1, 'Cashier', TRUE)").bind(cashier_pass).execute(&pool).await;
+                    // إصلاح P0-5: توليد كلمات مرور عشوائية بدل admin123/cashier123
+                    let admin_pass = generate_random_password(16);
+                    let cashier_pass = generate_random_password(12);
+                    let admin_hash = bcrypt::hash(&admin_pass, BCRYPT_COST).unwrap_or_else(|e| { panic!("Failed to hash admin password: {}", e) });
+                    let cashier_hash = bcrypt::hash(&cashier_pass, BCRYPT_COST).unwrap_or_else(|e| { panic!("Failed to hash cashier password: {}", e) });
+                    let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('admin', $1, 'Super Admin', TRUE)").bind(admin_hash).execute(&pool).await;
+                    let _ = sqlx::query("INSERT INTO users (username, password, role, is_active) VALUES ('cashier', $1, 'Cashier', TRUE)").bind(cashier_hash).execute(&pool).await;
+                    eprintln!("========================================");
+                    eprintln!("[INIT] Default credentials generated:");
+                    eprintln!("[INIT]   admin   : {}", admin_pass);
+                    eprintln!("[INIT]   cashier : {}", cashier_pass);
+                    eprintln!("[INIT] CHANGE THESE IMMEDIATELY after first login!");
+                    eprintln!("========================================");
+                    let _ = sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE").execute(&pool).await;
+                    let _ = sqlx::query("UPDATE users SET must_change_password = TRUE WHERE username IN ('admin', 'cashier')").execute(&pool).await;
                 }
             });
             app.manage(pool);
