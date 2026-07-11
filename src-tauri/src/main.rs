@@ -1975,8 +1975,11 @@ fn main() {
                     let is_migration_issue = err_str.contains("VersionMismatch")
                         || err_str.contains("VersionMissing")
                         || err_str.contains("checksum")
+                        || err_str.contains("previously applied")
                         || err_str.contains("previously applied but is missing")
-                        || err_str.contains("missing in the resolved migrations");
+                        || err_str.contains("missing in the resolved migrations")
+                        || err_str.contains("has been modified")
+                        || err_str.contains("migration");
 
                     if is_migration_issue {
                         println!("[Migrations] Detected migration issue — attempting auto-recovery...");
