@@ -56,6 +56,8 @@ tokio-util = "0.7"
 thiserror = "1.0"
 # ed25519-dalek - توقيع ترخيص بمفتاح غير متماثل
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+# clap - أدوات سطر الأوامر (لأدوات توليد التراخيص)
+clap = { version = "4.5", features = ["derive"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
