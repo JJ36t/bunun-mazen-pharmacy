@@ -24,7 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_invoices_archived ON invoices(is_archived) WHERE 
 
 INSERT INTO settings (key, value, description)
 VALUES ('max_discount_amount', '100000', 'الحد الأقصى للخصم المطلق بالدينار العراقي')
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 INSERT INTO settings (key, value, description)
 VALUES ('session_timeout_minutes', '480', 'مدة صلاحية الجلسة بالدقائق')
