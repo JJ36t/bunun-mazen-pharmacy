@@ -1982,42 +1982,14 @@ fn main() {
                         || err_str.contains("migration");
 
                     if is_migration_issue {
-                        println!("[Migrations] Detected migration issue — attempting auto-recovery...");
-
-                        // استخرج رقم الـ migration المشكوك فيه من رسالة الخطأ (لو وُجد)
-                        // مثال: "migration 20240106000000 was previously applied..."
-                        let problem_version = err_str
-                            .split_whitespace()
-                            .find(|w| w.chars().all(|c| c.is_ascii_digit()) && w.len() >= 14)
-                            .map(|s| s.to_string());
-
-                        if let Some(ref version) = problem_version {
-                            println!("[Migrations] Removing stale record for version: {}", version);
-                            let _ = sqlx::query("DELETE FROM _sqlx_migrations WHERE version = $1::bigint")
-                                .bind(version.parse::<i64>().unwrap_or(0))
-                                .execute(&pool).await;
-                        }
-
-                        // احذف كل سجلات migrations المعروفة بأنها تسبب مشاكل (مهما كان رقمها)
-                        let _ = sqlx::query("DELETE FROM _sqlx_migrations WHERE version IN (20240105000000, 20240106000000)")
-                            .execute(&pool).await;
-                        println!("[Migrations] Removed known stale records (20240105000000, 20240106000000)");
-
-                        // أعد محاولة تشغيل migrations
+                        println!("[Migrations] Detected migration issue — clearing ALL migration history and retrying...");
+                        // امسح كل سجلات migrations دفعة واحدة (الجداول موجودة بـ IF NOT EXISTS)
+                        let _ = sqlx::query("DELETE FROM _sqlx_migrations").execute(&pool).await;
+                        // أعد تشغيل كل migrations من الصفر
                         match sqlx::migrate!("./migrations").run(&pool).await {
-                            Ok(_) => println!("[Migrations] Auto-recovery (tier 2) successful!"),
+                            Ok(_) => println!("[Migrations] Auto-recovery successful!"),
                             Err(e2) => {
-                                let err2_str = e2.to_string();
-                                println!("[Migrations] Tier 2 failed: {}", err2_str);
-
-                                // محاولة أخيرة: احذف كل سجلات migrations وأعد من الصفر
-                                println!("[Migrations] Last resort: clearing all migration history...");
-                                let _ = sqlx::query("DELETE FROM _sqlx_migrations").execute(&pool).await;
-                                // ملاحظة: هذا لن يحذف الجداول الموجودة (CREATE TABLE IF NOT EXISTS ستتخطاها)
-                                match sqlx::migrate!("./migrations").run(&pool).await {
-                                    Ok(_) => println!("[Migrations] Full reset (tier 3) successful!"),
-                                    Err(e3) => panic!("Could not run migrations after auto-recovery: {}", e3),
-                                }
+                                panic!("Could not run migrations after auto-recovery: {}. Manual fix required — delete the pharmacy_db database and restart.", e2);
                             }
                         }
                     } else {
