@@ -176,7 +176,7 @@ fn save_csv_file(filename: String, content: String) -> Result<String, String> {
 
 #[tauri::command]
 async fn create_backup(state: tauri::State<'_, PgPool>, data: String, password: String, session_token: Option<String>) -> Result<String, String> {
-    if let Some(ref token) = session_token { if verify_session_token(state.inner(), token).await.is_err() {
+    if let Some(ref token) = &session_token { if !token.is_empty() && verify_session_token(state.inner(), token).await.is_err() {
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
     }}
     let dir = desktop_dir()?;
@@ -339,7 +339,7 @@ async fn toggle_user_status_db(state: tauri::State<'_, PgPool>, user_id: String,
 
 #[tauri::command]
 async fn delete_user_db(state: tauri::State<'_, PgPool>, user_id: String, deleted_by: String, session_token: Option<String>) -> Result<(), String> {
-    if let Some(ref token) = session_token { if verify_session_token(state.inner(), token).await.is_err() {
+    if let Some(ref token) = &session_token { if !token.is_empty() && verify_session_token(state.inner(), token).await.is_err() {
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
     }}
     let uuid_id = uuid::Uuid::parse_str(&user_id).map_err(|e| e.to_string())?;
@@ -636,11 +636,11 @@ async fn link_barcode_to_medicine_db(
 #[tauri::command]
 async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount_param: Option<f64>, session_token: Option<String>) -> Result<serde_json::Value, String> {
     let pool = state.inner();
-    if let Some(token) = &session_token {
+    if let Some(ref token) = &session_token { if !token.is_empty() {
         if verify_session_token(pool, token).await.is_err() {
             return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
         }
-    }
+    }}
 
     // ===== Idempotency check =====
     if let Some(op_id) = &operation_id {
@@ -738,11 +738,11 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
 #[tauri::command]
 async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, items_json: String, user_role: String, session_token: Option<String>) -> Result<(), String> {
     let pool = state.inner();
-    if let Some(token) = &session_token {
+    if let Some(ref token) = &session_token { if !token.is_empty() {
         if verify_session_token(pool, token).await.is_err() {
             return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
         }
-    }
+    }}
     let total_dec = rust_decimal::Decimal::from_f64(total_amount).ok_or("Invalid total")?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let mut total_refund_profit = rust_decimal::Decimal::ZERO;
@@ -844,7 +844,7 @@ async fn get_accounting_summary_db(state: tauri::State<'_, PgPool>) -> Result<se
 // الإغلاق اليومي — إصلاح P1-7: أرشفة بدل حذف فيزيائي
 #[tauri::command]
 async fn reset_daily_db(state: tauri::State<'_, PgPool>, user_role: String, session_token: Option<String>) -> Result<(), String> {
-    if let Some(ref token) = session_token { if verify_session_token(state.inner(), token).await.is_err() {
+    if let Some(ref token) = &session_token { if !token.is_empty() && verify_session_token(state.inner(), token).await.is_err() {
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
     }}
     if user_role != "Super Admin" { return Err("صلاحية غير كافية: يجب أن تكون مديراً للقيام بالإغلاق اليومي.".to_string()); }
@@ -1576,7 +1576,7 @@ fn get_or_create_auto_backup_password() -> Result<String, String> {
 // --- استعادة النسخة الاحتياطية إلى قاعدة البيانات ---
 #[tauri::command]
 async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String, password: String, session_token: Option<String>) -> Result<serde_json::Value, String> {
-    if let Some(ref token) = session_token { if verify_session_token(state.inner(), token).await.is_err() {
+    if let Some(ref token) = &session_token { if !token.is_empty() && verify_session_token(state.inner(), token).await.is_err() {
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
     }}
     let encrypted_data = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
