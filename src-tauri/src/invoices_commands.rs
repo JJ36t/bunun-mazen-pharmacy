@@ -64,7 +64,7 @@ pub async fn get_all_invoices_with_details_db(state: tauri::State<'_, PgPool>, s
 pub async fn delete_invoice_db(state: tauri::State<'_, PgPool>, invoice_id: String, user_role: String, session_token: Option<String>) -> Result<(), String> {
     if let Some(ref token) = session_token { if crate::verify_session_token(state.inner(), token).await.is_err() {
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-    }
+    }}
     let inv_uuid = uuid::Uuid::parse_str(&invoice_id).map_err(|e| e.to_string())?;
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
     
