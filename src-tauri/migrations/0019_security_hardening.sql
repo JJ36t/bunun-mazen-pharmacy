@@ -30,8 +30,10 @@ INSERT INTO settings (key, value, description)
 VALUES ('session_timeout_minutes', '480', 'مدة صلاحية الجلسة بالدقائق')
 ON CONFLICT (key) DO NOTHING;
 
+-- PostgreSQL doesn't support :: cast in CREATE INDEX — use expression index without it
+-- The daily report query uses created_at::date, but we index created_at directly
 CREATE INDEX IF NOT EXISTS idx_invoices_daily_date
-    ON invoices(created_at::date, total_amount)
+    ON invoices(created_at, total_amount)
     WHERE total_amount > 0;
 
 DO $$
