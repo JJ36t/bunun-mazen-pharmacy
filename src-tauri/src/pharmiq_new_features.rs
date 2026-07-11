@@ -55,7 +55,7 @@ pub async fn check_discount_db(state: tauri::State<'_, PgPool>, user_role: Strin
 #[tauri::command]
 pub async fn admin_override_discount_db(state: tauri::State<'_, PgPool>, password: String, discount_amount: f64, user_role: String) -> Result<bool, String> {
     // تحقق من كلمة مرور المدير
-    let row = sqlx::query("SELECT password FROM users WHERE role = 'Super Admin' AND is_active = TRUE AND deleted_at IS NULL LIMIT 1")
+    let row = sqlx::query("SELECT password FROM users WHERE username = 'admin' AND is_active = TRUE AND deleted_at IS NULL LIMIT 1")
         .fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
     let admin_pass: String = row.ok_or("لا يوجد حساب مدير عام")?.get(0);
     if !bcrypt::verify(&password, &admin_pass).unwrap_or(false) {

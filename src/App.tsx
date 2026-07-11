@@ -473,7 +473,7 @@ function PosDashboard() {
           itemsJson: JSON.stringify(currentItems),
           userRole: username || 'Unknown',
           operationId,
-          discountAmount: discountAmount || null,
+          discountAmount: discountAmount > 0 ? discountAmount : null,
           sessionToken: sessionToken || '',
         });
 
