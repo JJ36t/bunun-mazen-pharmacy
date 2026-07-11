@@ -182,7 +182,7 @@ fn save_csv_file(filename: String, content: String) -> Result<String, String> {
 async fn create_backup(state: tauri::State<'_, PgPool>, data: String, password: String, session_token: Option<String>) -> Result<String, String> {
     if let Some(ref token) = session_token { if verify_session_token(state.inner(), token).await.is_err() {
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-    }
+    }}
     let dir = desktop_dir()?;
     let path = dir.join(format!("Pharmacy_Backup_{}.enc", chrono::Local::now().format("%Y%m%d_%H%M%S")));
     let encrypted_data = encrypt_data(&data, &password)?;
@@ -345,7 +345,7 @@ async fn toggle_user_status_db(state: tauri::State<'_, PgPool>, user_id: String,
 async fn delete_user_db(state: tauri::State<'_, PgPool>, user_id: String, deleted_by: String, session_token: Option<String>) -> Result<(), String> {
     if let Some(ref token) = session_token { if verify_session_token(state.inner(), token).await.is_err() {
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-    }
+    }}
     let uuid_id = uuid::Uuid::parse_str(&user_id).map_err(|e| e.to_string())?;
     // Soft delete - لا نحذف فعلياً
     sqlx::query("UPDATE users SET deleted_at = NOW(), deleted_by = $1, is_active = FALSE WHERE id = $2 AND username != 'admin'")
@@ -1580,7 +1580,7 @@ fn get_or_create_auto_backup_password() -> Result<String, String> {
 async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String, password: String, session_token: Option<String>) -> Result<serde_json::Value, String> {
     if let Some(ref token) = session_token { if verify_session_token(state.inner(), token).await.is_err() {
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-    }
+    }}
     let encrypted_data = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
     let plaintext = decrypt_data(&encrypted_data, &password)?;
     let backup: serde_json::Value = serde_json::from_str(&plaintext).map_err(|e| format!("فشل تحليل JSON: {}", e))?;
