@@ -50,7 +50,7 @@ export function RefundDashboard() {
       fetchRefunds();
       fetchMedicines();
     } catch (e: any) {
-      toast.error(e.toString());
+      toast.error(typeof e === 'string' ? e : (e?.message || e?.kind || 'فشل التراجع'));
     } finally {
       setReversing(null);
     }

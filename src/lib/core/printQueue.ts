@@ -113,7 +113,7 @@ class PrintQueueManager {
       
     } catch (e: any) {
       job.retryCount++;
-      job.error = e.toString();
+      job.error = typeof e === 'string' ? e : (e?.message || e?.kind || String(e));
       
       if (job.retryCount >= job.maxRetries) {
         job.status = 'failed';

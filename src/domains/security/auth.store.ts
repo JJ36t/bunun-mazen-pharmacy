@@ -45,7 +45,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const success = await invoke<boolean>('activate_license', { activationKey: key });
       if (success) { set({ isLicensed: true, activationError: null }); return true; }
       return false;
-    } catch (e: any) { set({ activationError: e.toString() }); return false; }
+    } catch (e: any) { set({ activationError: typeof e === 'string' ? e : (e?.message || e?.kind || 'فشل تفعيل الترخيص') }); return false; }
   },
 
   login: async (username: string, password: string) => {
@@ -60,7 +60,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error: null,
       });
       return true;
-    } catch (e: any) { set({ error: e.toString() }); return false; }
+    } catch (e: any) { set({ error: typeof e === 'string' ? e : (e?.message || e?.kind || 'فشل تسجيل الدخول') }); return false; }
   },
 
   startShift: async (openingAmount: number) => {

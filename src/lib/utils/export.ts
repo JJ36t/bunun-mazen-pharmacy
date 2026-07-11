@@ -50,7 +50,7 @@ export const exportToCSV = async (filename: string, headers: string[], rows: any
       content: htmlContent 
     });
     alert(`تم تصدير الملف بنجاح إلى سطح المكتب:\n${savedPath}`);
-  } catch (e) {
-    alert('فشل تصدير الملف: ' + e);
+  } catch (e: any) {
+    alert('فشل تصدير الملف: ' + (typeof e === 'string' ? e : (e?.message || e?.kind || 'خطأ')));
   }
 };

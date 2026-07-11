@@ -49,7 +49,7 @@ export function AccountingDashboard() {
         await resetDaily(role || 'Unknown');
         await fetchSummary();
         toast.success("تم الإغلاق اليومي بنجاح.");
-      } catch (e: any) { toast.error(e.toString()); }
+      } catch (e: any) { toast.error(typeof e === 'string' ? e : (e?.message || e?.kind || 'فشل الإغلاق اليومي')); }
     }
   };
 

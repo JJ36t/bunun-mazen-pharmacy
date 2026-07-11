@@ -1,5 +1,5 @@
 // Legacy HMAC — backward compatibility for old licenses
-use ring::{hmac, digest};
+use ring::hmac;
 use hex;
 use subtle::ConstantTimeEq;
 use obfstr::obfstr;

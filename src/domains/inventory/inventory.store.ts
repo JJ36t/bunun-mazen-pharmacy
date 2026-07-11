@@ -60,7 +60,7 @@ export const useInventoryStore = create<InventoryState>((set) => ({
       }));
     } catch (e) {
       console.error("Failed to add medicine:", e);
-      alert("فشل إضافة الدواء لقاعدة البيانات: " + e);
+      alert("فشل إضافة الدواء لقاعدة البيانات: " + (typeof e === "string" ? e : (e?.message || e?.kind || "خطأ")));
     }
   },
   
@@ -72,7 +72,7 @@ export const useInventoryStore = create<InventoryState>((set) => ({
       }));
     } catch (e) {
       console.error("Failed to update medicine:", e);
-      alert("فشل تحديث الدواء: " + e);
+      alert("فشل تحديث الدواء: " + (typeof e === "string" ? e : (e?.message || e?.kind || "خطأ")));
     }
   },
   

@@ -117,7 +117,7 @@ function PosDashboard() {
   const { cart, addToCart, removeFromCart, updateItemQuantity, calculateSubtotal, calculateTotal, clearCart, discountPercentage, setDiscountPercentage } = usePosStore();
   const { medicines, fetchMedicines } = useInventoryStore();
   const { fetchSummary } = useAccountingStore();
-  const { username } = useAuthStore();
+  const { username, sessionToken } = useAuthStore();
   const { pharmacyName } = useSettingsStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [invoiceData, setInvoiceData] = useState<{ items: any[], total: number, invoiceNumber: string, discountAmount?: number } | null>(null);
@@ -474,6 +474,7 @@ function PosDashboard() {
           userRole: username || 'Unknown',
           operationId,
           discountAmount: discountAmount || null,
+          sessionToken: sessionToken || '',
         });
 
         // إذا كان الدفع آجل، أضف دين للزبون (اسم الزبون إلزامي)
@@ -532,7 +533,7 @@ function PosDashboard() {
 
         toast.success("تم تسجيل البيع والطباعة بنجاح.");
     } catch (e: any) {
-        toast.error(e.toString() || "فشل تسجيل الفاتورة! تحقق من الصلاحيات.");
+        toast.error(typeof e === 'string' ? e : (e?.message || e?.kind || 'فشل تسجيل الفاتورة! تحقق من الصلاحيات.'));
     }
   };
 

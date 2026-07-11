@@ -10,7 +10,6 @@ const BCRYPT_COST: u32 = 12;
 const AES_KDF_ITERATIONS: u32 = 100_000;
 
 
-use sysinfo::{System, SystemExt, CpuExt};
 use std::fs;
 use std::path::PathBuf;
 use std::io::Write;
@@ -21,10 +20,7 @@ use sqlx::Row;
 use tauri::Manager;
 use rust_decimal::prelude::FromPrimitive;
 use std::collections::HashMap;
-use ring::{digest, hmac};
-use obfstr::obfstr;
-use subtle::ConstantTimeEq;
-use hex;
+use ring::digest;
 use bcrypt;
 use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, KeyInit, OsRng, rand_core::RngCore}};
 use base64::{engine::general_purpose, Engine as _};

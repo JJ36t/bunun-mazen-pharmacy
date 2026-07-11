@@ -48,7 +48,7 @@ export function exportToPdf(options: PdfOptions): void {
 <html dir="rtl" lang="ar">
 <head>
 <meta charset="UTF-8">
-<title>${title}</title>
+<title>${escapeHtml(title)}</title>
 <style>
   @page { size: A4 ${orientation}; margin: 15mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -74,10 +74,10 @@ export function exportToPdf(options: PdfOptions): void {
 </head>
 <body>
   <div class="header">
-    <div class="pharmacy-name">${pharmacyName}</div>
-    <div class="report-title">${title}</div>
-    ${subtitle ? `<div class="report-subtitle">${subtitle}</div>` : ''}
-    <div class="report-date">تاريخ التقرير: ${now}</div>
+    <div class="pharmacy-name">${escapeHtml(pharmacyName)}</div>
+    <div class="report-title">${escapeHtml(title)}</div>
+    ${subtitle ? `<div class="report-subtitle">${escapeHtml(subtitle)}</div>` : ''}
+    <div class="report-date">تاريخ التقرير: ${escapeHtml(now)}</div>
   </div>
   
   ${rows.length === 0 
@@ -102,15 +102,15 @@ export function exportToPdf(options: PdfOptions): void {
     <div class="summary">
       ${summary.map((s, i) => `
         <div class="summary-row ${i === summary.length - 1 ? 'total' : ''}">
-          <span>${s.label}</span>
-          <span>${s.value}</span>
+          <span>${escapeHtml(s.label)}</span>
+          <span>${escapeHtml(s.value)}</span>
         </div>
       `).join('')}
     </div>
   ` : ''}
   
   <div class="footer">
-    تم إنشاء هذا التقرير بواسطة نظام صيدلية بنين مازن - ${now}
+    تم إنشاء هذا التقرير بواسطة نظام صيدلية بنين مازن - ${escapeHtml(now)}
   </div>
   
   <script>
@@ -189,11 +189,11 @@ export function exportInvoiceToPdf(invoice: {
 </head>
 <body>
   <div class="header">
-    <div class="pharmacy">${pharmacyName}</div>
+    <div class="pharmacy">${escapeHtml(pharmacyName)}</div>
   </div>
   <div class="invoice-info">
     <div><span>رقم الفاتورة:</span><span>${invoiceNumber}</span></div>
-    <div><span>التاريخ:</span><span>${now}</span></div>
+    <div><span>التاريخ:</span><span>${escapeHtml(now)}</span></div>
     ${cashier ? `<div><span>الكاشير:</span><span>${cashier}</span></div>` : ''}
   </div>
   <table>
@@ -217,7 +217,7 @@ export function exportInvoiceToPdf(invoice: {
     </tbody>
   </table>
   <div class="total">الإجمالي: ${total.toFixed(2)} د.ع</div>
-  <div class="footer">شكراً لزيارتكم - ${pharmacyName}</div>
+  <div class="footer">شكراً لزيارتكم - ${escapeHtml(pharmacyName)}</div>
   <script>
     window.onload = function() { setTimeout(() => window.print(), 300); };
   </script>

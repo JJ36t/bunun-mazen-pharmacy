@@ -1,5 +1,5 @@
 // Keyring — manage multiple public keys with rotation support
-use super::{Manifest, ManifestKey};
+use super::Manifest;
 use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 use hex;
 
