@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 // ========================================
 // Bulk Barcode Entry — إدخال جماعي للباركودات الأصلية
 // ========================================
@@ -184,7 +185,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
     try {
       const result = await invoke<any>('generate_pairing_qr');
       setPairingQR(result.qrCode);
-    } catch (e: any) {
+    } catch (e: Medicine) {
       toast.error('فشل توليد QR: ' + e);
     } finally {
       setPhoneLoading(false);
@@ -212,7 +213,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
         });
       setMedicines(items);
       setFilteredMeds(items);
-    } catch (e: any) {
+    } catch (e: Medicine) {
       toast.error('فشل تحميل الأدوية: ' + e);
     } finally {
       setLoading(false);
@@ -241,7 +242,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
     let allMedicines = medicines;
     try {
       const freshMeds = await invoke<any[]>('get_medicines_db');
-      const freshItems = freshMeds.filter((m: any) => !m.isDeleted).map((m: any) => ({
+      const freshItems = freshMeds.filter((m: Medicine) => !m.isDeleted).map((m: Medicine) => ({
         id: m.id,
         nameAr: m.nameAr,
         currentBarcode: m.barcode || null,
@@ -251,7 +252,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
       }));
       // ادمج مع state الحالي للحفاظ على الحالات (saving/error)
       const existingState = new Map(medicines.map(m => [m.id, m]));
-      allMedicines = freshItems.map((m: any) => {
+      allMedicines = freshItems.map((m: Medicine) => {
         const prev = existingState.get(m.id);
         return prev ? { ...m, status: prev.status, newBarcode: prev.newBarcode } : m;
       });
@@ -331,7 +332,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
       setPendingBarcode(null);
       setShowNewMedForm(false);
       onSaved();
-    } catch (e: any) {
+    } catch (e: Medicine) {
       toast.error('فشل الإضافة: ' + e);
     } finally {
       setSaving(false);
@@ -367,7 +368,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
 
       // إعادة تحميل بعد فترة قصيرة لتحديث الحالة
       onSaved();
-    } catch (e: any) {
+    } catch (e: Medicine) {
       setMedicines(prev => prev.map(m =>
         m.id === medId ? { ...m, status: 'error' as const } : m
       ));

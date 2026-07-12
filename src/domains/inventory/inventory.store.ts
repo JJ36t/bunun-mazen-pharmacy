@@ -1,19 +1,9 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import type { Medicine } from '../../types';
+import { useAuthStore } from '../security/auth.store';
 
-export interface Medicine {
-  id: string;
-  nameAr: string;
-  nameEn: string;
-  scientificName?: string;  // اختياري — يُستخدم لفحص تفاعلات الأدوية (بالإنجليزية)
-  barcode: string;
-  price: number;          // سعر البيع
-  costPrice: number;      // سعر التكلفة
-  quantity: number;
-  batchNumber: string;
-  expiryDate: string;
-  isDeleted: boolean;
-}
+export type { Medicine };
 
 interface InventoryState {
   medicines: Medicine[];

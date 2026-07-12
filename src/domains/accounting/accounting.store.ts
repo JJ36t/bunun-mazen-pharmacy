@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import type { Expense } from '../../types';
+import { useAuthStore } from '../security/auth.store';
 
-export interface Expense { id: string; description: string; amount: number; date: string; category?: string; }
+export type { Expense };
 
 interface AccountingState {
   cashbox: number; totalSales: number; totalProfits: number; totalExpenses: number; totalDiscounts: number; expenses: Expense[];

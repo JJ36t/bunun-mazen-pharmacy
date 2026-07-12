@@ -1,12 +1,9 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import type { Supplier } from '../../types';
+import { useAuthStore } from '../security/auth.store';
 
-export interface Supplier {
-  id: string;
-  name: string;
-  phone?: string;
-  balance: number;
-}
+export type { Supplier };
 
 interface SuppliersState {
   suppliers: Supplier[];

@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 export const normalizeArabic = (str: string): string => {
   return str
     .replace(/[\u064B-\u065F\u0670]/g, '')
@@ -44,7 +45,7 @@ export const levenshtein = (a: string, b: string): number => {
   return matrix[b.length][a.length];
 };
 
-export const searchMedicines = (query: string, items: any[]) => {
+export const searchMedicines = (query: string, items: Medicine[]) => {
   if (!query.trim()) return [];
 
   const trimmedQuery = query.trim();
@@ -88,10 +89,10 @@ export const searchMedicines = (query: string, items: any[]) => {
 
 // ===== فهرسة مسبقة للأسماء (memoization) — تُستخدم عبر searchMedicinesIndexed =====
 // تُحسب مرة واحدة لكل قائمة أدوية، ثم تُعاد استخدامها
-interface IndexedItem { item: any; normalizedNameAr: string; normalizedNameEn: string; }
+interface IndexedItem { item: Medicine; normalizedNameAr: string; normalizedNameEn: string; }
 const indexCache = new WeakMap<any[], IndexedItem[]>();
 
-const getIndexedItems = (items: any[]): IndexedItem[] => {
+const getIndexedItems = (items: Medicine[]): IndexedItem[] => {
   let indexed = indexCache.get(items);
   if (!indexed) {
     indexed = items.map(item => ({
@@ -105,7 +106,7 @@ const getIndexedItems = (items: any[]): IndexedItem[] => {
 };
 
 // نسخة مفهرسة من searchMedicines — أسرع 5-10x للقوائم الكبيرة
-export const searchMedicinesIndexed = (query: string, items: any[]) => {
+export const searchMedicinesIndexed = (query: string, items: Medicine[]) => {
   if (!query.trim()) return [];
   const trimmedQuery = query.trim();
   const isBarcode = /^\d+$/.test(trimmedQuery);
@@ -113,7 +114,7 @@ export const searchMedicinesIndexed = (query: string, items: any[]) => {
   const transliteratedQuery = transliterate(query);
   const indexed = getIndexedItems(items);
 
-  const results: any[] = [];
+  const results: Medicine[] = [];
   for (const { item, normalizedNameAr, normalizedNameEn } of indexed) {
     if (isBarcode && item.barcode) {
       const itemBarcode = String(item.barcode).trim();

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import type { LoginResult } from '../../types';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -50,7 +51,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (username: string, password: string) => {
     try {
-      const userData = await invoke<any>('login', { username, password });
+      const userData = await invoke<LoginResult>('login', { username, password });
       set({
         isAuthenticated: true,
         role: userData.role,

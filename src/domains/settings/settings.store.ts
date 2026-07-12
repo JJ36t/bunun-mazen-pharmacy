@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import { useAuthStore } from '../security/auth.store';
 
 interface SettingsState {
   pharmacyName: string;

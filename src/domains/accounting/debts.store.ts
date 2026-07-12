@@ -1,15 +1,8 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import type { Debt } from '../../types';
 
-export interface Debt {
-  id: string;
-  customerName: string;
-  amount: number;
-  isPaid: boolean;
-  note?: string;
-  date: string;
-  paidDate?: string; 
-}
+export type { Debt };
 
 interface DebtsState {
   debts: Debt[];

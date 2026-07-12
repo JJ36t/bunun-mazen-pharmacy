@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import type { Medicine, CartItem } from './types';
 import { useAuthStore } from './domains/security/auth.store';
 import { Login } from './domains/security/Login';
 import { usePosStore } from './domains/pos/pos.store';
@@ -64,7 +65,7 @@ async function ensurePluginsInitialized() {
 
 type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'quick_purchase' | 'patients' | 'reporting' | 'invoices' | 'audit' | 'backup' | 'settings' | 'users' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'label_printing' | 'enterprise';
 
-const navItems: { key: TabKey; label: string; icon: any; group: string; permission?: Permission }[] = [
+const navItems: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }>; group: string; permission?: Permission }[] = [
   // 'dashboard' تم إزالته من القائمة — الشاشة الرئيسية تظهر افتراضياً
   { key: 'pos', label: 'نقاط البيع', icon: ShoppingCart, group: 'العمليات', permission: 'pos.use' as Permission },
   { key: 'refund', label: 'مرتجع المبيعات', icon: RotateCcw, group: 'العمليات', permission: 'pos.refund' as Permission },
@@ -120,7 +121,7 @@ function PosDashboard() {
   const { username, sessionToken } = useAuthStore();
   const { pharmacyName } = useSettingsStore();
   const [searchTerm, setSearchTerm] = useState('');
-  const [invoiceData, setInvoiceData] = useState<{ items: any[], total: number, invoiceNumber: string, discountAmount?: number } | null>(null);
+  const [invoiceData, setInvoiceData] = useState<{ items: CartItem[], total: number, invoiceNumber: string, discountAmount?: number } | null>(null);
   const [suspendedInvs, setSuspendedInvs] = useState<any[]>([]);
   const [showSuspended, setShowSuspended] = useState(false);
   const [keypadTarget, setKeypadTarget] = useState<string | null>(null);
@@ -133,7 +134,7 @@ function PosDashboard() {
       try {
         const draft = await invoke<any | null>('load_draft_session_db', { sessionKey: 'pos_cart' });
         if (draft && draft.items && Array.isArray(draft.items) && draft.items.length > 0 && cart.length === 0) {
-          draft.items.forEach((item: any) => addToCart(item));
+          draft.items.forEach((item: CartItem) => addToCart(item));
           if (draft.discount) setDiscountPercentage(draft.discount);
           toast.info('تم استرجاع السلة المحفوظة');
         }
@@ -212,12 +213,12 @@ function PosDashboard() {
   // بعد إضافة دواء من SmartBarcodeLookup
   const handleSmartLookupAdded = async (medicineId: string) => {
     await fetchMedicines();
-    const newMed = (await invoke<any[]>('get_medicines_db')).find((m: any) => m.id === medicineId);
+    const newMed = (await invoke<Medicine[]>('get_medicines_db')).find((m) => m.id === medicineId);
     if (newMed) handleAddToCart(newMed);
     setSmartLookupBarcode(null);
   };
   
-  const handleAddToCart = async (med: any) => {
+  const handleAddToCart = async (med: Medicine) => {
     if (med.quantity <= 0) {
       toast.error("نفد هذا الدواء.");
       return;
@@ -244,7 +245,7 @@ function PosDashboard() {
     const newCartItems = [...cart, { id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price }];
     const activeIngredients = newCartItems
       .map(item => {
-        const m = medicines.find((med: any) => med.id === item.id);
+        const m = medicines.find((med) => med.id === item.id);
         return m?.scientificName || m?.nameAr || '';
       })
       .filter(name => name && name.trim().length > 0);
@@ -303,13 +304,13 @@ function PosDashboard() {
 
           if (status === 'found' && result.medicineId) {
             // ابحث عن الدواء في الذاكرة
-            let med = medicinesRef.current.find((m: any) => m.id === result.medicineId);
+            let med = medicinesRef.current.find((m) => m.id === result.medicineId);
             if (!med) {
               // أعد تحميل الأدوية ثم ابحث مرة أخرى
               try {
                 await fetchMedicinesRef.current();
                 const allMeds = await invoke<any[]>('get_medicines_db');
-                med = allMeds.find((m: any) => m.id === result.medicineId);
+                med = allMeds.find((m) => m.id === result.medicineId);
               } catch (e) { console.error('Failed to reload medicines:', e); }
             }
             if (med) {
@@ -345,13 +346,13 @@ function PosDashboard() {
     };
   }, []);
 
-  const handleIncreaseCartQty = (item: any) => {
+  const handleIncreaseCartQty = (item: CartItem) => {
     const medData = medicines.find((m:any) => m.id === item.id);
     if (medData && item.quantity < medData.quantity) addToCart({ ...item, quantity: 1 });
     else toast.error("الكمية المتوفرة لا تكفي.");
   };
 
-  const handleDecreaseCartQty = (item: any) => {
+  const handleDecreaseCartQty = (item: CartItem) => {
     if (item.quantity > 1) {
       updateItemQuantity(item.id, item.quantity - 1);
     } else {
@@ -419,8 +420,8 @@ function PosDashboard() {
       } else {
         toast.error('كلمة مرور المدير غير صحيحة');
       }
-    } catch (e: any) {
-      toast.error('فشل: ' + e);
+    } catch (e: unknown) {
+      toast.error('فشل: ' + (typeof e === 'string' ? e : (e as Error)?.message || 'خطأ'));
     }
   };
 
@@ -446,7 +447,7 @@ function PosDashboard() {
       // اجمع المواد الفعالة من السلة
       const activeIngredients = currentItems
         .map(item => {
-          const med = medicines.find((m: any) => m.id === item.id);
+          const med = medicines.find((m: Medicine) => m.id === item.id);
           return med?.scientificName || med?.nameAr || '';
         })
         .filter(name => name && name.trim().length > 0);
@@ -532,7 +533,7 @@ function PosDashboard() {
         setDiscountAmount(0); // صفر الخصم للفاتورة الجديدة
 
         toast.success("تم تسجيل البيع والطباعة بنجاح.");
-    } catch (e: any) {
+    } catch (e: unknown) {
         toast.error(typeof e === 'string' ? e : (e?.message || e?.kind || 'فشل تسجيل الفاتورة! تحقق من الصلاحيات.'));
     }
   };
@@ -557,7 +558,7 @@ function PosDashboard() {
         total: finalTotal.toFixed(2)
       });
       toast.success("تم طباعة الوصل بنجاح (بدون تسجيل بيع).");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error("فشلت الطباعة: " + e);
     }
   };
@@ -570,9 +571,9 @@ function PosDashboard() {
   };
   
   const fetchSuspended = async () => { try { setSuspendedInvs(await invoke<any[]>('get_suspended_invoices_db')); } catch (e) { console.error(e); } };
-  const handleRecall = (inv: any) => {
-    const items = JSON.parse(inv.itemsJson);
-    items.forEach((it: any) => addToCart(it));
+  const handleRecall = (inv: { id: string; itemsJson: string; date: string }) => {
+    const items: CartItem[] = JSON.parse(inv.itemsJson);
+    items.forEach((it) => addToCart(it));
     invoke('delete_suspended_invoice_db', { invId: inv.id });
     setShowSuspended(false);
   };
@@ -841,7 +842,7 @@ function PosDashboard() {
       {showInteractionCheck && (
         <DrugInteractionChecker
           drugNames={cart.map(item => {
-            const med = medicines.find((m: any) => m.id === item.id);
+            const med = medicines.find((m: Medicine) => m.id === item.id);
             return med?.scientificName || med?.nameAr || '';
           }).filter(name => name && name.trim().length > 0)}
           onOverride={() => {
@@ -1242,12 +1243,31 @@ function App() {
 // ========================================
 // Payment Modal - نافذة الدفع (دينار عراقي فقط)
 // ========================================
-function PaymentModal({ 
+interface PaymentModalProps {
+  total: number;
+  paymentMethods: { value: string; label: string }[];
+  selectedMethod: string;
+  setSelectedMethod: (m: string) => void;
+  paidAmount: string;
+  setPaidAmount: (v: string) => void;
+  mixedCash: string;
+  setMixedCash: (v: string) => void;
+  mixedCard: string;
+  setMixedCard: (v: string) => void;
+  chequeNumber: string;
+  setChequeNumber: (v: string) => void;
+  customerName: string;
+  setCustomerName: (v: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+function PaymentModal({
   total, paymentMethods, selectedMethod, setSelectedMethod,
   paidAmount, setPaidAmount,
   mixedCash, setMixedCash, mixedCard, setMixedCard,
-  chequeNumber, setChequeNumber, customerName, setCustomerName, onConfirm, onClose 
-}: any) {
+  chequeNumber, setChequeNumber, customerName, setCustomerName, onConfirm, onClose
+}: PaymentModalProps) {
   const totalDisplay = total;
   const totalLabel = 'د.ع';
 
@@ -1259,12 +1279,12 @@ function PaymentModal({
   const mixedTotal = mixedCashNum + mixedCardNum;
   const mixedComplete = Math.abs(mixedTotal - totalDisplay) < 0.01;
 
-  const methodLabels: any = {
-    cash: 'نقدي', card: 'بطاقة (مدى/Visa)', cheque: 'شيك', 
+  const methodLabels: Record<string, string> = {
+    cash: 'نقدي', card: 'بطاقة (مدى/Visa)', cheque: 'شيك',
     transfer: 'تحويل بنكي', credit: 'آجل', mixed: 'دفع مقسّم'
   };
 
-  const methodIcons: any = {
+  const methodIcons: Record<string, string> = {
     cash: '💵', card: '💳', cheque: '📝', transfer: '🏦', credit: '⏰', mixed: '🔀'
   };
 
@@ -1284,7 +1304,7 @@ function PaymentModal({
 
         {/* اختيار طريقة الدفع */}
         <div className="grid grid-cols-3 gap-2 mb-4">
-          {paymentMethods.map((m: any) => (
+          {paymentMethods.map((m) => (
             <button key={m.id} onClick={() => setSelectedMethod(m.name)} className={`p-3 rounded-xl text-xs font-semibold transition-all border-2 ${selectedMethod === m.name ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'}`}>
               <span className="text-lg block mb-1">{methodIcons[m.name] || '💰'}</span>
               {methodLabels[m.name] || m.displayName}
