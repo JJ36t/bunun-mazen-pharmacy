@@ -101,7 +101,7 @@ export function DailyChecksModal({ onClose }: DailyChecksModalProps) {
                 <h4 className="text-sm font-bold text-rose-700">منتهي الصلاحية — أزل من الرف فوراً</h4>
               </div>
               <div className="space-y-1 max-h-32 overflow-auto bg-rose-50/50 rounded-xl p-2 border border-rose-100">
-                {expired.map((m: any) => (
+                {expired.map((m: unknown) => (
                   <div key={m.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-rose-100">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 text-rose-400" />
@@ -122,7 +122,7 @@ export function DailyChecksModal({ onClose }: DailyChecksModalProps) {
                 <h4 className="text-sm font-bold text-amber-700">قارب الانتهاء</h4>
               </div>
               <div className="space-y-1 max-h-32 overflow-auto bg-amber-50/50 rounded-xl p-2 border border-amber-100">
-                {expiringSoon.map((m: any) => (
+                {expiringSoon.map((m: unknown) => (
                   <div key={m.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-amber-100">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 text-amber-400" />
@@ -143,7 +143,7 @@ export function DailyChecksModal({ onClose }: DailyChecksModalProps) {
                 <h4 className="text-sm font-bold text-yellow-700">مخزون منخفض — يحتاج تزويد</h4>
               </div>
               <div className="space-y-1 max-h-32 overflow-auto bg-yellow-50/50 rounded-xl p-2 border border-yellow-100">
-                {lowStock.map((m: any) => (
+                {lowStock.map((m: unknown) => (
                   <div key={m.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-yellow-100">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 text-yellow-400" />

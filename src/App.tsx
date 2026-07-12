@@ -513,7 +513,7 @@ function PosDashboard() {
 
         toast.success("تم تسجيل البيع والطباعة بنجاح.");
     } catch (e: unknown) {
-        toast.error(typeof e === 'string' ? e : (e?.message || e?.kind || 'فشل تسجيل الفاتورة! تحقق من الصلاحيات.'));
+        toast.error(typeof e === 'string' ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || 'فشل تسجيل الفاتورة! تحقق من الصلاحيات.'));
     }
   };
 

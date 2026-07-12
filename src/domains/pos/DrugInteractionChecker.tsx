@@ -34,7 +34,7 @@ export function DrugInteractionChecker({ drugNames, invoiceId, onOverride, onClo
         drugNamesJson: JSON.stringify(drugNames),
       });
       setInteractions(results);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Interaction check failed:', e);
     } finally {
       setLoading(false);
@@ -62,7 +62,7 @@ export function DrugInteractionChecker({ drugNames, invoiceId, onOverride, onClo
       toast.success('تم تسجيل التجاوز. يمكنك متابعة البيع.');
       onOverride();
       onClose();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error('فشل تسجيل التجاوز: ' + e);
     } finally {
       setSubmitting(false);

@@ -16,7 +16,7 @@ interface PdfOptions {
   subtitle?: string;
   pharmacyName?: string;
   columns: PdfColumn[];
-  rows: any[];
+  rows: unknown[];
   summary?: { label: string; value: string }[];
   orientation?: 'portrait' | 'landscape';
 }
@@ -129,7 +129,7 @@ export function exportToPdf(options: PdfOptions): void {
   printWindow.document.close();
 }
 
-function formatValue(value: any): string {
+function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '-';
   if (typeof value === 'number') return value.toLocaleString('en-US');
   if (typeof value === 'string' && /^\d+(\.\d+)?$/.test(value)) {

@@ -15,7 +15,7 @@ function CloudSyncDashboard() {
 
   useEffect(() => {
     // قراءة آخر مزامنة من الإعدادات
-    invoke<string>('get_settings_db').then((settings: any) => {
+    invoke<string>('get_settings_db').then((settings: unknown) => {
       if (settings.cloud_last_sync) {
         setLastSync(settings.cloud_last_sync);
         setStatus('synced');

@@ -24,14 +24,14 @@ export const inventoryService = {
     });
   },
 
-  async add(data: any, userRole: string) {
+  async add(data: unknown, userRole: string) {
     const result = await invoke<string>('add_medicine_db', { ...data, userRole });
     CacheInvalidator.invalidateMedicines();
     eventBus.emit(EventNames.MEDICINE_ADDED, { id: result, ...data });
     return result;
   },
 
-  async update(id: string, data: any) {
+  async update(id: string, data: unknown) {
     await invoke('update_medicine_db', { medicineId: id, ...data });
     CacheInvalidator.invalidateMedicines();
     eventBus.emit(EventNames.MEDICINE_UPDATED, { id, ...data });
@@ -91,7 +91,7 @@ export const posService = {
         eventBus.emit(EventNames.DASHBOARD_REFRESH);
         return result;
       } catch (e) {
-        await crashRecovery.failOperation(operationId, String(e));
+        await crashRecovery.failOperation(operationId, (typeof e === "string" ? e : (e as Error)?.message || String(e)));
         throw e;
       }
     });
@@ -117,7 +117,7 @@ export const posService = {
       eventBus.emit(EventNames.INVOICE_REFUNDED, { items, totalAmount, userRole });
       eventBus.emit(EventNames.DASHBOARD_REFRESH);
     } catch (e) {
-      await crashRecovery.failOperation(operationId, String(e));
+      await crashRecovery.failOperation(operationId, (typeof e === "string" ? e : (e as Error)?.message || String(e)));
       throw e;
     }
   },
@@ -240,7 +240,7 @@ export const suppliersService = {
       eventBus.emit(EventNames.PURCHASE_RECORDED, { supplierId, medicineId, quantity });
       eventBus.emit(EventNames.DASHBOARD_REFRESH);
     } catch (e) {
-      await crashRecovery.failOperation(operationId, String(e));
+      await crashRecovery.failOperation(operationId, (typeof e === "string" ? e : (e as Error)?.message || String(e)));
       throw e;
     }
   },

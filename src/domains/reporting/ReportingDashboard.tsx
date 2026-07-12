@@ -164,7 +164,7 @@ export function ReportingDashboard() {
                     </div>
                   </td></tr>
                 ) : invoiceDetails.map(inv => 
-                  inv.items.map((it: any, i: number) => (
+                  inv.items.map((it: unknown, i: number) => (
                     <tr key={`${inv.id}-${i}`} className="table-row">
                       <td className="p-4 text-sm font-semibold text-slate-700">{it.name}</td>
                       <td className="p-4 text-sm text-slate-600 text-center tabular">{it.qty}</td>
@@ -260,7 +260,7 @@ export function ReportingDashboard() {
                     </div>
                   </td></tr>
                 ) : invoiceDetails.map(inv => 
-                  inv.items.map((it: any, i: number) => (
+                  inv.items.map((it: unknown, i: number) => (
                     <tr key={`${inv.id}-${i}`} className="table-row">
                       <td className="p-4 text-sm font-semibold text-slate-700">{it.name}</td>
                       <td className="p-4 text-sm text-slate-600 text-center tabular">{it.qty}</td>

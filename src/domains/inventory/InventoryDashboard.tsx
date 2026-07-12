@@ -44,7 +44,7 @@ export function InventoryDashboard() {
     // بادئة 200 = مخصصة للاستخدام الداخلي وفق GS1
     const existingMax = medicines
       .filter((m: Medicine) => !m.isDeleted && m.barcode && String(m.barcode).startsWith('200') && String(m.barcode).length === 13)
-      .reduce((max: number, m: any) => {
+      .reduce((max: number, m: unknown) => {
         const seq = parseInt(String(m.barcode).substring(3, 12), 10);
         return isNaN(seq) ? max : Math.max(max, seq);
       }, 0);
@@ -253,7 +253,7 @@ export function InventoryDashboard() {
                   </div>
                 </td>
               </tr>
-            ) : paginatedItems.map((med: any) => {
+            ) : paginatedItems.map((med: unknown) => {
               const isLowStock = med.quantity < 50;
               const isExpiringSoon = med.expiryDate && new Date(med.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
               const isExpired = med.expiryDate && new Date(med.expiryDate) < new Date();

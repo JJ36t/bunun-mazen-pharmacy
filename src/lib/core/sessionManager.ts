@@ -16,7 +16,7 @@ interface SessionInfo {
 
 class SessionManager {
   private currentSession: SessionInfo | null = null;
-  private activityTimer: any = null;
+  private activityTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly ACTIVITY_UPDATE_INTERVAL = 60 * 1000; // دقيقة
   private readonly SESSION_TIMEOUT = 60 * 60 * 1000; // ساعة
   // تخزين مراجع المستمعين لإزالتها لاحقاً (إصلاح memory leak)

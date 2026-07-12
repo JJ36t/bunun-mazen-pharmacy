@@ -42,7 +42,7 @@ export function CashDrawerDashboard() {
   };
 
   const systemAmount = events.length > 0 ? events[events.length - 1].balanceAfter : 0;
-  const eventIcons: any = { sale: ArrowUpCircle, refund: ArrowDownCircle, expense: ArrowDownCircle, cash_in: ArrowUpCircle, cash_out: ArrowDownCircle };
+  const eventIcons: Record<string, typeof ArrowUpCircle> = { sale: ArrowUpCircle, refund: ArrowDownCircle, expense: ArrowDownCircle, cash_in: ArrowUpCircle, cash_out: ArrowDownCircle };
 
   return (
     <div className="p-8 overflow-auto h-full bg-slate-50 animate-fade-in">

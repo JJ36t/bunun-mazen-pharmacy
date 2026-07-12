@@ -14,7 +14,7 @@ export const importService = {
 
 // ===== 2. Label Printing Service =====
 export const labelPrintService = {
-  async createJob(labelType: string, medicineId: string, barcode: string, count: number, size: string, data: any, printer: string) {
+  async createJob(labelType: string, medicineId: string, barcode: string, count: number, size: string, data: unknown, printer: string) {
     return invoke<string>('create_label_print_job_db', {
       labelType, medicineId, barcode, labelCount: count, labelSize: size,
       printData: JSON.stringify(data), printerName: printer,
@@ -36,7 +36,7 @@ export const refundService = {
     return invoke<any[]>('get_refund_reasons_db');
   },
 
-  async recordWithReason(totalAmount: number, items: any[], userRole: string, reasonCode: string, notes: string, approvedBy?: string) {
+  async recordWithReason(totalAmount: number, items: unknown[], userRole: string, reasonCode: string, notes: string, approvedBy?: string) {
     return invoke('record_refund_with_reason_db', {
       totalAmount, itemsJson: JSON.stringify(items), userRole,
       refundReasonCode: reasonCode, refundNotes: notes, approvedBy: approvedBy || null,

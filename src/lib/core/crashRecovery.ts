@@ -10,7 +10,7 @@ class CrashRecoveryManager {
   private isRecovering = false;
 
   /** تسجيل بداية عملية */
-  async startOperation(operationType: string, payload: any, userRole: string): Promise<string> {
+  async startOperation(operationType: string, payload: unknown, userRole: string): Promise<string> {
     const operationId = crypto.randomUUID();
     
     try {
@@ -52,14 +52,14 @@ class CrashRecoveryManager {
   async recoverPendingOperations(): Promise<{
     recovered: number;
     failed: number;
-    details: any[];
+    details: unknown[];
   }> {
     if (this.isRecovering) {
       return { recovered: 0, failed: 0, details: [] };
     }
     
     this.isRecovering = true;
-    const details: any[] = [];
+    const details: unknown[] = [];
     let recovered = 0;
     let failed = 0;
     
@@ -74,7 +74,7 @@ class CrashRecoveryManager {
           details.push({ id: entry.id, status: 'recovered', type: entry.operation_type });
         } catch (e) {
           failed++;
-          details.push({ id: entry.id, status: 'failed', error: String(e), type: entry.operation_type });
+          details.push({ id: entry.id, status: 'failed', error: (typeof e === "string" ? e : (e as Error)?.message || String(e)), type: entry.operation_type });
         }
       }
       

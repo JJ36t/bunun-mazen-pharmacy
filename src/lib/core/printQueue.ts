@@ -111,9 +111,9 @@ class PrintQueueManager {
       job.status = 'completed';
       console.log(`[PrintQueue] Job ${job.id} completed`);
       
-    } catch (e: any) {
+    } catch (e: unknown) {
       job.retryCount++;
-      job.error = typeof e === 'string' ? e : (e?.message || e?.kind || String(e));
+      job.error = typeof e === 'string' ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || (typeof e === "string" ? e : (e as Error)?.message || String(e)));
       
       if (job.retryCount >= job.maxRetries) {
         job.status = 'failed';

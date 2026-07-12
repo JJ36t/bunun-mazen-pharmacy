@@ -31,7 +31,7 @@ export function Receipt({ invoiceNumber, items, total, discountAmount, onClose }
       });
       toast.success("تم إرسال الفاتورة للطابعة بنجاح.");
       onClose();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error("فشل الاتصال بالطابعة: " + e);
     }
   };

@@ -164,7 +164,7 @@ function AlertThresholdSettings() {
       };
       await invoke('save_settings_db', { settingsJson: JSON.stringify(settingsObj) });
       toast.success('تم حفظ حدود التنبيهات');
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error('فشل الحفظ: ' + e);
     } finally {
       setSaving(false);

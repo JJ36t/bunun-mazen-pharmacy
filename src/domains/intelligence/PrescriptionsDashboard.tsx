@@ -121,7 +121,7 @@ function PrescriptionForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
       setShowNewPatient(false);
       setNewPatientName('');
       setNewPatientPhone('');
-    } catch (e: any) { toast.error('فشل إضافة المريض: ' + e); }
+    } catch (e: unknown) { toast.error('فشل إضافة المريض: ' + e); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -151,7 +151,7 @@ function PrescriptionForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
       );
       toast.success('تم تسجيل الوصفة بنجاح');
       onSaved();
-    } catch (e: any) { toast.error('فشل التسجيل: ' + e); }
+    } catch (e: unknown) { toast.error('فشل التسجيل: ' + e); }
     setSaving(false);
   };
 

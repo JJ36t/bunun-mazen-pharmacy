@@ -28,7 +28,7 @@ export function PrinterSetupSection() {
       ]);
       setAvailablePrinters(printers || []);
       setSettings(saved || {});
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error('فشل تحميل إعدادات الطابعة: ' + e);
     } finally {
       setLoading(false);
@@ -45,7 +45,7 @@ export function PrinterSetupSection() {
         receiptSize: settings.receiptSize || null,
       });
       toast.success('تم حفظ إعدادات الطابعة');
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error('فشل الحفظ: ' + e);
     } finally {
       setSaving(false);
@@ -69,7 +69,7 @@ export function PrinterSetupSection() {
         total: '0.00',
       });
       toast.success(`تم إرسال صفحة اختبار إلى: ${printerName}`);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(`فشل الاختبار: ${e}`);
     } finally {
       setTesting(null);
@@ -174,7 +174,7 @@ export function PrinterSetupSection() {
 }
 
 // صف طابعة واحد
-function PrinterRow({ label, icon: Icon, iconColor, iconBg, value, onChange, printers, onTest, testing }: any) {
+function PrinterRow({ label, icon: Icon, iconColor, iconBg, value, onChange, printers, onTest, testing }: unknown) {
   // type any is acceptable for this simple internal component
   return (
     <div className="flex items-center gap-3">

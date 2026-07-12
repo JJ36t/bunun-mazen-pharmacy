@@ -47,7 +47,7 @@ export function AuditDashboard() {
   };
 
   const actionTypes = ['all', 'SALE_INVOICE', 'SALES_REFUND', 'DELETE_MEDICINE', 'ADD_EXPENSE', 'DAILY_CLOSING', 'PURCHASE_INVOICE', 'BULK_PRICE_UPDATE', 'QUARANTINE_STOCK'];
-  const actionLabels: any = {
+  const actionLabels: Record<string, string> = {
     all: 'الكل', SALE_INVOICE: 'بيع', SALES_REFUND: 'مرتجع', DELETE_MEDICINE: 'حذف دواء',
     ADD_EXPENSE: 'مصروف', DAILY_CLOSING: 'إغلاق يومي', PURCHASE_INVOICE: 'شراء',
     BULK_PRICE_UPDATE: 'تحديث أسعار', QUARANTINE_STOCK: 'عزل مخزون',

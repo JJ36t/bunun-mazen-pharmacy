@@ -64,7 +64,7 @@ export function InvoicesDashboard() {
     }
   };
 
-  const handlePrint = async (invoice: any) => {
+  const handlePrint = async (invoice: unknown) => {
     try {
       const printers = await invoke<string[]>('get_available_printers');
       if (printers.length === 0) { toast.error('لا توجد طابعة'); return; }
@@ -72,7 +72,7 @@ export function InvoicesDashboard() {
         printerName: printers[0],
         pharmacyName,
         invoiceNum: `#${invoice.dailyReceiptNumber}`,
-        itemsJson: JSON.stringify(invoice.items.map((it: any) => ({ nameAr: it.name, quantity: it.qty, price: it.price }))),
+        itemsJson: JSON.stringify(invoice.items.map((it: unknown) => ({ nameAr: it.name, quantity: it.qty, price: it.price }))),
         total: invoice.totalAmount.toFixed(2),
       });
       await invoke('mark_invoice_printed_db', { invoiceId: invoice.id, printedBy: username || 'Unknown' });
@@ -96,7 +96,7 @@ export function InvoicesDashboard() {
       ],
       rows: filteredInvoices.map(inv => ({
         dailyReceiptNumber: `#${inv.dailyReceiptNumber}`,
-        items_text: inv.items.map((it: any) => `${it.name} (${it.qty})`).join('، '),
+        items_text: inv.items.map((it: unknown) => `${it.name} (${it.qty})`).join('، '),
         totalAmount: `${inv.totalAmount.toFixed(0)} د.ع`,
         discountAmount: inv.discountAmount && inv.discountAmount > 0 ? `${inv.discountAmount.toFixed(0)} د.ع` : '-',
         userRole: inv.userRole,
@@ -115,7 +115,7 @@ export function InvoicesDashboard() {
     const matchesSearch = !search || 
       inv.dailyReceiptNumber?.toString().includes(search) || 
       inv.userRole?.includes(search) ||
-      inv.items?.some((it: any) => it.name?.includes(search));
+      inv.items?.some((it: unknown) => it.name?.includes(search));
     return matchesSearch;
   });
 
@@ -208,7 +208,7 @@ export function InvoicesDashboard() {
                   </td>
                   <td className="p-3">
                     <div className="space-y-0.5">
-                      {inv.items.map((it: any, i: number) => (
+                      {inv.items.map((it: unknown, i: number) => (
                         <div key={i} className="text-xs text-slate-600">
                           {it.name} <span className="text-slate-400">×{it.qty}</span> <span className="text-slate-500 tabular">{it.price.toFixed(0)}</span>
                         </div>

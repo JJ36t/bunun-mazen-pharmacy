@@ -159,7 +159,7 @@ export function LabelPrintingDashboard() {
             <span className="text-xs text-slate-500 whitespace-nowrap">{selectedMedicines.length} محدد</span>
           </div>
           <div className="max-h-[500px] overflow-auto">
-            {filteredMedicines.map((med: any) => (
+            {filteredMedicines.map((med: unknown) => (
               <div key={med.id} onClick={() => handleToggleMedicine(med.id)} className={`flex items-center gap-3 p-3 border-b border-slate-100 cursor-pointer transition-colors ${selectedMedicines.includes(med.id) ? 'bg-brand-50' : 'hover:bg-slate-50'}`}>
                 <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${selectedMedicines.includes(med.id) ? 'border-brand-600 bg-brand-600' : 'border-slate-300'}`}>
                   {selectedMedicines.includes(med.id) && <CheckCircle className="w-3.5 h-3.5 text-white" />}

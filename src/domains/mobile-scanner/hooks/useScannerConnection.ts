@@ -8,8 +8,8 @@ export function useScannerConnection(wsUrl: string | null) {
     if (!wsUrl) return;
 
     let ws: WebSocket | null = null;
-    let heartbeat: any = null;
-    let reconnectTimer: any = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       ws = new WebSocket(wsUrl);

@@ -64,7 +64,7 @@ function AIDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {insights.map((insight, i) => {
           const Icon = insight.icon;
-          const colorMap: any = {
+          const colorMap: Record<string, string> = {
             emerald: 'bg-emerald-50 text-emerald-600',
             amber: 'bg-amber-50 text-amber-600',
             brand: 'bg-brand-50 text-brand-600',
@@ -100,7 +100,7 @@ export const aiInsightsPlugin: PharmacyPlugin = {
     console.log('[Plugin:AI] Loaded');
   },
   
-  async onInvoiceCreated(invoice: any) {
+  async onInvoiceCreated(invoice: unknown) {
     // في المستقبل: تعليم النموذج بالبيانات الجديدة
     console.log('[Plugin:AI] Learning from invoice:', invoice);
   },

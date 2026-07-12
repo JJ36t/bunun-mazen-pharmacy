@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 // دالة تهريب HTML لمنع XSS و CSV injection
-const escapeCell = (v: any): string => {
+const escapeCell = (v: unknown): string => {
   if (v === null || v === undefined) return '';
   let s = String(v);
   // منع CSV injection: إذا الخلية تبدأ بـ = + - @ أضف '
@@ -50,7 +50,7 @@ export const exportToCSV = async (filename: string, headers: string[], rows: (st
       content: htmlContent 
     });
     alert(`تم تصدير الملف بنجاح إلى سطح المكتب:\n${savedPath}`);
-  } catch (e: any) {
-    alert('فشل تصدير الملف: ' + (typeof e === 'string' ? e : (e?.message || e?.kind || 'خطأ')));
+  } catch (e: unknown) {
+    alert('فشل تصدير الملف: ' + (typeof e === 'string' ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || 'خطأ')));
   }
 };

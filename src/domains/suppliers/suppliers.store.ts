@@ -24,7 +24,7 @@ export const useSuppliersStore = create<SuppliersState>((set) => ({
       await invoke('add_supplier_db', { name, phone });
       const { fetchSuppliers } = useSuppliersStore.getState();
       await fetchSuppliers();
-    } catch (e) { alert("فشل إضافة المورد: " + (typeof e === "string" ? e : (e?.message || e?.kind || "خطأ"))); }
+    } catch (e) { alert("فشل إضافة المورد: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ"))); }
   },
   recordPurchase: async (supplierId, medicineId, quantity, costPrice, sellingPrice, wholesalePrice, userRole) => {
     try {
@@ -40,9 +40,9 @@ export const useSuppliersStore = create<SuppliersState>((set) => ({
       });
       const { fetchSuppliers } = useSuppliersStore.getState();
       await fetchSuppliers();
-    } catch (e: any) { 
+    } catch (e: unknown) { 
       console.error(e);
-      alert("فشل تسجيل الشراء: " + (typeof e === "string" ? e : (e?.message || e?.kind || "خطأ"))); 
+      alert("فشل تسجيل الشراء: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ"))); 
     }
   },
   paySupplier: async (supplierId, amount, userRole) => {
@@ -50,6 +50,6 @@ export const useSuppliersStore = create<SuppliersState>((set) => ({
       await invoke('pay_supplier_db', { supplierId, amount, userRole });
       const { fetchSuppliers } = useSuppliersStore.getState();
       await fetchSuppliers();
-    } catch (e) { alert("فشل سداد المورد: " + (typeof e === "string" ? e : (e?.message || e?.kind || "خطأ"))); }
+    } catch (e) { alert("فشل سداد المورد: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ"))); }
   }
 }));

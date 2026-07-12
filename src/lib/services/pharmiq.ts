@@ -54,7 +54,7 @@ export const paymentService = {
 
 // ===== 3. Prescription Service =====
 export const prescriptionService = {
-  async add(patientId: string, doctorName: string, doctorLicense: string | undefined, date: string, diagnosis: string | undefined, notes: string | undefined, isAntibiotic: boolean, items: any[]) {
+  async add(patientId: string, doctorName: string, doctorLicense: string | undefined, date: string, diagnosis: string | undefined, notes: string | undefined, isAntibiotic: boolean, items: unknown[]) {
     return invoke<string>('add_prescription_db', {
       patientId, doctorName, doctorLicense, prescriptionDate: date,
       diagnosis, notes, isAntibiotic,

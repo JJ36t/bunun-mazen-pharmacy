@@ -4,11 +4,11 @@ import { invoke } from '@tauri-apps/api/core';
 let ws: WebSocket | null = null;
 let reconnectAttempts = 0;
 let maxReconnect = 10;
-let heartbeatInterval: any = null;
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
 export function connectScannerWebSocket(
   wsUrl: string,
-  onMessage: (data: any) => void,
+  onMessage: (data: unknown) => void,
   onStatusChange: (connected: boolean) => void
 ): void {
   if (ws) {

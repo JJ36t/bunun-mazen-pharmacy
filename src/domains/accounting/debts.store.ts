@@ -28,7 +28,7 @@ export const useDebtsStore = create<DebtsState>((set) => ({
         debts: [{ id: newId, customerName, amount, isPaid: false, note, date: new Date().toISOString(), paidDate: undefined }, ...state.debts] 
       }));
     } catch (e) {
-      alert("فشل إضافة الدين: " + (typeof e === "string" ? e : (e?.message || e?.kind || "خطأ")));
+      alert("فشل إضافة الدين: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ")));
     }
   },
   payDebt: async (debtId, amount, userRole) => {
@@ -44,7 +44,7 @@ export const useDebtsStore = create<DebtsState>((set) => ({
         })
       }));
     } catch (e) {
-      alert("فشل تسديد الدفعة: " + (typeof e === "string" ? e : (e?.message || e?.kind || "خطأ")));
+      alert("فشل تسديد الدفعة: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ")));
     }
   }
 }));

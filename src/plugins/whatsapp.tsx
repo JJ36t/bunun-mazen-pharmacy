@@ -91,7 +91,7 @@ export const whatsappPlugin: PharmacyPlugin = {
     console.log('[Plugin:WhatsApp] Loaded');
   },
   
-  async onInvoiceCreated(invoice: any) {
+  async onInvoiceCreated(invoice: unknown) {
     // في المستقبل: إرسال الفاتورة تلقائياً
     console.log('[Plugin:WhatsApp] Invoice created - could send to customer:', invoice);
   },

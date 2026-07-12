@@ -32,7 +32,7 @@ class PerformanceMonitor {
       return result;
     } catch (e) {
       const duration = performance.now() - start;
-      this.record(`${name}_error`, duration, 'ms', { ...context, error: String(e) });
+      this.record(`${name}_error`, duration, 'ms', { ...context, error: (typeof e === "string" ? e : (e as Error)?.message || String(e)) });
       throw e;
     }
   }
@@ -47,7 +47,7 @@ class PerformanceMonitor {
       return result;
     } catch (e) {
       const duration = performance.now() - start;
-      this.record(`${name}_error`, duration, 'ms', { ...context, error: String(e) });
+      this.record(`${name}_error`, duration, 'ms', { ...context, error: (typeof e === "string" ? e : (e as Error)?.message || String(e)) });
       throw e;
     }
   }

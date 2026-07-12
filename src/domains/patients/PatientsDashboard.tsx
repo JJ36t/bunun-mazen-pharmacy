@@ -28,7 +28,7 @@ export function PatientsDashboard() {
       setName(''); setNationalId(''); setPhone(''); setNotes('');
       setShowForm(false);
       fetchPatients();
-    } catch (e: any) { toast.error("فشل إضافة المريض: " + e); }
+    } catch (e: unknown) { toast.error("فشل إضافة المريض: " + e); }
   };
 
   const filteredPatients = patients.filter(p => 

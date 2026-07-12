@@ -51,7 +51,7 @@ export function RefundDashboard() {
       fetchRefunds();
       fetchMedicines();
     } catch (e: unknown) {
-      toast.error(typeof e === 'string' ? e : (e?.message || e?.kind || 'فشل التراجع'));
+      toast.error(typeof e === 'string' ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || 'فشل التراجع'));
     } finally {
       setReversing(null);
     }
@@ -163,7 +163,7 @@ function NewRefundForm({ medicines, onClose, onSuccess, userRole }: {
     ? medicines.filter(m => m.nameAr?.includes(search) || m.barcode?.includes(search))
     : [];
 
-  const handleAdd = (med: any) => {
+  const handleAdd = (med: unknown) => {
     const existing = cart.find(i => i.id === med.id);
     if (existing) {
       setCart(prev => prev.map(i => i.id === med.id ? { ...i, quantity: i.quantity + 1 } : i));
