@@ -183,6 +183,7 @@ function NewRefundForm({ medicines, onClose, onSuccess, userRole }: {
     if (cart.length === 0) { toast.error('أضف صنفاً واحداً على الأقل'); return; }
     setLoading(true);
     try {
+      const operationId = crypto.randomUUID();
       // محاولة استخدام record_refund_with_reason_db أولاً، إذا فشل استخدم record_refund_db
       try {
         await invoke('record_refund_with_reason_db', {
@@ -192,6 +193,7 @@ function NewRefundForm({ medicines, onClose, onSuccess, userRole }: {
           refundReasonCode: refundReason || 'other',
           refundNotes: refundNotes || 'مرتجع مبيعات',
           approvedBy: null,
+          operationId,
         });
       } catch {
         // fallback إلى record_refund_db
@@ -204,7 +206,7 @@ function NewRefundForm({ medicines, onClose, onSuccess, userRole }: {
       toast.success('تم تسجيل المرتجع بنجاح');
       onSuccess();
     } catch (e: unknown) {
-      toast.error('فشل تسجيل المرتجع: ' + e);
+      toast.error('فشل تسجيل المرتجع: ' + (typeof e === 'string' ? e : (e as Error)?.message || 'خطأ'));
     }
     setLoading(false);
   };

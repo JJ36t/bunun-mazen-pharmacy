@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { Medicine, Invoice, SalesReport } from '../../types';
 import { useInventoryStore } from '../inventory/inventory.store';
 import { exportToCSV } from '../../lib/utils/export';
 import { invoke } from '@tauri-apps/api/core';
@@ -46,19 +47,19 @@ export function ReportingDashboard() {
       const endDateStr = `${end.getFullYear()}-${pad(end.getMonth()+1)}-${pad(end.getDate())} ${pad(end.getHours())}:${pad(end.getMinutes())}:${pad(end.getSeconds())}`;
 
       if (reportType === 'sales' || reportType === 'profits') {
-        const data = await invoke<any>('get_filtered_sales_report', { startDate: startDateStr, endDate: endDateStr, userFilter: cashierFilter });
+        const data = await invoke<SalesReport>('get_filtered_sales_report', { startDate: startDateStr, endDate: endDateStr, userFilter: cashierFilter });
         setReportData(data);
-        const details = await invoke<any[]>('get_invoice_details_report', { startDate: startDateStr, endDate: endDateStr, userFilter: cashierFilter });
+        const details = await invoke<Invoice[]>('get_invoice_details_report', { startDate: startDateStr, endDate: endDateStr, userFilter: cashierFilter });
         setInvoiceDetails(details);
       }
     } catch (e) { console.error(e); }
   };
 
   const handleExportSales = () => { exportToCSV("تقرير_المبيعات", ["رقم الفاتورة", "المبلغ", "الخصم", "الربح", "الكاشير", "التاريخ"], invoiceDetails.map(inv => [inv.id, inv.totalAmount, inv.discountAmount || 0, inv.profitAmount, inv.userRole, inv.date])); };
-  const handleExportInventory = () => { exportToCSV("تقرير_المخزون", ["الدواء", "الكمية", "السعر"], medicines.filter((m:any) => !m.isDeleted).map((m:any) => [m.nameAr, m.quantity, m.price])); };
+  const handleExportInventory = () => { exportToCSV("تقرير_المخزون", ["الدواء", "الكمية", "السعر"], medicines.filter((m) => !m.isDeleted).map((m) => [m.nameAr, m.quantity, m.price])); };
 
-  const lowStockMeds = medicines.filter((m:any) => !m.isDeleted && m.quantity < 50);
-  const expiringMeds = medicines.filter((m:any) => !m.isDeleted && new Date(m.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000));
+  const lowStockMeds = medicines.filter((m) => !m.isDeleted && m.quantity < 50);
+  const expiringMeds = medicines.filter((m) => !m.isDeleted && new Date(m.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000));
 
   return (
     <div className="p-8 overflow-auto h-full bg-slate-50 animate-fade-in">

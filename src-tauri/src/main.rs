@@ -634,7 +634,7 @@ async fn link_barcode_to_medicine_db(
 // --- أوامر المحاسقة (وإصلاح خصم المخزون المزدوج) ---
 // idempotency: operation_id يمنع تسجيل البيع مرتين عند إعادة المحاولة بعد انهيار
 #[tauri::command]
-async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount_param: Option<f64>, session_token: Option<String>) -> Result<serde_json::Value, String> {
+async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount_param: Option<f64>, _session_token: Option<String>) -> Result<serde_json::Value, String> {
     let pool = state.inner();
     // session_token optional — skip verification if empty/null (backward compatible)
     // TODO: enable verification after frontend consistently sends valid tokens

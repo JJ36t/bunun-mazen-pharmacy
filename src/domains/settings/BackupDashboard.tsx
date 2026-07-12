@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 export function BackupDashboard() {
   const { medicines } = useInventoryStore();
   const { expenses, cashbox, totalSales, totalProfits } = useAccountingStore();
-  const { username } = useAuthStore();
+  const { username, sessionToken } = useAuthStore();
   const [restorePath, setRestorePath] = useState('');
   const [backupPassword, setBackupPassword] = useState('');
   const [restorePassword, setRestorePassword] = useState('');
@@ -47,7 +47,7 @@ export function BackupDashboard() {
           accounting: { expenses, cashbox, totalSales, totalProfits },
         }
       });
-      const path = await invoke<string>('create_backup', { data: backupData, password: backupPassword });
+      const path = await invoke<string>('create_backup', { data: backupData, password: backupPassword, sessionToken: sessionToken || '' });
       
       // تسجيل في السجل
       try {
@@ -79,7 +79,7 @@ export function BackupDashboard() {
     const toastId = toast.loading("جاري فك التشفير واستعادة البيانات...");
     try {
       // استدعاء restore_backup_to_db الذي يكتب البيانات فعلياً لـ DB
-      const result = await invoke<any>('restore_backup_to_db', { filePath: restorePath, password: restorePassword });
+      const result = await invoke<unknown>('restore_backup_to_db', { filePath: restorePath, password: restorePassword, sessionToken: sessionToken || '' });
       
       // تسجيل في السجل
       try {
@@ -93,13 +93,14 @@ export function BackupDashboard() {
         });
       } catch (e) { console.error(e); }
       
-      const restoredSummary = result.restored ? Object.entries(result.restored).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
+      const restoredData = result as { restored?: Record<string, number> };
+      const restoredSummary = restoredData.restored ? Object.entries(restoredData.restored).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
       toast.success(`تمت الاستعادة بنجاح! ${restoredSummary}. أعد تشغيل التطبيق.`, { id: toastId });
       setRestorePath('');
       setRestorePassword('');
       loadHistory();
-    } catch (e: unknown) { 
-      toast.error('فشل الاستعادة (تأكد من صحة كلمة المرور والمسار): ' + e, { id: toastId }); 
+    } catch (e: unknown) {
+      toast.error('فشل الاستعادة (تأكد من صحة كلمة المرور والمسار): ' + (typeof e === 'string' ? e : (e as Error)?.message || 'خطأ'), { id: toastId });
     }
     setLoading(false);
   };
