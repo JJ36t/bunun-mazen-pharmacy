@@ -6,6 +6,7 @@
 import type { ComponentType } from 'react';
 import { LucideIcon } from 'lucide-react';
 import { eventBus } from './eventBus';
+import type { Invoice, Medicine, Debt } from '../../types';
 
 export interface PharmacyPlugin {
   // معلومات أساسية
@@ -22,14 +23,14 @@ export interface PharmacyPlugin {
   navOrder?: number;               // ترتيب في القائمة
   
   // hooks تُنفّذ تلقائياً (اختياري)
-  onInvoiceCreated?: (invoice: any) => void | Promise<void>;
-  onInvoiceRefunded?: (refund: any) => void | Promise<void>;
-  onStockAdjusted?: (medicine: any) => void | Promise<void>;
-  onMedicineAdded?: (medicine: any) => void | Promise<void>;
-  onUserLoggedIn?: (user: any) => void | Promise<void>;
-  onShiftStarted?: (shift: any) => void | Promise<void>;
-  onSettingsUpdated?: (settings: any) => void | Promise<void>;
-  onFraudDetected?: (alert: any) => void | Promise<void>;
+  onInvoiceCreated?: (invoice: Invoice) => void | Promise<void>;
+  onInvoiceRefunded?: (refund: Invoice) => void | Promise<void>;
+  onStockAdjusted?: (medicine: Medicine) => void | Promise<void>;
+  onMedicineAdded?: (medicine: Medicine) => void | Promise<void>;
+  onUserLoggedIn?: (user: { username: string; role: string }) => void | Promise<void>;
+  onShiftStarted?: (shift: { id: string; openingAmount: number }) => void | Promise<void>;
+  onSettingsUpdated?: (settings: Record<string, string>) => void | Promise<void>;
+  onFraudDetected?: (alert: { type: string; severity: string; description: string }) => void | Promise<void>;
   
   // تهيئة (تُستدعى مرة واحدة عند التحميل)
   onLoad?: () => Promise<void>;
@@ -39,7 +40,7 @@ export interface PharmacyPlugin {
   configSchema?: Record<string, {
     type: 'string' | 'number' | 'boolean' | 'select';
     label: string;
-    default: any;
+    default: string | number | boolean;
     options?: { value: string; label: string }[];
   }>;
 }

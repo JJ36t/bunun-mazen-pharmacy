@@ -16,7 +16,7 @@ const escapeCell = (v: any): string => {
 };
 
 // أداة تصدير تعتمد على توليد جدول HTML ليقوم Excel بقراءته في خلايا مفصولة ومرتبة
-export const exportToCSV = async (filename: string, headers: string[], rows: any[]) => {
+export const exportToCSV = async (filename: string, headers: string[], rows: (string | number)[][]) => {
   // بناء هيكل HTML يفهمه Excel
   let htmlContent = `
     <meta charset="UTF-8">
@@ -35,7 +35,7 @@ export const exportToCSV = async (filename: string, headers: string[], rows: any
   // إضافة الصفوف (Rows) — مُهربة
   rows.forEach(row => {
     htmlContent += `<tr>`;
-    row.forEach((cell: any) => {
+    row.forEach((cell: string | number) => {
       htmlContent += `<td style="padding: 8px; text-align: center;">${escapeCell(cell)}</td>`;
     });
     htmlContent += `</tr>`;

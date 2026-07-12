@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useInventoryStore } from '../inventory/inventory.store';
@@ -63,7 +64,7 @@ export function BackupDashboard() {
       toast.success(`تم إنشاء نسخة احتياطية مشفرة على سطح المكتب.`, { id: toastId });
       setBackupPassword('');
       loadHistory();
-    } catch (e: any) { 
+    } catch (e: unknown) { 
       toast.error('فشل إنشاء النسخة الاحتياطية: ' + e, { id: toastId }); 
     }
     setLoading(false);
@@ -97,7 +98,7 @@ export function BackupDashboard() {
       setRestorePath('');
       setRestorePassword('');
       loadHistory();
-    } catch (e: any) { 
+    } catch (e: unknown) { 
       toast.error('فشل الاستعادة (تأكد من صحة كلمة المرور والمسار): ' + e, { id: toastId }); 
     }
     setLoading(false);
@@ -109,7 +110,7 @@ export function BackupDashboard() {
       const path = await invoke<string>('create_auto_backup_db', { userRole: username || 'unknown' });
       toast.success(`تم إنشاء نسخة احتياطية تلقائية: ${path}`);
       loadHistory();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error('فشل النسخ التلقائي: ' + e);
     }
     setLoading(false);

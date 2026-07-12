@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { UserPlus, UserX, Check, KeyRound, User, Shield, Trash2 } from 'lucide-react';
@@ -22,7 +23,7 @@ export function UserManagementDashboard() {
         await invoke('delete_user_db', { userId: id, deletedBy: username || 'admin' });
         toast.success('تم حذف المستخدم');
         fetchUsers();
-      } catch (e: any) { toast.error('فشل الحذف: ' + e); }
+      } catch (e: unknown) { toast.error('فشل الحذف: ' + e); }
     }
   };
 
@@ -40,7 +41,7 @@ export function UserManagementDashboard() {
       toast.success('تمت إضافة المستخدم بنجاح.');
       setUsername(''); setPassword(''); setShowForm(false);
       fetchUsers();
-    } catch (e: any) { toast.error("فشل إضافة المستخدم: " + e); }
+    } catch (e: unknown) { toast.error("فشل إضافة المستخدم: " + e); }
   };
 
   const handleToggle = async (id: string, currentStatus: boolean) => {
@@ -55,7 +56,7 @@ export function UserManagementDashboard() {
       try {
         await invoke('reset_user_password_db', { userId: id, newPassword: newPass });
         toast.success('تم تغيير كلمة المرور بنجاح.');
-      } catch (e: any) { toast.error("فشل التغيير: " + e); }
+      } catch (e: unknown) { toast.error("فشل التغيير: " + e); }
     } else if (newPass !== null) {
       toast.error("كلمة المرور يجب أن تكون 4 أحرف على الأقل.");
     }

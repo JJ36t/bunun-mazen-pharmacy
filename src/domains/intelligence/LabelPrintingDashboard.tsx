@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 // ========================================
 // Label Printing Dashboard
 // ========================================
@@ -28,7 +29,7 @@ export function LabelPrintingDashboard() {
     loadJobs();
   }, []);
 
-  const filteredMedicines = medicines.filter((m: any) => !m.isDeleted && (
+  const filteredMedicines = medicines.filter((m: Medicine) => !m.isDeleted && (
     !searchQuery.trim() || 
     m.nameAr?.includes(searchQuery) || 
     m.barcode?.includes(searchQuery) ||
@@ -53,7 +54,7 @@ export function LabelPrintingDashboard() {
     
     try {
       for (const medId of selectedMedicines) {
-        const med = medicines.find((m: any) => m.id === medId);
+        const med = medicines.find((m: Medicine) => m.id === medId);
         if (!med) continue;
         const barcode = med.barcode || `PHM-${medId.substring(0, 8)}`;
         const printData = {
@@ -148,7 +149,7 @@ export function LabelPrintingDashboard() {
             <h3 className="text-base font-bold text-slate-800">اختر الأدوية</h3>
             <div className="flex items-center gap-3 flex-1 max-w-md">
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="بحث..." className="input text-sm" />
-              <button onClick={() => setSelectedMedicines(filteredMedicines.map((m: any) => m.id))} className="btn-ghost text-xs whitespace-nowrap">
+              <button onClick={() => setSelectedMedicines(filteredMedicines.map((m: Medicine) => m.id))} className="btn-ghost text-xs whitespace-nowrap">
                 تحديد الكل
               </button>
               <button onClick={() => setSelectedMedicines([])} className="btn-ghost text-xs whitespace-nowrap">

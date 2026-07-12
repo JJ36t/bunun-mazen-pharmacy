@@ -6,7 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 class CrashRecoveryManager {
-  private pendingOperations: Map<string, any> = new Map();
+  private pendingOperations: Map<string, { type: string; payload: unknown; userRole: string }> = new Map();
   private isRecovering = false;
 
   /** تسجيل بداية عملية */
@@ -91,7 +91,7 @@ class CrashRecoveryManager {
   }
 
   /** إعادة محاولة عملية — مع idempotency عبر operationId */
-  private async retryOperation(entry: any): Promise<void> {
+  private async retryOperation(entry: { operation_type: string; operation_id: string; payload: string; user_role: string }): Promise<void> {
     const payload = JSON.parse(entry.payload);
     const operationId = entry.operation_id; // idempotency key
     

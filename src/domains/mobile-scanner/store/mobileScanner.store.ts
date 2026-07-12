@@ -7,15 +7,15 @@ interface MobileScannerState {
   mobileUrl: string;
   localIp: string;
   port: number;
-  connectedDevices: any[];
-  scanHistory: any[];
+  connectedDevices: { id: string; deviceName: string; deviceIp: string; pairedAt: string; lastSeen?: string }[];
+  scanHistory: { id: string; deviceName: string; deviceIp: string; pairedAt: string; lastSeen?: string }[];
   pairingQR: string | null;
   pairingUrl: string | null;
   showQRModal: boolean;
 
-  setServerStatus: (status: any) => void;
-  setConnectedDevices: (devices: any[]) => void;
-  addScanResult: (result: any) => void;
+  setServerStatus: (status: { id: string; deviceName: string; deviceIp: string; pairedAt: string; lastSeen?: string }) => void;
+  setConnectedDevices: (devices: { id: string; deviceName: string; deviceIp: string; pairedAt: string; lastSeen?: string }[]) => void;
+  addScanResult: (result: { id: string; deviceName: string; deviceIp: string; pairedAt: string; lastSeen?: string }) => void;
   setPairingQR: (qr: string, url: string) => void;
   setShowQRModal: (show: boolean) => void;
   clearHistory: () => void;

@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 // ========================================
 // Enterprise Management Dashboard
 // ========================================
@@ -101,7 +102,7 @@ function SystemHealthTab() {
       <div className="grid grid-cols-4 gap-4">
         {metrics.map((m, i) => {
           const Icon = m.icon;
-          const colorMap: any = { emerald: 'bg-emerald-50 text-emerald-600', rose: 'bg-rose-50 text-rose-600', brand: 'bg-brand-50 text-brand-600', amber: 'bg-amber-50 text-amber-600' };
+          const colorMap: Record<string, string> = { emerald: 'bg-emerald-50 text-emerald-600', rose: 'bg-rose-50 text-rose-600', brand: 'bg-brand-50 text-brand-600', amber: 'bg-amber-50 text-amber-600' };
           return (
             <div key={i} className="card-elegant p-4 flex items-center gap-3">
               <div className={`w-11 h-11 rounded-xl ${colorMap[m.color]} flex items-center justify-center`}><Icon className="w-5 h-5" /></div>
@@ -181,7 +182,7 @@ function LedgerTab() {
 }
 
 // ===== 3. Quarantine =====
-function QuarantineTab({ medicines, username }: { medicines: any[]; username: string | null }) {
+function QuarantineTab({ medicines, username }: { medicines: Medicine[]; username: string | null }) {
   const [quarantined, setQuarantined] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [medId, setMedId] = useState('');
@@ -202,7 +203,7 @@ function QuarantineTab({ medicines, username }: { medicines: any[]; username: st
       toast.success('تم عزل الدواء');
       setShowForm(false); setMedId(''); setQty(1); setNotes('');
       load();
-    } catch (e: any) { toast.error('فشل: ' + e); }
+    } catch (e: unknown) { toast.error("فشل: " + (typeof e === "string" ? e : (e as Error)?.message || "خطأ")); }
   };
 
   const handleResolve = async (id: string, resolution: string) => {
@@ -210,7 +211,7 @@ function QuarantineTab({ medicines, username }: { medicines: any[]; username: st
       await invoke('resolve_quarantine_db', { quarantineId: id, resolution, notes: '', resolvedBy: username || 'unknown' });
       toast.success('تم الحل');
       load();
-    } catch (e: any) { toast.error('فشل: ' + e); }
+    } catch (e: unknown) { toast.error("فشل: " + (typeof e === "string" ? e : (e as Error)?.message || "خطأ")); }
   };
 
   return (
@@ -223,7 +224,7 @@ function QuarantineTab({ medicines, username }: { medicines: any[]; username: st
       {showForm && (
         <div className="card-elegant p-5 animate-slide-up">
           <div className="grid grid-cols-4 gap-3 mb-3">
-            <div className="col-span-2"><label className="label">الدواء</label><select value={medId} onChange={e => setMedId(e.target.value)} className="input"><option value="">اختر</option>{medicines.filter((m: any) => !m.isDeleted).map((m: any) => <option key={m.id} value={m.id}>{m.nameAr}</option>)}</select></div>
+            <div className="col-span-2"><label className="label">الدواء</label><select value={medId} onChange={e => setMedId(e.target.value)} className="input"><option value="">اختر</option>{medicines.filter((m: Medicine) => !m.isDeleted).map((m: Medicine) => <option key={m.id} value={m.id}>{m.nameAr}</option>)}</select></div>
             <div><label className="label">الكمية</label><input type="number" min="1" value={qty} onChange={e => setQty(parseInt(e.target.value) || 1)} className="input tabular" /></div>
             <div><label className="label">السبب</label><select value={reason} onChange={e => setReason(e.target.value)} className="input"><option value="damaged">تالف</option><option value="expired">منتهي</option><option value="recalled">مسترجع</option><option value="suspicious">مشبوه</option></select></div>
           </div>
@@ -283,7 +284,7 @@ function FeatureFlagsTab() {
 }
 
 // ===== 5. Pricing History =====
-function PricingHistoryTab({ medicines }: { medicines: any[] }) {
+function PricingHistoryTab({ medicines }: { medicines: Medicine[] }) {
   const [selectedMed, setSelectedMed] = useState('');
   const [history, setHistory] = useState<any[]>([]);
 
@@ -300,7 +301,7 @@ function PricingHistoryTab({ medicines }: { medicines: any[] }) {
         <label className="label-lg">اختر دواءً لعرض تاريخ أسعاره</label>
         <select value={selectedMed} onChange={e => setSelectedMed(e.target.value)} className="input">
           <option value="">اختر دواءً</option>
-          {medicines.filter((m: any) => !m.isDeleted).map((m: any) => <option key={m.id} value={m.id}>{m.nameAr}</option>)}
+          {medicines.filter((m: Medicine) => !m.isDeleted).map((m: Medicine) => <option key={m.id} value={m.id}>{m.nameAr}</option>)}
         </select>
       </div>
       {selectedMed && (
@@ -354,7 +355,7 @@ function ExpirySalesTab() {
 }
 
 // ===== 7. Drug Recall =====
-function DrugRecallTab({ medicines: _medicines }: { medicines: any[] }) {
+function DrugRecallTab({ medicines: _medicines }: { medicines: Medicine[] }) {
   return (
     <div className="card-elegant p-6">
       <h3 className="text-base font-bold text-slate-800 mb-4">استرجاع الأدوية (Drug Recall)</h3>

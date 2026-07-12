@@ -47,17 +47,17 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
       setResults(data);
       // Auto-select first result
       if (data?.results?.length > 0) {
-        const firstReal = data.results.find((r: any) => r.source !== 'gs1_prefix_analysis') || data.results[0];
+        const firstReal = data.results.find((r: { source: string; name?: string; barcode?: string; price?: number }) => r.source !== 'gs1_prefix_analysis') || data.results[0];
         setSelected(firstReal);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error('فشل البحث: ' + e);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSave = async (manualData?: any) => {
+  const handleSave = async (manualData?: { nameAr: string; nameEn?: string; price: number; costPrice: number; quantity: number; batchNumber?: string; expiryDate?: string }) => {
     // manualData يأتي من ManualAddForm (عند عدم العثور على الباركود)
     // selected يأتي من نتائج البحث (عند العثور)
     const data = manualData || selected;
@@ -108,7 +108,7 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
       toast.success('تم إضافة الدواء للمخزون وربطه بالباركود');
       onMedicineAdded(medId);
       onClose();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error('فشل الإضافة: ' + e);
     } finally {
       setSaving(false);
@@ -143,13 +143,13 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4 flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
                 <p className="text-sm text-emerald-700">
-                  تم العثور على {results.results.length} نتيجة من {Array.from(new Set(results.results.map((r: any) => r.source))).join('، ')}
+                  تم العثور على {results.results.length} نتيجة من {Array.from(new Set(results.results.map((r: { source: string; name?: string; barcode?: string; price?: number }) => r.source))).join('، ')}
                 </p>
               </div>
 
               {/* Results list */}
               <div className="space-y-2 mb-4">
-                {results.results.map((r: any, i: number) => (
+                {results.results.map((r: { source: string; name?: string; barcode?: string; price?: number }, i: number) => (
                   <button
                     key={r.source + "-" + i}
                     onClick={() => setSelected(r)}
@@ -253,7 +253,27 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
 
 // Manual add form (when barcode not found anywhere)
 // يستخدم state من parent (manualName/manualDosageForm) — لا state محلي
-function ManualAddForm({ barcode, onSave, saving, price, setPrice, costPrice, setCostPrice, quantity, setQuantity, batchNumber, setBatchNumber, expiryDate, setExpiryDate, manualName, setManualName, manualDosageForm, setManualDosageForm }: any) {
+interface ManualAddFormProps {
+  barcode: string;
+  onSave: () => void;
+  saving: boolean;
+  price: string;
+  setPrice: (v: string) => void;
+  costPrice: string;
+  setCostPrice: (v: string) => void;
+  quantity: string;
+  setQuantity: (v: string) => void;
+  batchNumber: string;
+  setBatchNumber: (v: string) => void;
+  expiryDate: string;
+  setExpiryDate: (v: string) => void;
+  manualName: string;
+  setManualName: (v: string) => void;
+  manualDosageForm: string;
+  setManualDosageForm: (v: string) => void;
+}
+
+function ManualAddForm({ barcode, onSave, saving, price, setPrice, costPrice, setCostPrice, quantity, setQuantity, batchNumber, setBatchNumber, expiryDate, setExpiryDate, manualName, setManualName, manualDosageForm, setManualDosageForm }: ManualAddFormProps) {
   return (
     <div>
       <h4 className="text-sm font-bold text-slate-800 mb-2">إضافة دواء جديد يدوياً:</h4>

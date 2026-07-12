@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 // ========================================
 // Stock Count Dashboard (الجرد المتقدم)
 // ========================================
@@ -28,8 +29,8 @@ export function StockCountDashboard() {
       toast.success('بدأ الجرد');
       
       // استخدام الأدوية من الـ store (تتضمن الكمية 0 أيضاً)
-      const allMeds = medicines.filter((m: any) => !m.isDeleted);
-      setItems(allMeds.map((m: any) => ({
+      const allMeds = medicines.filter((m: Medicine) => !m.isDeleted);
+      setItems(allMeds.map((m: Medicine) => ({
         id: m.id,
         name: m.nameAr,
         barcode: m.barcode,
@@ -140,7 +141,7 @@ export function StockCountDashboard() {
           <div className="w-11 h-11 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center"><Package className="w-5 h-5" /></div>
           <div>
             <p className="text-xs text-slate-500">إجمالي الأدوية في المخزون</p>
-            <p className="text-xl font-bold text-slate-800 tabular">{medicines.filter((m: any) => !m.isDeleted).length}</p>
+            <p className="text-xl font-bold text-slate-800 tabular">{medicines.filter((m: Medicine) => !m.isDeleted).length}</p>
           </div>
         </div>
         <div className="card-elegant p-4 flex items-center gap-3">
@@ -232,7 +233,7 @@ export function StockCountDashboard() {
             <div className="empty-state-icon"><ClipboardCheck className="w-12 h-12 text-slate-300" /></div>
             <p className="text-slate-500 text-base font-semibold">ابدأ جرداً جديداً</p>
             <p className="text-slate-400 text-sm mt-1">
-              {medicines.filter((m: any) => !m.isDeleted).length > 0 
+              {medicines.filter((m: Medicine) => !m.isDeleted).length > 0 
                 ? 'سيتم تحميل جميع الأدوية مع كمياتها للجرد'
                 : 'لا توجد أدوية في المخزون - اضغط "مزامنة الأدوية" أولاً'}
             </p>

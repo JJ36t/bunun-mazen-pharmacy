@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 import { useState, useEffect } from 'react';
 import { useDebtsStore } from './debts.store';
 import { useAuthStore } from '../security/auth.store';
@@ -28,7 +29,7 @@ export function DebtsDashboard() {
       await addDebt(customerName, numAmount, note, role || 'Unknown');
       setCustomerName(''); setAmount(''); setNote(''); setShowForm(false);
       toast.success('تم تسجيل الدين');
-    } catch (e: any) { toast.error('فشل: ' + e); }
+    } catch (e: unknown) { toast.error('فشل: ' + e); }
   };
 
   const handlePay = async (debtId: string) => {
@@ -40,7 +41,7 @@ export function DebtsDashboard() {
       await fetchSummary();
       setPayAmount({ ...payAmount, [debtId]: '' });
       toast.success('تم تسجيل الدفعة');
-    } catch (e: any) { toast.error('فشل: ' + e); }
+    } catch (e: unknown) { toast.error('فشل: ' + e); }
   };
 
   const handleDelete = async (debtId: string) => {
@@ -49,7 +50,7 @@ export function DebtsDashboard() {
       await invoke('delete_customer_debt_db', { debtId });
       await fetchDebts();
       toast.success("تم حذف الدين.");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error('فشل الحذف: ' + e);
     } finally {
     }

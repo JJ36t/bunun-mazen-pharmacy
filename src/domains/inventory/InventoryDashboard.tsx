@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 import { useState } from 'react';
 import { useInventoryStore, Medicine } from './inventory.store';
 import { useAuthStore } from '../security/auth.store';
@@ -43,7 +44,7 @@ export function InventoryDashboard() {
     // توليد باركود EAN-13 صحيح (13 رقم مع checksum) — نفس صيغة الكاشيرات العالمية
     // بادئة 200 = مخصصة للاستخدام الداخلي وفق GS1
     const existingMax = medicines
-      .filter((m: any) => !m.isDeleted && m.barcode && String(m.barcode).startsWith('200') && String(m.barcode).length === 13)
+      .filter((m: Medicine) => !m.isDeleted && m.barcode && String(m.barcode).startsWith('200') && String(m.barcode).length === 13)
       .reduce((max: number, m: any) => {
         const seq = parseInt(String(m.barcode).substring(3, 12), 10);
         return isNaN(seq) ? max : Math.max(max, seq);
@@ -81,13 +82,13 @@ export function InventoryDashboard() {
       try {
         await softDeleteMedicine(id, role || 'Unknown', name);
         toast.success("تمت أرشفة الدواء.");
-      } catch (e: any) {
+      } catch (e: unknown) {
         toast.error('فشل الحذف: ' + e);
       }
     }
   };
 
-  const filteredMeds = medicines.filter((m: any) => !m.isDeleted && (
+  const filteredMeds = medicines.filter((m: Medicine) => !m.isDeleted && (
     m.nameAr.includes(search) ||
     (m.barcode && String(m.barcode).includes(search)) ||
     (m.nameEn && m.nameEn.toLowerCase().includes(search.toLowerCase()))

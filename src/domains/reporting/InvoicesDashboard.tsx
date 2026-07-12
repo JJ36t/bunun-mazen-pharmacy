@@ -1,3 +1,4 @@
+import type { Medicine } from "../../types";
 import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
 // ========================================
 // Invoices Dashboard (الفواتير الشاملة)
