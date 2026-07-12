@@ -1,3 +1,4 @@
+import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
 // ========================================
 // Refund Dashboard (المرتجع المتقدم)
 // ========================================
@@ -49,7 +50,7 @@ export function RefundDashboard() {
       toast.success("تم التراجع عن المرتجع بنجاح.");
       fetchRefunds();
       fetchMedicines();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(typeof e === 'string' ? e : (e?.message || e?.kind || 'فشل التراجع'));
     } finally {
       setReversing(null);
@@ -83,7 +84,7 @@ export function RefundDashboard() {
 
       {showRefundForm && (
         <NewRefundForm 
-          medicines={medicines.filter((m: any) => !m.isDeleted)}
+          medicines={medicines.filter((m: Medicine) => !m.isDeleted)}
           onClose={() => setShowRefundForm(false)}
           onSuccess={() => { setShowRefundForm(false); fetchRefunds(); fetchMedicines(); }}
           userRole={role || 'Unknown'}
@@ -147,7 +148,7 @@ export function RefundDashboard() {
 
 // ===== نموذج مرتجع جديد =====
 function NewRefundForm({ medicines, onClose, onSuccess, userRole }: { 
-  medicines: any[]; 
+  medicines: Invoice[]; 
   onClose: () => void; 
   onSuccess: () => void;
   userRole: string;
@@ -202,7 +203,7 @@ function NewRefundForm({ medicines, onClose, onSuccess, userRole }: {
       }
       toast.success('تم تسجيل المرتجع بنجاح');
       onSuccess();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error('فشل تسجيل المرتجع: ' + e);
     }
     setLoading(false);

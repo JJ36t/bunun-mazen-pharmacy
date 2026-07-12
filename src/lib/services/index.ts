@@ -1,3 +1,4 @@
+import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
 // ========================================
 // Service Layer - طبقة الخدمات
 // ========================================
@@ -61,7 +62,7 @@ export const inventoryService = {
 // POS Service
 // ========================================
 export const posService = {
-  async recordSale(items: any[], discountPercentage: number, userRole: string, discountAmount?: number) {
+  async recordSale(items: Medicine[], discountPercentage: number, userRole: string, discountAmount?: number) {
     return perfMonitor.measure('pos_record_sale', async () => {
       // فحص الاحتيال
       const subtotal = items.reduce((s, i) => s + (i.price * i.quantity), 0);
@@ -96,7 +97,7 @@ export const posService = {
     });
   },
 
-  async recordRefund(items: any[], totalAmount: number, userRole: string, invoiceId?: string) {
+  async recordRefund(items: Medicine[], totalAmount: number, userRole: string, invoiceId?: string) {
     fraudDetector.checkRefund(userRole, totalAmount, invoiceId);
 
     const operationId = await crashRecovery.startOperation('refund', { totalAmount, items }, userRole);
@@ -121,7 +122,7 @@ export const posService = {
     }
   },
 
-  async suspendInvoice(items: any[], userRole: string) {
+  async suspendInvoice(items: Medicine[], userRole: string) {
     const id = await invoke<string>('suspend_invoice_db', {
       username: userRole,
       itemsJson: JSON.stringify(items),

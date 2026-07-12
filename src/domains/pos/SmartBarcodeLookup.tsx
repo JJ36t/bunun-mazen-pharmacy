@@ -1,3 +1,4 @@
+import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
 // ========================================
 // Smart Barcode Lookup Component
 // ========================================

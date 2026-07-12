@@ -1,3 +1,4 @@
+import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
 // ========================================
 // Invoices Dashboard (الفواتير الشاملة)
 // ========================================
@@ -59,7 +60,7 @@ export function InvoicesDashboard() {
         toast.success('تم حذف الفاتورة بنجاح');
         fetchInvoices();
         fetchDailyStats();
-      } catch (e: any) { toast.error('فشل الحذف: ' + e); }
+      } catch (e: unknown) { toast.error('فشل الحذف: ' + e); }
     }
   };
 
@@ -77,7 +78,7 @@ export function InvoicesDashboard() {
       await invoke('mark_invoice_printed_db', { invoiceId: invoice.id, printedBy: username || 'Unknown' });
       toast.success('تمت الطباعة بنجاح');
       fetchInvoices();
-    } catch (e: any) { toast.error('فشلت الطباعة: ' + e); }
+    } catch (e: unknown) { toast.error('فشلت الطباعة: ' + e); }
   };
 
   const handleExportPdf = () => {

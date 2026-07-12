@@ -1,3 +1,4 @@
+import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useInventoryStore } from '../inventory/inventory.store';
@@ -27,7 +28,7 @@ export function QuickPurchaseDashboard() {
   }, []);
 
   const filteredMeds = search.trim() 
-    ? medicines.filter((m: any) => !m.isDeleted && (
+    ? medicines.filter((m: Medicine) => !m.isDeleted && (
         m.nameAr?.includes(search) || 
         m.barcode?.includes(search) ||
         m.nameEn?.toLowerCase().includes(search.toLowerCase())
@@ -36,7 +37,7 @@ export function QuickPurchaseDashboard() {
 
   const handleBarcodeEnter = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && barcodeInput.trim()) {
-      const med = medicines.find((m: any) => m.barcode === barcodeInput.trim() && !m.isDeleted);
+      const med = medicines.find((m: Medicine) => m.barcode === barcodeInput.trim() && !m.isDeleted);
       if (med) {
         addToCart(med);
         setBarcodeInput('');
@@ -89,7 +90,7 @@ export function QuickPurchaseDashboard() {
         const qty = parseInt(fields[2]) || 1;
         const cost = parseFloat(fields[3]) || 0;
         const sell = parseFloat(fields[4]) || cost * 1.4;
-        const med = medicines.find((m: any) => !m.isDeleted && (m.nameAr === name || m.barcode === barcode));
+        const med = medicines.find((m: Medicine) => !m.isDeleted && (m.nameAr === name || m.barcode === barcode));
         if (med) {
           const existing = cart.find(i => i.id === med.id);
           if (existing) {
