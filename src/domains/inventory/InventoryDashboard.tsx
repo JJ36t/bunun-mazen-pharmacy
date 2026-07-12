@@ -1,4 +1,3 @@
-import type { Medicine } from "../../types";
 import { useState } from 'react';
 import { useInventoryStore, Medicine } from './inventory.store';
 import { useAuthStore } from '../security/auth.store';
