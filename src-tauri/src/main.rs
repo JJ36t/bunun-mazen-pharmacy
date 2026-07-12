@@ -634,7 +634,7 @@ async fn link_barcode_to_medicine_db(
 // --- أوامر المحاسقة (وإصلاح خصم المخزون المزدوج) ---
 // idempotency: operation_id يمنع تسجيل البيع مرتين عند إعادة المحاولة بعد انهيار
 #[tauri::command]
-async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount_param: Option<f64>, _session_token: Option<String>) -> Result<serde_json::Value, String> {
+async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount: Option<f64>, _session_token: Option<String>) -> Result<serde_json::Value, String> {
     let pool = state.inner();
     // session_token optional — skip verification if empty/null (backward compatible)
     // TODO: enable verification after frontend consistently sends valid tokens
@@ -674,7 +674,7 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
     }
 
     // إصلاح P0-3: فحص الخصم المطلق لا يتجاوز subtotal
-    if let Some(amt) = discount_amount_param {
+    if let Some(amt) = discount_amount {
         if amt > 0.0 {
             let amt_dec = rust_decimal::Decimal::from_f64(amt).ok_or("Invalid discount amount")?;
             if amt_dec > subtotal {
@@ -683,15 +683,15 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
         }
     }
 
-    let (final_total, final_profit, discount_amount) = sale_logic::calculate_sale_totals(
-        subtotal, total_profit, discount_percentage, discount_amount_param
+    let (final_total, final_profit, discount_amount_val) = sale_logic::calculate_sale_totals(
+        subtotal, total_profit, discount_percentage, discount_amount
     );
     if final_total < rust_decimal::Decimal::ZERO {
         return Err("الإجمالي النهائي سالب بعد الخصم".to_string());
     }
 
     let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number, idempotency_key, discount_amount) VALUES ($1, $2, $3, get_daily_receipt_number(), $4, $5) RETURNING id")
-        .bind(final_total).bind(final_profit).bind(&user_role).bind(&operation_id).bind(discount_amount).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        .bind(final_total).bind(final_profit).bind(&user_role).bind(&operation_id).bind(discount_amount_val).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let invoice_id: uuid::Uuid = row.get(0);
 
     let mut items_desc = Vec::new();
@@ -722,8 +722,8 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
         items_desc.push(format!("{} (x{})", name, qty));
     }
     
-    let desc = if discount_amount > rust_decimal::Decimal::ZERO {
-        format!("بيع فاتورة بمبلغ {} (بعد خصم {} د.ع). الأصناف: {}", final_total, discount_amount, items_desc.join(", "))
+    let desc = if discount_amount_val > rust_decimal::Decimal::ZERO {
+        format!("بيع فاتورة بمبلغ {} (بعد خصم {} د.ع). الأصناف: {}", final_total, discount_amount_val, items_desc.join(", "))
     } else {
         format!("بيع فاتورة بمبلغ {}. الأصناف: {}", final_total, items_desc.join(", "))
     };
