@@ -41,6 +41,16 @@ mod pharmiq_new_features;
 mod mobile_scanner;
 
 // --- نظام السجلات المنظمة (Structured Logging) ---
+
+/// تحويل آمن من Decimal إلى f64 — يمنع silent zero في التقارير المالية
+fn decimal_to_f64(d: rust_decimal::Decimal) -> f64 {
+    use rust_decimal::prelude::ToPrimitive;
+    d.to_f64().unwrap_or_else(|| {
+        eprintln!("[WARNING] Decimal to f64 conversion failed for value: {}", d);
+        0.0
+    })
+}
+
 fn init_logging() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -374,7 +384,7 @@ async fn get_active_shift_db(state: tauri::State<'_, PgPool>, username: String) 
     let row = sqlx::query("SELECT id, opening_amount FROM shifts WHERE user_role = $1 AND status = 'open' ORDER BY start_time DESC LIMIT 1")
         .bind(&username).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
     if let Some(r) = row {
-        Ok(Some(serde_json::json!({ "id": r.get::<uuid::Uuid, _>(0).to_string(), "openingAmount": r.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0) })))
+        Ok(Some(serde_json::json!({ "id": r.get::<uuid::Uuid, _>(0).to_string(), "openingAmount": r.get::<rust_decimal::Decimal, _>(1) })))
     } else { Ok(None) }
 }
 
@@ -454,9 +464,9 @@ async fn get_medicines_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_j
         results.push(serde_json::json!({
             "id": row.get::<uuid::Uuid, _>(0).to_string(), "nameAr": row.get::<String, _>(1), "nameEn": row.get::<Option<String>, _>(2), 
             "scientificName": row.get::<Option<String>, _>(3), "barcode": row.get::<Option<String>, _>(4),
-            "price": row.get::<rust_decimal::Decimal, _>(5).to_string().parse::<f64>().unwrap_or(0.0), 
-            "wholesalePrice": row.get::<rust_decimal::Decimal, _>(6).to_string().parse::<f64>().unwrap_or(0.0),
-            "costPrice": row.get::<rust_decimal::Decimal, _>(7).to_string().parse::<f64>().unwrap_or(0.0),
+            "price": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(5)), 
+            "wholesalePrice": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(6)),
+            "costPrice": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(7)),
             "quantity": row.get::<i32, _>(8), "batchNumber": row.get::<Option<String>, _>(9), "expiryDate": row.get::<Option<chrono::NaiveDate>, _>(10).map(|d| d.to_string()), "isDeleted": row.get::<bool, _>(11)
         }));
     } Ok(results)
@@ -833,9 +843,9 @@ async fn get_accounting_summary_db(state: tauri::State<'_, PgPool>) -> Result<se
     let exp_rows = sqlx::query("SELECT id, description, amount, created_at FROM expenses ORDER BY created_at DESC LIMIT 10").fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut expenses_list = Vec::new();
     for row in exp_rows {
-        expenses_list.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "description": row.get::<String, _>(1), "amount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0), "date": row.get::<chrono::NaiveDateTime, _>(3).to_string() }));
+        expenses_list.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "description": row.get::<String, _>(1), "amount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)), "date": row.get::<chrono::NaiveDateTime, _>(3).to_string() }));
     }
-    Ok(serde_json::json!({ "totalSales": total_sales.to_string().parse::<f64>().unwrap_or(0.0), "totalProfits": total_profits.to_string().parse::<f64>().unwrap_or(0.0), "totalDiscounts": total_discounts.to_string().parse::<f64>().unwrap_or(0.0), "totalExpenses": total_expenses.to_string().parse::<f64>().unwrap_or(0.0), "cashbox": cashbox.to_string().parse::<f64>().unwrap_or(0.0), "expenses": expenses_list }))
+    Ok(serde_json::json!({ "totalSales": total_sales, "totalProfits": total_profits, "totalDiscounts": total_discounts, "totalExpenses": total_expenses, "cashbox": cashbox, "expenses": expenses_list }))
 }
 
 // الإغلاق اليومي — إصلاح P1-7: أرشفة بدل حذف فيزيائي
@@ -872,9 +882,9 @@ async fn get_filtered_sales_report(state: tauri::State<'_, PgPool>, start_date: 
         sqlx::query("SELECT COALESCE(SUM(total_amount), 0), COALESCE(SUM(profit_amount), 0), COALESCE(SUM(discount_amount), 0), COUNT(id) FROM invoices WHERE created_at::date >= $1::date AND created_at::date <= $2::date AND user_role = $3").bind(&start_date).bind(&end_date).bind(&user_filter).fetch_one(state.inner()).await.map_err(|e| e.to_string())?
     };
     Ok(serde_json::json!({
-        "totalSales": row.get::<rust_decimal::Decimal, _>(0).to_string().parse::<f64>().unwrap_or(0.0),
-        "totalProfits": row.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0),
-        "totalDiscounts": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
+        "totalSales": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(0)),
+        "totalProfits": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(1)),
+        "totalDiscounts": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
         "invoiceCount": row.get::<i64, _>(3)
     }))
 }
@@ -912,9 +922,9 @@ async fn get_invoice_details_report(state: tauri::State<'_, PgPool>, start_date:
         let items: serde_json::Value = serde_json::from_str(&items_str)
             .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
         invoices.push(serde_json::json!({
-            "id": inv_id.to_string(), "totalAmount": row.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0),
-            "profitAmount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
-            "discountAmount": row.get::<Option<rust_decimal::Decimal>, _>(3).map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0),
+            "id": inv_id.to_string(), "totalAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(1)),
+            "profitAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
+            "discountAmount": row.get::<Option<rust_decimal::Decimal>, _>(3).map(|d| d).unwrap_or(0.0),
             "userRole": row.get::<Option<String>, _>(4).unwrap_or_else(|| "N/A".to_string()),
             "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(), "items": items
         }));
@@ -969,7 +979,7 @@ async fn get_customer_debts_db(state: tauri::State<'_, PgPool>) -> Result<Vec<se
     for row in rows {
         debts.push(serde_json::json!({
             "id": row.get::<uuid::Uuid, _>(0).to_string(), "customerName": row.get::<String, _>(1),
-            "amount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0), "isPaid": row.get::<bool, _>(3),
+            "amount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)), "isPaid": row.get::<bool, _>(3),
             "note": row.get::<Option<String>, _>(4), "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
             "paidDate": row.get::<Option<chrono::NaiveDateTime>, _>(6).map(|d| d.to_string())
         }));
@@ -989,7 +999,7 @@ async fn get_suppliers_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_j
     let rows = sqlx::query("SELECT id, name, phone, balance FROM suppliers ORDER BY name").fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut suppliers = Vec::new();
     for row in rows {
-        suppliers.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "name": row.get::<String, _>(1), "phone": row.get::<Option<String>, _>(2), "balance": row.get::<rust_decimal::Decimal, _>(3).to_string().parse::<f64>().unwrap_or(0.0) }));
+        suppliers.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "name": row.get::<String, _>(1), "phone": row.get::<Option<String>, _>(2), "balance": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(3)) }));
     }
     Ok(suppliers)
 }
@@ -1059,7 +1069,7 @@ async fn get_top_medicines_db(state: tauri::State<'_, PgPool>) -> Result<Vec<ser
         .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut results = Vec::new();
     for row in rows {
-        results.push(serde_json::json!({ "name": row.get::<String, _>(0), "totalQty": row.get::<i64, _>(1), "totalRevenue": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0) }));
+        results.push(serde_json::json!({ "name": row.get::<String, _>(0), "totalQty": row.get::<i64, _>(1), "totalRevenue": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)) }));
     }
     Ok(results)
 }
@@ -1075,7 +1085,7 @@ async fn get_dashboard_stats(state: tauri::State<'_, PgPool>) -> Result<serde_js
     let threshold: i32 = threshold_row.and_then(|r| r.get::<String, _>(0).parse::<i32>().ok()).unwrap_or(20);
     let low_stock_row = sqlx::query("SELECT COUNT(id) FROM medicines WHERE quantity <= $1 AND is_deleted = FALSE").bind(threshold).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
     let low_stock_count: i64 = low_stock_row.get(0);
-    Ok(serde_json::json!({ "todaySales": today_sales.to_string().parse::<f64>().unwrap_or(0.0), "todayInvoices": today_invoices, "lowStockCount": low_stock_count }))
+    Ok(serde_json::json!({ "todaySales": today_sales, "todayInvoices": today_invoices, "lowStockCount": low_stock_count }))
 }
 
 #[tauri::command]
@@ -1088,7 +1098,7 @@ async fn get_weekly_sales_stats(state: tauri::State<'_, PgPool>) -> Result<Vec<s
     for row in rows {
         let day: chrono::NaiveDate = row.get(0);
         let total: rust_decimal::Decimal = row.get(1);
-        results.push(serde_json::json!({ "date": day.format("%Y-%m-%d").to_string(), "sales": total.to_string().parse::<f64>().unwrap_or(0.0) }));
+        results.push(serde_json::json!({ "date": day.format("%Y-%m-%d").to_string(), "sales": total }));
     }
     Ok(results)
 }
@@ -1812,7 +1822,7 @@ async fn get_performance_metrics_db(state: tauri::State<'_, PgPool>, metric_name
         metrics.push(serde_json::json!({
             "id": row.get::<uuid::Uuid, _>(0).to_string(),
             "metricName": row.get::<String, _>(1),
-            "metricValue": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
+            "metricValue": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
             "unit": row.get::<String, _>(3),
             "context": row.get::<Option<String>, _>(4),
             "createdAt": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
@@ -1847,7 +1857,7 @@ async fn get_supplier_report_db(state: tauri::State<'_, PgPool>, _start_date: St
         results.push(serde_json::json!({
             "name": row.get::<String, _>(0),
             "phone": row.get::<Option<String>, _>(1),
-            "balance": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
+            "balance": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
             "batchCount": 0i64, "totalPurchased": 0i64,
         }));
     }
@@ -1864,9 +1874,9 @@ async fn get_cashier_report_db(state: tauri::State<'_, PgPool>, start_date: Stri
         results.push(serde_json::json!({
             "userRole": row.get::<Option<String>, _>(0).unwrap_or_else(|| "N/A".to_string()),
             "invoiceCount": row.get::<i64, _>(1),
-            "totalSales": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
+            "totalSales": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
             "refundCount": row.get::<i64, _>(3),
-            "totalProfit": row.get::<rust_decimal::Decimal, _>(4).to_string().parse::<f64>().unwrap_or(0.0),
+            "totalProfit": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(4)),
         }));
     }
     Ok(results)
@@ -1896,9 +1906,9 @@ async fn get_refunds_db(state: tauri::State<'_, PgPool>, limit: Option<i64>) -> 
             .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
         refunds.push(serde_json::json!({
             "id": inv_id.to_string(),
-            "totalAmount": row.get::<rust_decimal::Decimal, _>(1).to_string().parse::<f64>().unwrap_or(0.0),
-            "profitAmount": row.get::<rust_decimal::Decimal, _>(2).to_string().parse::<f64>().unwrap_or(0.0),
-            "discountAmount": row.get::<Option<rust_decimal::Decimal>, _>(3).map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0),
+            "totalAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(1)),
+            "profitAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
+            "discountAmount": row.get::<Option<rust_decimal::Decimal>, _>(3).map(|d| d).unwrap_or(0.0),
             "userRole": row.get::<Option<String>, _>(4).unwrap_or_else(|| "N/A".to_string()),
             "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
             "isReversed": row.get::<bool, _>(6),
