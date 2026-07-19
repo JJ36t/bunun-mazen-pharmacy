@@ -924,7 +924,7 @@ async fn get_invoice_details_report(state: tauri::State<'_, PgPool>, start_date:
         invoices.push(serde_json::json!({
             "id": inv_id.to_string(), "totalAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(1)),
             "profitAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
-            "discountAmount": row.get::<Option<rust_decimal::Decimal>, _>(3).map(|d| d).unwrap_or(0.0),
+            "discountAmount": decimal_to_f64(row.get::<Option<rust_decimal::Decimal>, _>(3).unwrap_or(rust_decimal::Decimal::ZERO)),
             "userRole": row.get::<Option<String>, _>(4).unwrap_or_else(|| "N/A".to_string()),
             "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(), "items": items
         }));
@@ -1908,7 +1908,7 @@ async fn get_refunds_db(state: tauri::State<'_, PgPool>, limit: Option<i64>) -> 
             "id": inv_id.to_string(),
             "totalAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(1)),
             "profitAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
-            "discountAmount": row.get::<Option<rust_decimal::Decimal>, _>(3).map(|d| d).unwrap_or(0.0),
+            "discountAmount": decimal_to_f64(row.get::<Option<rust_decimal::Decimal>, _>(3).unwrap_or(rust_decimal::Decimal::ZERO)),
             "userRole": row.get::<Option<String>, _>(4).unwrap_or_else(|| "N/A".to_string()),
             "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
             "isReversed": row.get::<bool, _>(6),
