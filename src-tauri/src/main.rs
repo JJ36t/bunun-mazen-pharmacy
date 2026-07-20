@@ -384,7 +384,7 @@ async fn get_active_shift_db(state: tauri::State<'_, PgPool>, username: String) 
     let row = sqlx::query("SELECT id, opening_amount FROM shifts WHERE user_role = $1 AND status = 'open' ORDER BY start_time DESC LIMIT 1")
         .bind(&username).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
     if let Some(r) = row {
-        Ok(Some(serde_json::json!({ "id": r.get::<uuid::Uuid, _>(0).to_string(), "openingAmount": r.get::<rust_decimal::Decimal, _>(1) })))
+        Ok(Some(serde_json::json!({ "id": r.get::<uuid::Uuid, _>(0).to_string(), "openingAmount": decimal_to_f64(r.get::<rust_decimal::Decimal, _>(1)) })))
     } else { Ok(None) }
 }
 
@@ -845,7 +845,7 @@ async fn get_accounting_summary_db(state: tauri::State<'_, PgPool>) -> Result<se
     for row in exp_rows {
         expenses_list.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "description": row.get::<String, _>(1), "amount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)), "date": row.get::<chrono::NaiveDateTime, _>(3).to_string() }));
     }
-    Ok(serde_json::json!({ "totalSales": total_sales, "totalProfits": total_profits, "totalDiscounts": total_discounts, "totalExpenses": total_expenses, "cashbox": cashbox, "expenses": expenses_list }))
+    Ok(serde_json::json!({ "totalSales": decimal_to_f64(total_sales), "totalProfits": decimal_to_f64(total_profits), "totalDiscounts": decimal_to_f64(total_discounts), "totalExpenses": decimal_to_f64(total_expenses), "cashbox": decimal_to_f64(cashbox), "expenses": expenses_list }))
 }
 
 // الإغلاق اليومي — إصلاح P1-7: أرشفة بدل حذف فيزيائي
@@ -1085,7 +1085,7 @@ async fn get_dashboard_stats(state: tauri::State<'_, PgPool>) -> Result<serde_js
     let threshold: i32 = threshold_row.and_then(|r| r.get::<String, _>(0).parse::<i32>().ok()).unwrap_or(20);
     let low_stock_row = sqlx::query("SELECT COUNT(id) FROM medicines WHERE quantity <= $1 AND is_deleted = FALSE").bind(threshold).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
     let low_stock_count: i64 = low_stock_row.get(0);
-    Ok(serde_json::json!({ "todaySales": today_sales, "todayInvoices": today_invoices, "lowStockCount": low_stock_count }))
+    Ok(serde_json::json!({ "todaySales": decimal_to_f64(today_sales), "todayInvoices": today_invoices, "lowStockCount": low_stock_count }))
 }
 
 #[tauri::command]
@@ -1098,7 +1098,7 @@ async fn get_weekly_sales_stats(state: tauri::State<'_, PgPool>) -> Result<Vec<s
     for row in rows {
         let day: chrono::NaiveDate = row.get(0);
         let total: rust_decimal::Decimal = row.get(1);
-        results.push(serde_json::json!({ "date": day.format("%Y-%m-%d").to_string(), "sales": total }));
+        results.push(serde_json::json!({ "date": day.format("%Y-%m-%d").to_string(), "sales": decimal_to_f64(total) }));
     }
     Ok(results)
 }
