@@ -229,10 +229,12 @@ async fn check_auto_backup(state: tauri::State<'_, PgPool>) -> Result<bool, Stri
 // --- أوامر المستخدمين والورديات ---
 #[tauri::command]
 async fn login(state: tauri::State<'_, PgPool>, username: String, password: String) -> Result<serde_json::Value, String> {
-    // Rate-limit بدائي: نسمح بـ 5 محاولات فاشلة لكل username خلال 5 دقائق
+    // Rate-limit: نسمح بـ 5 محاولات فاشلة لكل username خلال 5 دقائق
+    // Security fix: propagate DB error instead of unwrap_or(0) which silently disables rate-limit
     let recent_failures: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM audit_logs WHERE user_role = $1 AND action_type = 'LOGIN_FAILED' AND created_at > NOW() - INTERVAL '5 minutes'"
-    ).bind(&username).fetch_one(state.inner()).await.unwrap_or(0);
+    ).bind(&username).fetch_one(state.inner()).await
+        .map_err(|e| format!("خدمة المصادقة غير متاحة: {}", e))?;
     if recent_failures >= 5 {
         return Err("تم تجاوز عدد محاولات الدخول المسموحة. حاول بعد 5 دقائق.".to_string());
     }
@@ -247,28 +249,40 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
             // bcrypt::verify يعيد Err عند hash تالف — نعتبره "كلمة مرور خاطئة"
             let verified = bcrypt::verify(&password, &hashed_pass).unwrap_or(false);
             if verified {
-                // تحديث آخر دخول
-                let _ = sqlx::query("UPDATE users SET last_login = NOW() WHERE username = $1")
-                    .bind(&username).execute(state.inner()).await;
-                // إصلاح P0-1: تخزين session_token الفعلي في user_sessions
+                // تحديث آخر دخول — best-effort (لا يفشل الدخول لو فشل)
+                if let Err(e) = sqlx::query("UPDATE users SET last_login = NOW() WHERE username = $1")
+                    .bind(&username).execute(state.inner()).await {
+                    tracing::warn!(error = %e, "Failed to update last_login");
+                }
+                // Security fix: propagate session insert error
+                // Previously: let _ = ... → user gets token not in DB → verify_session_token always rejects
                 let session_token = uuid::Uuid::new_v4().to_string();
                 let device_info = format!("os:{}", std::env::consts::OS);
-                let _ = sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at, token, expires_at, last_activity) VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW() + INTERVAL '8 hours', NOW())")
+                sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at, token, expires_at, last_activity) VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW() + INTERVAL '8 hours', NOW())")
                     .bind(user_id).bind(&username).bind(&device_info).bind(&session_token)
-                    .execute(state.inner()).await;
-                // تسجيل في سجل التدقيق
-                let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN', 'تسجيل دخول ناجح')")
-                    .bind(&username).execute(state.inner()).await;
+                    .execute(state.inner()).await
+                    .map_err(|e| format!("فشل إنشاء الجلسة: {}. حاول مرة أخرى.", e))?;
+                // Security fix: log audit entry — best-effort but warn on failure
+                if let Err(e) = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN', 'تسجيل دخول ناجح')")
+                    .bind(&username).execute(state.inner()).await {
+                    tracing::warn!(error = %e, "Failed to log successful login to audit_logs");
+                }
                 Ok(serde_json::json!({ "username": username, "role": role, "sessionToken": session_token, "userId": user_id.to_string() }))
             } else {
-                let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN_FAILED', 'محاولة دخول فاشلة')")
-                    .bind(&username).execute(state.inner()).await;
+                // Security fix: log failed attempt — best-effort but warn on failure
+                if let Err(e) = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN_FAILED', 'محاولة دخول فاشلة')")
+                    .bind(&username).execute(state.inner()).await {
+                    tracing::warn!(error = %e, "Failed to log failed login to audit_logs");
+                }
                 Err("بيانات الدخول غير صحيحة".to_string())
             }
         },
         None => {
-            let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN_FAILED', 'مستخدم غير موجود أو موقوف')")
-                .bind(&username).execute(state.inner()).await;
+            // Security fix: log failed attempt — best-effort but warn on failure
+            if let Err(e) = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN_FAILED', 'مستخدم غير موجود أو موقوف')")
+                .bind(&username).execute(state.inner()).await {
+                tracing::warn!(error = %e, "Failed to log failed login to audit_logs");
+            }
             Err("بيانات الدخول غير صحيحة أو الحساب موقوف".to_string())
         },
     }
