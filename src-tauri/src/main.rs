@@ -343,7 +343,9 @@ async fn get_users_db(state: tauri::State<'_, PgPool>, requester_role: Option<St
 }
 
 #[tauri::command]
-async fn add_user_db(state: tauri::State<'_, PgPool>, username: String, password: String, role: String) -> Result<(), String> {
+async fn add_user_db(state: tauri::State<'_, PgPool>, username: String, password: String, role: String, session_token: String) -> Result<(), String> {
+    // Phase 2 Auth Fix: enforce session verification (had NO session_token at all)
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     // التحقق من طول كلمة المرور (>= 6)
     if password.len() < 6 { return Err("كلمة المرور يجب أن تكون 6 أحرف على الأقل".to_string()); }
     let hashed = bcrypt::hash(&password, BCRYPT_COST).map_err(|e| e.to_string())?;
@@ -352,7 +354,9 @@ async fn add_user_db(state: tauri::State<'_, PgPool>, username: String, password
 }
 
 #[tauri::command]
-async fn reset_user_password_db(state: tauri::State<'_, PgPool>, user_id: String, new_password: String) -> Result<(), String> {
+async fn reset_user_password_db(state: tauri::State<'_, PgPool>, user_id: String, new_password: String, session_token: String) -> Result<(), String> {
+    // Phase 2 Auth Fix: enforce session verification (had NO session_token at all)
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     if new_password.len() < 6 { return Err("كلمة المرور يجب أن تكون 6 أحرف على الأقل".to_string()); }
     let uuid_id = uuid::Uuid::parse_str(&user_id).map_err(|e| e.to_string())?;
     let hashed = bcrypt::hash(&new_password, BCRYPT_COST).map_err(|e| e.to_string())?;
@@ -361,8 +365,17 @@ async fn reset_user_password_db(state: tauri::State<'_, PgPool>, user_id: String
 }
 
 #[tauri::command]
-async fn toggle_user_status_db(state: tauri::State<'_, PgPool>, user_id: String, is_active: bool) -> Result<(), String> {
+async fn toggle_user_status_db(state: tauri::State<'_, PgPool>, user_id: String, is_active: bool, session_token: String) -> Result<(), String> {
+    // Phase 2 Auth Fix: enforce session verification (had NO session_token at all)
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let uuid_id = uuid::Uuid::parse_str(&user_id).map_err(|e| e.to_string())?;
+    // Security fix: prevent disabling the admin account (would lock everyone out)
+    // Only allow if target user is not 'admin'
+    let target_username: Option<String> = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+        .bind(uuid_id).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
+    if target_username.as_deref() == Some("admin") && !is_active {
+        return Err("لا يمكن تعطيل حساب المدير الرئيسي (admin)".to_string());
+    }
     sqlx::query("UPDATE users SET is_active = $1 WHERE id = $2").bind(is_active).bind(uuid_id).execute(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -575,8 +588,20 @@ async fn bulk_update_prices_db(state: tauri::State<'_, PgPool>, update_type: Str
 }
 
 #[tauri::command]
-async fn adjust_stock_db(state: tauri::State<'_, PgPool>, medicine_id: String, amount: i32) -> Result<(), String> {
-    sqlx::query("UPDATE medicines SET quantity = quantity + $1 WHERE id = $2").bind(amount).bind(uuid::Uuid::parse_str(&medicine_id).map_err(|e| e.to_string())?).execute(state.inner()).await.map_err(|e| e.to_string())?;
+async fn adjust_stock_db(state: tauri::State<'_, PgPool>, medicine_id: String, amount: i32, session_token: String) -> Result<(), String> {
+    // Phase 2 Auth Fix: enforce session verification + add audit log (had neither)
+    let (_uid, session_username, _session_role) = verify_session_token(state.inner(), &session_token).await?;
+    let med_uuid = uuid::Uuid::parse_str(&medicine_id).map_err(|e| e.to_string())?;
+    // Get medicine name for audit log
+    let med_name: Option<String> = sqlx::query_scalar("SELECT name_ar FROM medicines WHERE id = $1")
+        .bind(med_uuid).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
+    sqlx::query("UPDATE medicines SET quantity = quantity + $1 WHERE id = $2").bind(amount).bind(med_uuid).execute(state.inner()).await.map_err(|e| e.to_string())?;
+    // Security fix: add audit log entry (was completely missing)
+    let desc = format!("تعديل مخزون {}: {} (بواسطة {})", med_name.unwrap_or_default(), amount, session_username);
+    if let Err(e) = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'STOCK_ADJUSTMENT', $2)")
+        .bind(&session_username).bind(&desc).execute(state.inner()).await {
+        tracing::warn!(error = %e, "Failed to log stock adjustment");
+    }
     Ok(())
 }
 
