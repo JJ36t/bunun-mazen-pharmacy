@@ -205,10 +205,15 @@ where
     let mut ws_stream = accept_async(stream).await.map_err(|e| e.to_string())?;
     println!("[MobileScanner] Device connected: {}", addr);
 
+    // Security fix: track per-connection pairing state
+    // Previously, scan messages were processed without verifying pairing
+    let mut is_paired = false;
+
     let welcome = serde_json::json!({
         "type": "connected",
-        "message": "مرحباً بك في نظام المسح اللاسلكي",
+        "message": "مرحباً بك في نظام المسح اللاسلكي — يجب الإقتران قبل المسح",
         "serverTime": chrono::Utc::now().to_rfc3339(),
+        "requiresPairing": true,
     });
     ws_stream.send(Message::Text(welcome.to_string())).await.map_err(|e| e.to_string())?;
 
@@ -219,8 +224,29 @@ where
                     let msg_type = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
                     match msg_type {
                         "scan" => {
+                            // Security fix: reject scan if not paired
+                            if !is_paired {
+                                let err_response = serde_json::json!({
+                                    "type": "error",
+                                    "message": "يجب الإقتران أولاً قبل المسح. أرسل رسالة pair مع رمز صالح."
+                                });
+                                ws_stream.send(Message::Text(err_response.to_string())).await.map_err(|e| e.to_string())?;
+                                continue;
+                            }
+
                             let barcode = data.get("barcode").and_then(|b| b.as_str()).unwrap_or("");
                             let device_name = data.get("deviceName").and_then(|d| d.as_str()).unwrap_or("Unknown");
+
+                            // Security fix: validate barcode length (prevent DoS via huge barcodes)
+                            if barcode.len() > 64 {
+                                let err_response = serde_json::json!({
+                                    "type": "error",
+                                    "message": "الباركود طويل جداً (الحد الأقصى 64 حرف)"
+                                });
+                                ws_stream.send(Message::Text(err_response.to_string())).await.map_err(|e| e.to_string())?;
+                                continue;
+                            }
+
                             let result = process_scan(barcode, &pool, device_name, &addr.to_string()).await;
 
                             // أرسل النتيجة للموبايل
@@ -240,10 +266,11 @@ where
                             let response = serde_json::json!({
                                 "type": "pair_result",
                                 "success": valid,
-                                "message": if valid { "تم الإقتران بنجاح" } else { "رمز الإقتران غير صالح" },
+                                "message": if valid { "تم الإقتران بنجاح — يمكنك المسح الآن" } else { "رمز الإقتران غير صالح" },
                             });
                             ws_stream.send(Message::Text(response.to_string())).await.map_err(|e| e.to_string())?;
                             if valid {
+                                is_paired = true; // Mark connection as authenticated
                                 sqlx::query("UPDATE mobile_pairing_sessions SET is_active = TRUE, device_name = $1, device_ip = $2, last_seen = NOW() WHERE pairing_token = $3")
                                     .bind(device_name).bind(addr.to_string()).bind(token)
                                     .execute(&pool).await.ok();
