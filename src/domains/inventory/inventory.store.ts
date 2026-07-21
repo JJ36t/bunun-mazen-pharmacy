@@ -82,7 +82,9 @@ export const useInventoryStore = create<InventoryState>((set) => ({
   
   adjustStock: async (id, amount) => {
     try {
-      await invoke('adjust_stock_db', { medicineId: id, amount });
+      // Phase 2 Auth Fix: send sessionToken (now required by backend)
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('adjust_stock_db', { medicineId: id, amount, sessionToken: sessionToken || '' });
       set((state) => ({
         medicines: state.medicines.map(m => 
           m.id === id ? { ...m, quantity: m.quantity + amount } : m
@@ -90,7 +92,7 @@ export const useInventoryStore = create<InventoryState>((set) => ({
       }));
     } catch (e) {
       console.error("Failed to adjust stock:", e);
-      alert("فشل تحديث المخزون في قاعدة البيانات");
+      alert("فشل تحديث المخزون: " + (typeof e === "string" ? e : ((e as Error)?.message || "خطأ")));
     }
   },
 }));

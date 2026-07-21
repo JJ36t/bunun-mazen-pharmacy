@@ -41,7 +41,9 @@ export const useAccountingStore = create<AccountingState>((set) => ({
   },
   resetDaily: async (userRole) => {
     try {
-      await invoke('reset_daily_db', { userRole });
+      // Phase 2 Auth Fix: send sessionToken (now required by backend)
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('reset_daily_db', { userRole, sessionToken: sessionToken || '' });
       set({ cashbox: 0, totalSales: 0, totalProfits: 0, totalExpenses: 0, totalDiscounts: 0, expenses: [] });
     } catch (e) { console.error("Failed to reset daily:", e); }
   }

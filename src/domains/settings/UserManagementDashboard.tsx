@@ -4,12 +4,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { UserPlus, UserX, Check, KeyRound, User, Shield, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ALL_ROLES, RoleName, ROLE_DISPLAY_NAMES, normalizeRole, isAdmin } from '../../lib/core/rbac';
+import { useAuthStore } from '../security/auth.store';
 
 // دوال مساعدة محلية
 const isAdminRole = (role: string) => isAdmin(role);
 const normalizeRoleSafe = (role: string): RoleName => normalizeRole(role);
 
 export function UserManagementDashboard() {
+  // Phase 2 Auth Fix: use auth store for real username + sessionToken
+  const { username: authUser, sessionToken } = useAuthStore();
   const [users, setUsers] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [username, setUsername] = useState('');
@@ -20,7 +23,8 @@ export function UserManagementDashboard() {
     if (name === 'admin') { toast.error('لا يمكن حذف المدير الرئيسي'); return; }
     if (window.confirm(`هل أنت متأكد من حذف المستخدم: ${name}؟`)) {
       try {
-        await invoke('delete_user_db', { userId: id, deletedBy: username || 'admin' });
+        // Phase 2 Auth Fix: use auth store username (not form state) + send sessionToken
+        await invoke('delete_user_db', { userId: id, deletedBy: authUser || 'admin', sessionToken: sessionToken || '' });
         toast.success('تم حذف المستخدم');
         fetchUsers();
       } catch (e: unknown) { toast.error('فشل الحذف: ' + e); }
@@ -37,7 +41,7 @@ export function UserManagementDashboard() {
     e.preventDefault();
     if (!username || !password) return;
     try {
-      await invoke('add_user_db', { username, password, role });
+      await invoke('add_user_db', { username, password, role, sessionToken: sessionToken || '' });
       toast.success('تمت إضافة المستخدم بنجاح.');
       setUsername(''); setPassword(''); setShowForm(false);
       fetchUsers();
@@ -45,20 +49,22 @@ export function UserManagementDashboard() {
   };
 
   const handleToggle = async (id: string, currentStatus: boolean) => {
-    await invoke('toggle_user_status_db', { userId: id, isActive: !currentStatus });
-    toast.success('تم تحديث حالة المستخدم.');
-    fetchUsers();
+    try {
+      await invoke('toggle_user_status_db', { userId: id, isActive: !currentStatus, sessionToken: sessionToken || '' });
+      toast.success('تم تحديث حالة المستخدم.');
+      fetchUsers();
+    } catch (e: unknown) { toast.error('فشل تحديث الحالة: ' + e); }
   };
 
   const handleResetPassword = async (id: string, name: string) => {
     const newPass = prompt(`أدخل كلمة المرور الجديدة للمستخدم ${name}:`);
-    if (newPass && newPass.length >= 4) {
+    if (newPass && newPass.length >= 6) {
       try {
-        await invoke('reset_user_password_db', { userId: id, newPassword: newPass });
+        await invoke('reset_user_password_db', { userId: id, newPassword: newPass, sessionToken: sessionToken || '' });
         toast.success('تم تغيير كلمة المرور بنجاح.');
       } catch (e: unknown) { toast.error("فشل التغيير: " + e); }
     } else if (newPass !== null) {
-      toast.error("كلمة المرور يجب أن تكون 4 أحرف على الأقل.");
+      toast.error("كلمة المرور يجب أن تكون 6 أحرف على الأقل.");
     }
   };
 

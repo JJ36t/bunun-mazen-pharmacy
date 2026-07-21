@@ -111,6 +111,7 @@ class CrashRecoveryManager {
           totalAmount: payload.totalAmount,
           itemsJson: JSON.stringify(payload.items),
           userRole: entry.user_role,
+          sessionToken: '', // Phase 2 Auth: crash recovery may need special handling
         });
         break;
         

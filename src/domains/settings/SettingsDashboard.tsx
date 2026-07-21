@@ -10,7 +10,7 @@ import { PrinterSetupSection } from './PrinterSetup';
 export function SettingsDashboard() {
   const { pharmacyName, phone, address, maxDiscountAmount, fetchSettings, saveSettings } = useSettingsStore();
   const { fetchMedicines } = useInventoryStore();
-  const { role } = useAuthStore();
+  const { role, sessionToken } = useAuthStore();
   
   const [name, setName] = useState('');
   const [ph, setPh] = useState('');
@@ -36,7 +36,7 @@ export function SettingsDashboard() {
     if (isNaN(val)) { toast.error("أدخل قيمة صحيحة"); return; }
     if (!confirm(`سيتم تحديث أسعار كامل المخزون (${bulkType === 'percentage' ? val + '%' : val + ' د.ع'}). هل أنت متأكد؟`)) return;
     try {
-      await invoke('bulk_update_prices_db', { updateType: bulkType, value: val, userRole: role });
+      await invoke('bulk_update_prices_db', { updateType: bulkType, value: val, userRole: role, sessionToken: sessionToken || '' });
       await fetchMedicines();
       toast.success("تم تحديث الأسعار بنجاح!");
       setBulkValue('');
