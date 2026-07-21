@@ -137,10 +137,11 @@ impl From<qrcode::types::QrError> for AppError {
 
 impl From<&str> for AppError {
     fn from(s: &str) -> Self {
-        if s.contains("صلاحية") || s.contains("غير كاف") && s.contains("صلاح") {
-            AppError::Unauthorized
-        } else if s.contains("الكمية") && s.contains("كاف") {
+        // Check InsufficientStock first (more specific than Unauthorized)
+        if (s.contains("الكمية") && s.contains("كاف")) || s.contains("غير كاف") {
             AppError::InsufficientStock(s.into())
+        } else if s.contains("صلاحية") || s.contains("غير كافية") {
+            AppError::Unauthorized
         } else if s.contains("غير موجود") || s.contains("لا يوجد") {
             AppError::NotFound(s.into())
         } else {
