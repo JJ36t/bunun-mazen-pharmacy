@@ -192,9 +192,9 @@ export function exportInvoiceToPdf(invoice: {
     <div class="pharmacy">${escapeHtml(pharmacyName)}</div>
   </div>
   <div class="invoice-info">
-    <div><span>رقم الفاتورة:</span><span>${invoiceNumber}</span></div>
+    <div><span>رقم الفاتورة:</span><span>${escapeHtml(invoiceNumber)}</span></div>
     <div><span>التاريخ:</span><span>${escapeHtml(now)}</span></div>
-    ${cashier ? `<div><span>الكاشير:</span><span>${cashier}</span></div>` : ''}
+    ${cashier ? `<div><span>الكاشير:</span><span>${escapeHtml(cashier)}</span></div>` : ''}
   </div>
   <table>
     <thead>
@@ -208,7 +208,7 @@ export function exportInvoiceToPdf(invoice: {
     <tbody>
       ${items.map(i => `
         <tr>
-          <td>${i.nameAr}</td>
+          <td>${escapeHtml(i.nameAr)}</td>
           <td style="text-align:center;">${i.quantity}</td>
           <td style="text-align:left;">${i.price.toFixed(2)}</td>
           <td style="text-align:left;">${(i.price * i.quantity).toFixed(2)}</td>
