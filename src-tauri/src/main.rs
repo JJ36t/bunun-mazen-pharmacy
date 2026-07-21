@@ -307,12 +307,28 @@ pub(crate) async fn verify_session_token(pool: &PgPool, session_token: &str) -> 
 
 #[tauri::command]
 async fn verify_admin_password_db(state: tauri::State<'_, PgPool>, password: String) -> Result<bool, String> {
-    let row = sqlx::query("SELECT password FROM users WHERE username = 'admin' AND is_active = TRUE")
+    // Phase 2 Auth Fix: rate-limit admin password verification (was unlimited brute-force oracle)
+    let recent_failures: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_logs WHERE action_type = 'ADMIN_VERIFY_FAILED' AND created_at > NOW() - INTERVAL '5 minutes'"
+    ).fetch_one(state.inner()).await.map_err(|e| format!("خدمة المصادقة غير متاحة: {}", e))?;
+    if recent_failures >= 5 {
+        return Err("محاولات كثيرة جداً للتحقق من كلمة مرور المدير. حاول بعد 5 دقائق.".to_string());
+    }
+
+    let row = sqlx::query("SELECT password FROM users WHERE username = 'admin' AND is_active = TRUE AND deleted_at IS NULL")
         .fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
     match row {
         Some(r) => {
             let hashed_pass: String = r.get(0);
-            Ok(bcrypt::verify(&password, &hashed_pass).unwrap_or(false))
+            let verified = bcrypt::verify(&password, &hashed_pass).unwrap_or(false);
+            if !verified {
+                // Log failed attempt for rate-limiting
+                if let Err(e) = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ('admin', 'ADMIN_VERIFY_FAILED', 'محاولة فاشلة للتحقق من كلمة مرور المدير')")
+                    .execute(state.inner()).await {
+                    tracing::warn!(error = %e, "Failed to log admin verify failure");
+                }
+            }
+            Ok(verified)
         },
         None => Ok(false),
     }
