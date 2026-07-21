@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: https://*; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' data: https://fonts.googleapis.com https://world.openfoodfacts.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self' https://world.openfoodfacts.org https://world.openbeautyfacts.org; frame-ancestors 'none'; form-action 'self'; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {
@@ -45,6 +45,7 @@
       "endpoints": [
         "https://github.com/JJ36t/bunun-mazen-pharmacy/releases/latest/download/latest.json"
       ],
+      "_pubkey_notice": "BEFORE RELEASE: run 'npm run tauri signer generate -- -w ~/.tauri/pharmacy-updater.key' then paste the PUBLIC key below. Keep the private key file SECRET. Set TAURI_SIGNING_PRIVATE_KEY env var during 'tauri build' for signed updates.",
       "pubkey": "UPDATER_PUBKEY_MUST_BE_SET_BEFORE_RELEASE",
       "windows": {
         "installMode": "passive"
