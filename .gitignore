@@ -28,6 +28,16 @@ build
 secrets/
 credentials.json
 
+# License signing keys (NEVER commit)
+private_key.hex
+*.hex
+signing_key.*
+updater_private_key.*
+
+# Backup encryption keys (NEVER commit)
+.backup_key
+backup_key.*
+
 # IDE / Editor
 .vscode/*
 !.vscode/extensions.json
