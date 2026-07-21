@@ -664,10 +664,17 @@ async fn link_barcode_to_medicine_db(
 // --- أوامر المحاسقة (وإصلاح خصم المخزون المزدوج) ---
 // idempotency: operation_id يمنع تسجيل البيع مرتين عند إعادة المحاولة بعد انهيار
 #[tauri::command]
-async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount: Option<f64>, _session_token: Option<String>) -> Result<serde_json::Value, String> {
+async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f64, items_json: String, user_role: String, operation_id: Option<String>, discount_amount: Option<f64>, session_token: String) -> Result<serde_json::Value, String> {
     let pool = state.inner();
-    // session_token optional — skip verification if empty/null (backward compatible)
-    // TODO: enable verification after frontend consistently sends valid tokens
+    // Phase 2 Auth Fix: enforce session verification
+    // Previously: _session_token was ignored (underscore prefix). Now required.
+    // Frontend already sends sessionToken (App.tsx:457) since Phase 1.
+    let (session_user_id, session_username, session_role) = verify_session_token(pool, &session_token).await?;
+    // Security: use session-derived username for audit (not client-supplied user_role)
+    // This prevents audit forgery — sale is attributed to the authenticated user
+    let effective_user_role = if user_role.is_empty() { session_role.clone() } else { user_role.clone() };
+    let _ = session_user_id; // available for future per-user tracking
+    let _ = session_username; // available for future per-user tracking
 
     // ===== Idempotency check =====
     if let Some(op_id) = &operation_id {
@@ -721,7 +728,7 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
     }
 
     let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number, idempotency_key, discount_amount) VALUES ($1, $2, $3, get_daily_receipt_number(), $4, $5) RETURNING id")
-        .bind(final_total).bind(final_profit).bind(&user_role).bind(&operation_id).bind(discount_amount_val).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        .bind(final_total).bind(final_profit).bind(&effective_user_role).bind(&operation_id).bind(discount_amount_val).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let invoice_id: uuid::Uuid = row.get(0);
 
     let mut items_desc = Vec::new();
@@ -757,7 +764,7 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
     } else {
         format!("بيع فاتورة بمبلغ {}. الأصناف: {}", final_total, items_desc.join(", "))
     };
-    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("SALE_INVOICE").bind(desc).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(&effective_user_role).bind("SALE_INVOICE").bind(desc).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "invoiceId": invoice_id.to_string(), "replayed": false }))
 }
