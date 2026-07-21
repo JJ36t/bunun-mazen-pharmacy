@@ -75,8 +75,14 @@ fn is_valid_key(device_id: &str, input_key: &str) -> bool {
         if licensing::verify_license(&keyring, device_id, input_key) {
             return true;
         }
+        // Fall back to legacy HMAC ONLY if explicitly enabled in manifest
+        // Security fix: previously called legacy unconditionally, bypassing the
+        // legacy_enabled flag. Now respects manifest configuration.
+        if keyring.legacy_enabled() {
+            return licensing::legacy::verify_hmac_license(device_id, input_key);
+        }
     }
-    // Fall back to legacy HMAC
+    // If manifest fails to load, fall back to legacy (backward compatibility)
     licensing::legacy::verify_hmac_license(device_id, input_key)
 }
 
