@@ -114,11 +114,13 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle,
                     if let Ok((stream, peer_addr)) = accept_result {
                         println!("[HTTPS] Connection from {}", peer_addr);
                         let acceptor = tls_acceptor_http.clone();
+                        let origin_ip = local_ip.clone();
+                        let origin_port = port;
                         tokio::spawn(async move {
                             match acceptor.accept(stream).await {
                                 Ok(tls_stream) => {
                                     println!("[HTTPS] TLS handshake OK");
-                                    let _ = handle_http_request(tls_stream).await;
+                                    let _ = handle_http_request(tls_stream, &origin_ip, origin_port).await;
                                 }
                                 Err(e) => println!("[HTTPS] TLS accept failed: {}", e),
                             }
@@ -170,7 +172,7 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle,
 }
 
 /// معالجة طلب HTTPS — إرجاع صفحة الموبايل
-async fn handle_http_request<S>(mut stream: S) -> Result<(), String>
+async fn handle_http_request<S>(mut stream: S, local_ip: &str, port: usize) -> Result<(), String>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -179,9 +181,12 @@ where
     let _ = stream.read(&mut buf).await;
 
     let html = include_str!("../../mobile_scanner_page.html");
+    // Security fix: restrict CORS to the specific pharmacy LAN origin
+    // Previously was Access-Control-Allow-Origin: * (allowed any website)
+    let cors_origin = format!("https://{}:{}", local_ip, port);
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
-        html.len(), html
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n{}",
+        html.len(), cors_origin, html
     );
 
     stream.write_all(response.as_bytes()).await.map_err(|e| e.to_string())?;
