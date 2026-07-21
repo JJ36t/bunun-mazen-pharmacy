@@ -368,10 +368,9 @@ async fn toggle_user_status_db(state: tauri::State<'_, PgPool>, user_id: String,
 }
 
 #[tauri::command]
-async fn delete_user_db(state: tauri::State<'_, PgPool>, user_id: String, deleted_by: String, session_token: Option<String>) -> Result<(), String> {
-    if let Some(ref token) = &session_token { if !token.is_empty() && verify_session_token(state.inner(), token).await.is_err() {
-        return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-    }}
+async fn delete_user_db(state: tauri::State<'_, PgPool>, user_id: String, deleted_by: String, session_token: String) -> Result<(), String> {
+    // Phase 2 Auth Fix: enforce session verification (was Option<String>, bypassable)
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let uuid_id = uuid::Uuid::parse_str(&user_id).map_err(|e| e.to_string())?;
     // Soft delete - لا نحذف فعلياً
     sqlx::query("UPDATE users SET deleted_at = NOW(), deleted_by = $1, is_active = FALSE WHERE id = $2 AND username != 'admin'")
@@ -551,12 +550,16 @@ async fn update_medicine_db(state: tauri::State<'_, PgPool>, medicine_id: String
 }
 
 #[tauri::command]
-async fn bulk_update_prices_db(state: tauri::State<'_, PgPool>, update_type: String, value: f64, user_role: String, session_token: Option<String>) -> Result<(), String> {
+async fn bulk_update_prices_db(state: tauri::State<'_, PgPool>, update_type: String, value: f64, user_role: String, session_token: String) -> Result<(), String> {
     let pool = state.inner();
-    if let Some(ref token) = session_token {
-        if verify_session_token(pool, token).await.is_err() {
-            return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-        }
+    // Phase 2 Auth Fix: enforce session verification (was Option<String>, bypassable with empty)
+    let _ = verify_session_token(pool, &session_token).await?;
+    // Security fix: validate value bounds (prevent negative or absurd price changes)
+    if update_type == "percentage" && (value < -50.0 || value > 100.0) {
+        return Err("نسبة التحديث يجب أن تكون بين -50% و +100%".to_string());
+    }
+    if update_type == "amount" && value.abs() > 100000.0 {
+        return Err("مبلغ التحديث يجب أن يكون بين -100000 و +100000 د.ع".to_string());
     }
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     if update_type == "percentage" {
@@ -818,7 +821,9 @@ async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, it
 
 // --- التراجع عن المرتجع (Undo Refund) ---
 #[tauri::command]
-async fn reverse_refund_db(state: tauri::State<'_, PgPool>, invoice_id: String, user_role: String) -> Result<(), String> {
+async fn reverse_refund_db(state: tauri::State<'_, PgPool>, invoice_id: String, user_role: String, session_token: String) -> Result<(), String> {
+    // Phase 2 Auth Fix: enforce session verification (had no session_token at all)
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let uuid_id = uuid::Uuid::parse_str(&invoice_id).map_err(|e| e.to_string())?;
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
     let inv_row = sqlx::query("SELECT total_amount, is_reversed FROM invoices WHERE id = $1").bind(uuid_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -874,10 +879,9 @@ async fn get_accounting_summary_db(state: tauri::State<'_, PgPool>) -> Result<se
 
 // الإغلاق اليومي — إصلاح P1-7: أرشفة بدل حذف فيزيائي
 #[tauri::command]
-async fn reset_daily_db(state: tauri::State<'_, PgPool>, user_role: String, session_token: Option<String>) -> Result<(), String> {
-    if let Some(ref token) = &session_token { if !token.is_empty() && verify_session_token(state.inner(), token).await.is_err() {
-        return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-    }}
+async fn reset_daily_db(state: tauri::State<'_, PgPool>, user_role: String, session_token: String) -> Result<(), String> {
+    // Phase 2 Auth Fix: enforce session verification (was Option<String>, bypassable)
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     if user_role != "Super Admin" { return Err("صلاحية غير كافية: يجب أن تكون مديراً للقيام بالإغلاق اليومي.".to_string()); }
     let today = chrono::Local::now().date_naive();
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
@@ -1606,10 +1610,9 @@ fn get_or_create_auto_backup_password() -> Result<String, String> {
 
 // --- استعادة النسخة الاحتياطية إلى قاعدة البيانات ---
 #[tauri::command]
-async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String, password: String, session_token: Option<String>) -> Result<serde_json::Value, String> {
-    if let Some(ref token) = &session_token { if !token.is_empty() && verify_session_token(state.inner(), token).await.is_err() {
-        return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-    }}
+async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String, password: String, session_token: String) -> Result<serde_json::Value, String> {
+    // Phase 2 Auth Fix: enforce session verification (was Option<String>, bypassable)
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let encrypted_data = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
     let plaintext = decrypt_data(&encrypted_data, &password)?;
     let backup: serde_json::Value = serde_json::from_str(&plaintext).map_err(|e| format!("فشل تحليل JSON: {}", e))?;
