@@ -88,14 +88,17 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle,
     let tls_acceptor = create_tls_acceptor(&local_ip)?;
     println!("[MobileScanner] TLS acceptor created successfully");
 
-    let https_addr = format!("0.0.0.0:{}", port);
+    // Security fix: bind to specific LAN IP instead of 0.0.0.0 (all interfaces)
+    // Previously bound to 0.0.0.0 — exposed to entire LAN, VPN, Docker, shared WiFi
+    // Now binds to the specific local_ip (computed in run_server)
+    let https_addr = format!("{}:{}", local_ip, port);
     let https_listener = TcpListener::bind(&https_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] HTTPS listener bound on https://0.0.0.0:{}", port);
+    println!("[MobileScanner] HTTPS listener bound on https://{}:{}", local_ip, port);
 
     let wss_port = port + 1;
-    let wss_addr = format!("0.0.0.0:{}", wss_port);
+    let wss_addr = format!("{}:{}", local_ip, wss_port);
     let wss_listener = TcpListener::bind(&wss_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] WSS listener bound on wss://0.0.0.0:{}", wss_port);
+    println!("[MobileScanner] WSS listener bound on wss://{}:{}", local_ip, wss_port);
 
     // HTTPS server
     let tls_acceptor_http = tls_acceptor.clone();
