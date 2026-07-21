@@ -770,13 +770,10 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
 }
 
 #[tauri::command]
-async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, items_json: String, user_role: String, session_token: Option<String>) -> Result<(), String> {
+async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, items_json: String, user_role: String, session_token: String) -> Result<(), String> {
     let pool = state.inner();
-    if let Some(ref token) = &session_token { if !token.is_empty() {
-        if verify_session_token(pool, token).await.is_err() {
-            return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
-        }
-    }}
+    // Phase 2 Auth Fix: enforce session verification (was optional + bypassable with empty string)
+    let (_session_user_id, _session_username, _session_role) = verify_session_token(pool, &session_token).await?;
     let total_dec = rust_decimal::Decimal::from_f64(total_amount).ok_or("Invalid total")?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let mut total_refund_profit = rust_decimal::Decimal::ZERO;
