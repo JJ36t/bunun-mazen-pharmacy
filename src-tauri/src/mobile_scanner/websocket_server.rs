@@ -3,6 +3,7 @@ use tauri::Emitter;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 use futures_util::{StreamExt, SinkExt};
+use crate::mobile_scanner::rate_limiter::RateLimiter;
 use sqlx::{PgPool, Row};
 use crate::mobile_scanner::barcode_parser;
 use std::net::SocketAddr;
@@ -209,6 +210,10 @@ where
     // Previously, scan messages were processed without verifying pairing
     let mut is_paired = false;
 
+    // Security fix: rate limiter for pairing attempts (prevent brute-force)
+    // 1 attempt per 2 seconds per IP
+    let pair_limiter = RateLimiter::new(2000);
+
     let welcome = serde_json::json!({
         "type": "connected",
         "message": "مرحباً بك في نظام المسح اللاسلكي — يجب الإقتران قبل المسح",
@@ -260,6 +265,17 @@ where
                             ws_stream.send(Message::Text(serde_json::json!({"type": "pong"}).to_string())).await.map_err(|e| e.to_string())?;
                         }
                         "pair" => {
+                            // Security fix: rate limit pairing attempts (prevent brute-force)
+                            let pair_key = format!("pair:{}", addr.ip());
+                            if !pair_limiter.check(&pair_key).await {
+                                let err_response = serde_json::json!({
+                                    "type": "error",
+                                    "message": "محاولات إقتران كثيرة جداً. انتظر ثانيتين وحاول مرة أخرى."
+                                });
+                                ws_stream.send(Message::Text(err_response.to_string())).await.map_err(|e| e.to_string())?;
+                                continue;
+                            }
+
                             let token = data.get("token").and_then(|t| t.as_str()).unwrap_or("");
                             let device_name = data.get("deviceName").and_then(|d| d.as_str()).unwrap_or("Unknown");
                             let valid = validate_pairing_token(token, &pool).await;
