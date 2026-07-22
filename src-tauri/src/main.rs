@@ -2190,12 +2190,11 @@ fn main() {
                     let _ = sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE").execute(&pool).await;
                     let _ = sqlx::query("UPDATE users SET must_change_password = TRUE WHERE username IN ('admin', 'cashier')").execute(&pool).await;
                 }
+                // Phase 4: cleanup expired sessions on startup
+                let _ = sqlx::query("SELECT cleanup_expired_sessions()").execute(&pool).await;
+                // Phase 5: refresh materialized views on startup
+                let _ = sqlx::query("SELECT refresh_all_materialized_views()").execute(&pool).await;
             });
-            // Phase 4: cleanup expired sessions on startup
-            let _ = sqlx::query("SELECT cleanup_expired_sessions()").execute(&pool).await;
-
-            // Phase 5: refresh materialized views on startup
-            let _ = sqlx::query("SELECT refresh_all_materialized_views()").execute(&pool).await;
 
             app.manage(pool);
             Ok(())
