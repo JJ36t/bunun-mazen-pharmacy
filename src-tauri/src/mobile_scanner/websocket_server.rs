@@ -203,6 +203,7 @@ async fn handle_ws_connection<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
+    // Part 2 S9: idle timeout — disconnect after 60s of inactivity
     let mut ws_stream = accept_async(stream).await.map_err(|e| e.to_string())?;
     println!("[MobileScanner] Device connected: {}", addr);
 
@@ -222,12 +223,34 @@ where
     });
     ws_stream.send(Message::Text(welcome.to_string())).await.map_err(|e| e.to_string())?;
 
-    while let Some(msg) = ws_stream.next().await {
+    // Part 2 S9: idle timeout loop — 60 seconds max inactivity
+    loop {
+        let msg = tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            ws_stream.next()
+        ).await;
+
         match msg {
-            Ok(Message::Text(text)) => {
-                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
-                    let msg_type = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                    match msg_type {
+            Err(_) => {
+                // Timeout — disconnect idle client
+                println!("[MobileScanner] Idle timeout for {}", addr);
+                let _ = ws_stream.send(Message::Close(None)).await;
+                break;
+            }
+            Ok(None) => break, // stream ended
+            Ok(Some(Err(_))) => break, // error
+            Ok(Some(Ok(msg))) => {
+                match msg {
+                    Message::Text(text) => {
+                        // Part 2 S9: reject oversized messages (>64KB)
+                        if text.len() > 65536 {
+                            let err = serde_json::json!({ "type": "error", "message": "الرسالة كبيرة جداً (الحد الأقصى 64KB)" });
+                            let _ = ws_stream.send(Message::Text(err.to_string())).await;
+                            continue;
+                        }
+                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
+                            let msg_type = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                            match msg_type {
                         "scan" => {
                             // Security fix: reject scan if not paired
                             if !is_paired {
@@ -296,9 +319,9 @@ where
                     }
                 }
             }
-            Ok(Message::Close(_)) => break,
-            Err(_) => break,
+            Message::Close(_) => break,
             _ => {}
+        }
         }
     }
     println!("[MobileScanner] Device disconnected: {}", addr);
