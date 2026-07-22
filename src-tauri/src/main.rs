@@ -830,7 +830,12 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
         let name = item["nameAr"].as_str().ok_or("Missing name")?;
         let qty = item["quantity"].as_i64().ok_or("Missing qty")? as i32;
         let med_uuid = uuid::Uuid::parse_str(item["id"].as_str().ok_or("Err")?).map_err(|e| e.to_string())?;
-        let price = rust_decimal::Decimal::from_f64(item["price"].as_f64().ok_or("Err")?).ok_or("Err")?;
+        // Part 3 S10: fetch price from DB (not client) to prevent price manipulation
+        let med_data = sqlx::query("SELECT price, name_ar FROM medicines WHERE id = $1 FOR UPDATE")
+            .bind(med_uuid).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let price: rust_decimal::Decimal = med_data.get(0);
+        let db_name: String = med_data.get(1);
+        let name = &db_name; // Use DB name (not client-supplied)
 
         // Phase 8 Fix: track which batch each item was deducted from
         // Deduct from batches (FEFO) and record batch_id in invoice_items
@@ -1803,7 +1808,7 @@ async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String
             let expiry_date: Option<chrono::NaiveDate> = med["expiry_date"].as_str().and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
             let is_deleted = med["is_deleted"].as_bool().unwrap_or(false);
 
-            let _ = sqlx::query(
+            sqlx::query(
                 "INSERT INTO medicines (id, name_ar, name_en, scientific_name, barcode, price, cost_price, quantity, batch_number, expiry_date, is_deleted)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                  ON CONFLICT (id) DO UPDATE SET quantity = EXCLUDED.quantity, price = EXCLUDED.price, cost_price = EXCLUDED.cost_price"
@@ -1828,7 +1833,7 @@ async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String
             let created_at: Option<chrono::NaiveDateTime> = inv["created_at"].as_str().and_then(|s| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").ok());
             let is_reversed = inv["is_reversed"].as_bool().unwrap_or(false);
 
-            let _ = sqlx::query(
+            sqlx::query(
                 "INSERT INTO invoices (id, total_amount, profit_amount, user_role, created_at, is_reversed)
                  VALUES ($1, $2, $3, $4, $5, $6)
                  ON CONFLICT (id) DO NOTHING"
@@ -1851,7 +1856,7 @@ async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String
             let quantity: i32 = item["quantity"].as_i64().unwrap_or(0) as i32;
             let price: rust_decimal::Decimal = item["price"].as_str().and_then(|s| s.parse().ok()).unwrap_or(rust_decimal::Decimal::ZERO);
 
-            let _ = sqlx::query(
+            sqlx::query(
                 "INSERT INTO invoice_items (invoice_id, medicine_id, name_ar, quantity, price)
                  VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING"
             )
@@ -1872,7 +1877,7 @@ async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String
             let note = debt["note"].as_str();
             let created_at: Option<chrono::NaiveDateTime> = debt["created_at"].as_str().and_then(|s| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").ok());
 
-            let _ = sqlx::query(
+            sqlx::query(
                 "INSERT INTO customer_debts (customer_name, amount, is_paid, note, created_at)
                  VALUES ($1, $2, $3, $4, $5)"
             )
@@ -1893,7 +1898,7 @@ async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String
             let balance: rust_decimal::Decimal = sup["balance"].as_str().and_then(|s| s.parse().ok()).unwrap_or(rust_decimal::Decimal::ZERO);
             let is_active = sup["is_active"].as_bool().unwrap_or(true);
 
-            let _ = sqlx::query(
+            sqlx::query(
                 "INSERT INTO suppliers (name, phone, address, balance, is_active)
                  VALUES ($1, $2, $3, $4, $5) ON CONFLICT (name) DO UPDATE SET balance = EXCLUDED.balance"
             )
@@ -1911,7 +1916,7 @@ async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String
             let key = setting["key"].as_str().unwrap_or("");
             let value = setting["value"].as_str().unwrap_or("");
             if !key.is_empty() {
-                let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2")
+                sqlx::query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2")
                     .bind(key).bind(value).execute(&mut *tx).await;
                 count += 1;
             }
@@ -2027,32 +2032,74 @@ async fn get_performance_metrics_db(state: tauri::State<'_, PgPool>, metric_name
 
 // --- 9. تقارير إضافية ---
 #[tauri::command]
-async fn get_inventory_movement_report_db(state: tauri::State<'_, PgPool>, _start_date: String, _end_date: String) -> Result<Vec<serde_json::Value>, String> {
-    let rows = sqlx::query("SELECT m.name_ar, m.barcode, m.quantity FROM medicines m WHERE m.is_deleted = FALSE ORDER BY m.name_ar")
-        .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
+async fn get_inventory_movement_report_db(state: tauri::State<'_, PgPool>, start_date: String, end_date: String) -> Result<Vec<serde_json::Value>, String> {
+    // Part 3 S11: implement real report (was stub returning 0 for all movements)
+    let rows = sqlx::query(
+        "SELECT m.name_ar, m.barcode, m.quantity,
+            COALESCE(sold.sold_qty, 0), COALESCE(refunded.refunded_qty, 0), COALESCE(purchased.purchased_qty, 0)
+         FROM medicines m
+         LEFT JOIN (
+             SELECT ii.medicine_id, SUM(ii.quantity) as sold_qty
+             FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
+             WHERE i.total_amount > 0 AND i.is_reversed IS NOT TRUE
+               AND i.created_at::date >= $1::date AND i.created_at::date <= $2::date
+             GROUP BY ii.medicine_id
+         ) sold ON sold.medicine_id = m.id
+         LEFT JOIN (
+             SELECT ii.medicine_id, SUM(ii.quantity) as refunded_qty
+             FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
+             WHERE i.total_amount < 0 AND i.is_reversed IS NOT TRUE
+               AND i.created_at::date >= $1::date AND i.created_at::date <= $2::date
+             GROUP BY ii.medicine_id
+         ) refunded ON refunded.medicine_id = m.id
+         LEFT JOIN (
+             SELECT mb.medicine_id, SUM(mb.quantity) as purchased_qty
+             FROM medicine_batches mb
+             WHERE mb.created_at::date >= $1::date AND mb.created_at::date <= $2::date
+             GROUP BY mb.medicine_id
+         ) purchased ON purchased.medicine_id = m.id
+         WHERE m.is_deleted = FALSE ORDER BY m.name_ar"
+    ).bind(&start_date).bind(&end_date)
+    .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut results = Vec::new();
     for row in rows {
         results.push(serde_json::json!({
             "nameAr": row.get::<String, _>(0),
             "barcode": row.get::<Option<String>, _>(1),
             "currentQty": row.get::<i32, _>(2),
-            "soldQty": 0i64, "refundedQty": 0i64, "purchasedQty": 0i64,
+            "soldQty": row.get::<i64, _>(3),
+            "refundedQty": row.get::<i64, _>(4),
+            "purchasedQty": row.get::<i64, _>(5),
         }));
     }
     Ok(results)
 }
 
 #[tauri::command]
-async fn get_supplier_report_db(state: tauri::State<'_, PgPool>, _start_date: String, _end_date: String) -> Result<Vec<serde_json::Value>, String> {
-    let rows = sqlx::query("SELECT name, phone, balance FROM suppliers ORDER BY name")
-        .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
+async fn get_supplier_report_db(state: tauri::State<'_, PgPool>, start_date: String, end_date: String) -> Result<Vec<serde_json::Value>, String> {
+    // Part 3 S11: implement real report (was stub returning 0 for all)
+    let rows = sqlx::query(
+        "SELECT s.name, s.phone, s.balance,
+            COALESCE(purchases.batch_count, 0), COALESCE(purchases.total_purchased, 0)
+         FROM suppliers s
+         LEFT JOIN (
+             SELECT mb.medicine_id, COUNT(*) as batch_count, SUM(mb.quantity) as total_purchased
+             FROM medicine_batches mb
+             WHERE mb.created_at::date >= $1::date AND mb.created_at::date <= $2::date
+             GROUP BY mb.medicine_id
+         ) purchases ON true
+         GROUP BY s.id, s.name, s.phone, s.balance, purchases.batch_count, purchases.total_purchased
+         ORDER BY s.name"
+    ).bind(&start_date).bind(&end_date)
+    .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut results = Vec::new();
     for row in rows {
         results.push(serde_json::json!({
             "name": row.get::<String, _>(0),
             "phone": row.get::<Option<String>, _>(1),
             "balance": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
-            "batchCount": 0i64, "totalPurchased": 0i64,
+            "batchCount": row.get::<i64, _>(3),
+            "totalPurchased": row.get::<i64, _>(4),
         }));
     }
     Ok(results)
