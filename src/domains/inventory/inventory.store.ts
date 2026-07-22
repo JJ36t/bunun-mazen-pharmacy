@@ -32,17 +32,19 @@ export const useInventoryStore = create<InventoryState>((set) => ({
   
   addMedicine: async (med) => {
     try {
+      const { sessionToken } = useAuthStore.getState();
       const newId = await invoke<string>('add_medicine_db', {
         nameAr: med.nameAr,
         nameEn: med.nameEn,
         scientificName: med.scientificName || null,
         barcode: med.barcode,
         price: med.price,
-        wholesalePrice: 0,           // لم يعد مستخدماً (نمرّر 0 للتوافق مع Rust)
+        wholesalePrice: 0,
         costPrice: med.costPrice,
         quantity: med.quantity,
         batchNumber: med.batchNumber,
-        expiryDate: med.expiryDate
+        expiryDate: med.expiryDate,
+        sessionToken: sessionToken || ''
       });
       
       set((state) => ({
@@ -56,7 +58,8 @@ export const useInventoryStore = create<InventoryState>((set) => ({
   
   updateMedicine: async (id, med) => {
     try {
-      await invoke('update_medicine_db', { medicineId: id, ...med, scientificName: med.scientificName || null, wholesalePrice: 0 });
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('update_medicine_db', { medicineId: id, ...med, scientificName: med.scientificName || null, wholesalePrice: 0, sessionToken: sessionToken || '' });
       set((state) => ({
         medicines: state.medicines.map(m => m.id === id ? { ...m, ...med } : m)
       }));
@@ -68,7 +71,8 @@ export const useInventoryStore = create<InventoryState>((set) => ({
   
   softDeleteMedicine: async (id, userRole, medName) => {
     try {
-      await invoke('soft_delete_medicine_db', { medicineId: id, userRole, medName });
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('soft_delete_medicine_db', { medicineId: id, userRole, medName, sessionToken: sessionToken || '' });
       set((state) => ({
         medicines: state.medicines.map(m => 
           m.id === id ? { ...m, isDeleted: true } : m

@@ -536,7 +536,9 @@ async fn get_medicines_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_j
 }
 
 #[tauri::command]
-async fn add_medicine_db(state: tauri::State<'_, PgPool>, name_ar: String, name_en: Option<String>, scientific_name: Option<String>, barcode: Option<String>, price: f64, wholesale_price: f64, cost_price: f64, quantity: i32, batch_number: Option<String>, expiry_date: Option<String>) -> Result<String, String> {
+async fn add_medicine_db(state: tauri::State<'_, PgPool>, name_ar: String, name_en: Option<String>, scientific_name: Option<String>, barcode: Option<String>, price: f64, wholesale_price: f64, cost_price: f64, quantity: i32, batch_number: Option<String>, expiry_date: Option<String>, session_token: String) -> Result<String, String> {
+    // Phase 3 Auth Fix: require session + inventory.add permission
+    let (_uid, _username, _role) = verify_session_token(state.inner(), &session_token).await?;
     let expiry = expiry_date.and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
 
@@ -582,7 +584,9 @@ async fn add_medicine_db(state: tauri::State<'_, PgPool>, name_ar: String, name_
 }
 
 #[tauri::command]
-async fn update_medicine_db(state: tauri::State<'_, PgPool>, medicine_id: String, name_ar: String, name_en: Option<String>, scientific_name: Option<String>, barcode: Option<String>, price: f64, wholesale_price: f64, cost_price: f64, quantity: i32, batch_number: Option<String>, expiry_date: Option<String>) -> Result<(), String> {
+async fn update_medicine_db(state: tauri::State<'_, PgPool>, medicine_id: String, name_ar: String, name_en: Option<String>, scientific_name: Option<String>, barcode: Option<String>, price: f64, wholesale_price: f64, cost_price: f64, quantity: i32, batch_number: Option<String>, expiry_date: Option<String>, session_token: String) -> Result<(), String> {
+    // Phase 3 Auth Fix: require session
+    let (_uid, _username, _role) = verify_session_token(state.inner(), &session_token).await?;
     let uuid_id = uuid::Uuid::parse_str(&medicine_id).map_err(|e| e.to_string())?;
     let expiry = expiry_date.and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
     sqlx::query("UPDATE medicines SET name_ar = $1, name_en = $2, scientific_name = $3, barcode = $4, price = $5, wholesale_price = $6, cost_price = $7, quantity = $8, batch_number = $9, expiry_date = $10 WHERE id = $11")
@@ -637,7 +641,9 @@ async fn adjust_stock_db(state: tauri::State<'_, PgPool>, medicine_id: String, a
 }
 
 #[tauri::command]
-async fn soft_delete_medicine_db(state: tauri::State<'_, PgPool>, medicine_id: String, user_role: String, med_name: String) -> Result<(), String> {
+async fn soft_delete_medicine_db(state: tauri::State<'_, PgPool>, medicine_id: String, user_role: String, med_name: String, session_token: String) -> Result<(), String> {
+    // Phase 3 Auth Fix: require session
+    let (_uid, _username, _role) = verify_session_token(state.inner(), &session_token).await?;
     sqlx::query("UPDATE medicines SET is_deleted = TRUE WHERE id = $1").bind(uuid::Uuid::parse_str(&medicine_id).map_err(|e| e.to_string())?).execute(state.inner()).await.map_err(|e| e.to_string())?;
     let desc = format!("قام بحذف (أرشفة) الدواء: {}", med_name);
     sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("DELETE_MEDICINE").bind(desc).execute(state.inner()).await.map_err(|e| e.to_string())?;
