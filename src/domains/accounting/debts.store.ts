@@ -24,7 +24,8 @@ export const useDebtsStore = create<DebtsState>((set) => ({
   },
   addDebt: async (customerName, amount, note, userRole) => {
     try {
-      const newId = await invoke<string>('add_customer_debt_db', { customerName, amount, note, userRole });
+      const { sessionToken } = useAuthStore.getState();
+      const newId = await invoke<string>('add_customer_debt_db', { customerName, amount, note, userRole, sessionToken: sessionToken || '' });
       set((state) => ({ 
         debts: [{ id: newId, customerName, amount, isPaid: false, note, date: new Date().toISOString(), paidDate: undefined }, ...state.debts] 
       }));
@@ -47,6 +48,15 @@ export const useDebtsStore = create<DebtsState>((set) => ({
       }));
     } catch (e) {
       alert("فشل تسديد الدفعة: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ")));
+    }
+  },
+  deleteDebt: async (debtId: string) => {
+    try {
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('delete_customer_debt_db', { debtId, sessionToken: sessionToken || '' });
+      set((state) => ({ debts: state.debts.filter(d => d.id !== debtId) }));
+    } catch (e) {
+      alert("فشل حذف الدين: " + (typeof e === "string" ? e : ((e as Error)?.message || "خطأ")));
     }
   }
 }));

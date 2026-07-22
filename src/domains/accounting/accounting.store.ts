@@ -31,7 +31,8 @@ export const useAccountingStore = create<AccountingState>((set) => ({
   // لا تحدّث state محلياً بعد البيع/المرتجع — استدعِ fetchSummary() بدلاً منه للحصول على القيم الدقيقة من DB
   addExpense: async (description, amount, userRole) => {
     try {
-      await invoke('add_expense_db', { description, amount, userRole });
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('add_expense_db', { description, amount, userRole, sessionToken: sessionToken || '' });
       set((state) => ({
         cashbox: state.cashbox - amount,
         totalExpenses: state.totalExpenses + amount,

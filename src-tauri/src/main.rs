@@ -492,7 +492,8 @@ async fn get_audit_logs_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_
 
 // --- أوامر المرضى (Patients) ---
 #[tauri::command]
-async fn add_patient_db(state: tauri::State<'_, PgPool>, name: String, national_id: String, phone: String, notes: Option<String>) -> Result<String, String> {
+async fn add_patient_db(state: tauri::State<'_, PgPool>, name: String, national_id: String, phone: String, notes: Option<String>, session_token: String) -> Result<String, String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let row = sqlx::query("INSERT INTO patients (name, national_id, phone, notes) VALUES ($1, $2, $3, $4) RETURNING id")
         .bind(&name).bind(&national_id).bind(&phone).bind(&notes).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(row.get::<uuid::Uuid, _>(0).to_string())
@@ -969,7 +970,8 @@ async fn reverse_refund_db(state: tauri::State<'_, PgPool>, invoice_id: String, 
 }
 
 #[tauri::command]
-async fn add_expense_db(state: tauri::State<'_, PgPool>, description: String, amount: f64, user_role: String) -> Result<(), String> {
+async fn add_expense_db(state: tauri::State<'_, PgPool>, description: String, amount: f64, user_role: String, session_token: String) -> Result<(), String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     sqlx::query("INSERT INTO expenses (description, amount) VALUES ($1, $2)").bind(&description).bind(rust_decimal::Decimal::from_f64(amount).ok_or("Err")?).execute(state.inner()).await.map_err(|e| e.to_string())?;
     let log_desc = format!("أضاف مصروف: {} بمبلغ {}", description, amount);
     sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("ADD_EXPENSE").bind(log_desc).execute(state.inner()).await.map_err(|e| e.to_string())?;
@@ -1075,7 +1077,8 @@ async fn get_invoice_details_report(state: tauri::State<'_, PgPool>, start_date:
 
 // --- أوامر الديون ---
 #[tauri::command]
-async fn add_customer_debt_db(state: tauri::State<'_, PgPool>, customer_name: String, amount: f64, note: Option<String>, user_role: String) -> Result<String, String> {
+async fn add_customer_debt_db(state: tauri::State<'_, PgPool>, customer_name: String, amount: f64, note: Option<String>, user_role: String, session_token: String) -> Result<String, String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let pool = state.inner();
     let amount_dec = rust_decimal::Decimal::from_f64(amount).ok_or("Invalid amount")?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -1126,7 +1129,8 @@ async fn pay_customer_debt_db(state: tauri::State<'_, PgPool>, debt_id: String, 
 }
 
 #[tauri::command]
-async fn delete_customer_debt_db(state: tauri::State<'_, PgPool>, debt_id: String) -> Result<(), String> {
+async fn delete_customer_debt_db(state: tauri::State<'_, PgPool>, debt_id: String, session_token: String) -> Result<(), String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let uuid_id = uuid::Uuid::parse_str(&debt_id).map_err(|e| e.to_string())?;
     sqlx::query("DELETE FROM customer_debts WHERE id = $1").bind(uuid_id).execute(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(())
@@ -1150,7 +1154,8 @@ async fn get_customer_debts_db(state: tauri::State<'_, PgPool>) -> Result<Vec<se
 
 // --- أوامر الموردين والمشتريات ---
 #[tauri::command]
-async fn add_supplier_db(state: tauri::State<'_, PgPool>, name: String, phone: Option<String>) -> Result<String, String> {
+async fn add_supplier_db(state: tauri::State<'_, PgPool>, name: String, phone: Option<String>, session_token: String) -> Result<String, String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let row = sqlx::query("INSERT INTO suppliers (name, phone) VALUES ($1, $2) RETURNING id").bind(&name).bind(&phone).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(row.get::<uuid::Uuid, _>(0).to_string())
 }
@@ -1166,7 +1171,8 @@ async fn get_suppliers_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_j
 }
 
 #[tauri::command]
-async fn record_purchase_db(state: tauri::State<'_, PgPool>, supplier_id: String, medicine_id: String, quantity: i32, cost_price: f64, selling_price: f64, wholesale_price: f64, user_role: String) -> Result<(), String> {
+async fn record_purchase_db(state: tauri::State<'_, PgPool>, supplier_id: String, medicine_id: String, quantity: i32, cost_price: f64, selling_price: f64, wholesale_price: f64, user_role: String, session_token: String) -> Result<(), String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let pool = state.inner();
     let cost_dec = rust_decimal::Decimal::from_f64(cost_price).ok_or("Invalid cost")?;
     let sell_dec = rust_decimal::Decimal::from_f64(selling_price).ok_or("Invalid sell")?;
@@ -1190,7 +1196,8 @@ async fn record_purchase_db(state: tauri::State<'_, PgPool>, supplier_id: String
 }
 
 #[tauri::command]
-async fn pay_supplier_db(state: tauri::State<'_, PgPool>, supplier_id: String, amount: f64, user_role: String) -> Result<(), String> {
+async fn pay_supplier_db(state: tauri::State<'_, PgPool>, supplier_id: String, amount: f64, user_role: String, session_token: String) -> Result<(), String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let pool = state.inner();
     let amount_dec = rust_decimal::Decimal::from_f64(amount).ok_or("Invalid amount")?;
     let sup_uuid = uuid::Uuid::parse_str(&supplier_id).map_err(|e| e.to_string())?;
@@ -1213,7 +1220,8 @@ async fn get_settings_db(state: tauri::State<'_, PgPool>) -> Result<serde_json::
 }
 
 #[tauri::command]
-async fn save_settings_db(state: tauri::State<'_, PgPool>, settings_json: String) -> Result<(), String> {
+async fn save_settings_db(state: tauri::State<'_, PgPool>, settings_json: String, session_token: String) -> Result<(), String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let settings: HashMap<String, String> = serde_json::from_str(&settings_json).map_err(|e| e.to_string())?;
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
     for (key, value) in settings {
@@ -1461,7 +1469,8 @@ async fn get_fraud_alerts_db(state: tauri::State<'_, PgPool>, unresolved_only: b
 }
 
 #[tauri::command]
-async fn resolve_fraud_alert_db(state: tauri::State<'_, PgPool>, alert_id: String, resolved_by: String) -> Result<(), String> {
+async fn resolve_fraud_alert_db(state: tauri::State<'_, PgPool>, alert_id: String, resolved_by: String, session_token: String) -> Result<(), String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let uuid_id = uuid::Uuid::parse_str(&alert_id).map_err(|e| e.to_string())?;
     sqlx::query("UPDATE fraud_alerts SET is_resolved = TRUE, resolved_by = $1, resolved_at = NOW() WHERE id = $2")
         .bind(&resolved_by).bind(uuid_id).execute(state.inner()).await.map_err(|e| e.to_string())?;
@@ -1489,7 +1498,8 @@ async fn get_plugins_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_jso
 }
 
 #[tauri::command]
-async fn toggle_plugin_db(state: tauri::State<'_, PgPool>, plugin_id: String, is_enabled: bool) -> Result<(), String> {
+async fn toggle_plugin_db(state: tauri::State<'_, PgPool>, plugin_id: String, is_enabled: bool, session_token: String) -> Result<(), String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let uuid_id = uuid::Uuid::parse_str(&plugin_id).map_err(|e| e.to_string())?;
     sqlx::query("UPDATE plugins SET is_enabled = $1, updated_at = NOW() WHERE id = $2")
         .bind(is_enabled).bind(uuid_id).execute(state.inner()).await.map_err(|e| e.to_string())?;

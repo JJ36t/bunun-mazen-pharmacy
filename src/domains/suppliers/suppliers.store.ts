@@ -21,7 +21,8 @@ export const useSuppliersStore = create<SuppliersState>((set) => ({
   },
   addSupplier: async (name, phone) => {
     try {
-      await invoke('add_supplier_db', { name, phone });
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('add_supplier_db', { name, phone, sessionToken: sessionToken || '' });
       const { fetchSuppliers } = useSuppliersStore.getState();
       await fetchSuppliers();
     } catch (e) { alert("فشل إضافة المورد: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ"))); }
@@ -29,6 +30,7 @@ export const useSuppliersStore = create<SuppliersState>((set) => ({
   recordPurchase: async (supplierId, medicineId, quantity, costPrice, sellingPrice, wholesalePrice, userRole) => {
     try {
       // التأكد من أن جميع القيم الرقمية يتم إرسالها كـ Numbers
+      const { sessionToken } = useAuthStore.getState();
       await invoke('record_purchase_db', { 
         supplierId, 
         medicineId, 
@@ -36,7 +38,8 @@ export const useSuppliersStore = create<SuppliersState>((set) => ({
         costPrice: Number(costPrice), 
         sellingPrice: Number(sellingPrice), 
         wholesalePrice: Number(wholesalePrice), 
-        userRole 
+        userRole,
+        sessionToken: sessionToken || ''
       });
       const { fetchSuppliers } = useSuppliersStore.getState();
       await fetchSuppliers();
@@ -47,7 +50,8 @@ export const useSuppliersStore = create<SuppliersState>((set) => ({
   },
   paySupplier: async (supplierId, amount, userRole) => {
     try {
-      await invoke('pay_supplier_db', { supplierId, amount, userRole });
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('pay_supplier_db', { supplierId, amount, userRole, sessionToken: sessionToken || '' });
       const { fetchSuppliers } = useSuppliersStore.getState();
       await fetchSuppliers();
     } catch (e) { alert("فشل سداد المورد: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ"))); }

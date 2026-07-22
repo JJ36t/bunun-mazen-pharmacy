@@ -37,7 +37,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         address,
         max_discount_amount: maxDiscountAmount.toString(),
       });
-      await invoke('save_settings_db', { settingsJson });
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('save_settings_db', { settingsJson, sessionToken: sessionToken || '' });
       set({ pharmacyName: name, phone, address, maxDiscountAmount });
     } catch (e) { console.error("Failed to save settings:", e); }
   }
