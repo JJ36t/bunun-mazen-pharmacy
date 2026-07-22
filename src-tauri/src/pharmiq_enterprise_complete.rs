@@ -133,13 +133,25 @@ pub async fn get_trial_balance_db(state: tauri::State<'_, PgPool>) -> Result<Vec
     for row in rows {
         let balance: rust_decimal::Decimal = row.get(3);
         let balance_f64 = balance.to_string().parse::<f64>().unwrap_or(0.0);
+        let account_type: String = row.get(2);
+
+        // Phase 7 Fix: debit/credit split must consider account_type
+        // Asset/Expense accounts: positive balance = Debit, negative = Credit
+        // Liability/Equity/Revenue accounts: positive balance = Credit, negative = Debit
+        let (debit, credit) = if account_type == "asset" || account_type == "expense" {
+            if balance_f64 >= 0.0 { (balance_f64, 0.0) } else { (0.0, -balance_f64) }
+        } else {
+            // liability, equity, revenue
+            if balance_f64 >= 0.0 { (0.0, balance_f64) } else { (-balance_f64, 0.0) }
+        };
+
         results.push(serde_json::json!({
             "accountCode": row.get::<String, _>(0),
             "accountName": row.get::<String, _>(1),
-            "accountType": row.get::<String, _>(2),
+            "accountType": account_type,
             "balance": balance_f64,
-            "debit": if balance_f64 >= 0.0 { balance_f64 } else { 0.0 },
-            "credit": if balance_f64 < 0.0 { -balance_f64 } else { 0.0 },
+            "debit": debit,
+            "credit": credit,
         }));
     }
     Ok(results)
@@ -309,7 +321,16 @@ pub async fn calculate_expiry_discount_db(state: tauri::State<'_, PgPool>, medic
             let days_until = (exp - now).num_days();
             
             if days_until > 0 {
-                let rule_row = sqlx::query("SELECT discount_percentage FROM expiry_sale_rules WHERE is_active = TRUE AND days_until_expiry >= $1 ORDER BY days_until_expiry ASC LIMIT 1")
+                // Phase 7 Fix: logic was inverted
+                // Old: WHERE days_until_expiry >= $1 ORDER BY days_until_expiry ASC LIMIT 1
+                //   This returns the rule with the SMALLEST threshold that is >= current days
+                //   e.g. if days=45 and rules are (30→30%, 60→20%, 90→15%):
+                //   old query returns 60→20% (smallest >= 45) — WRONG, should give 30% (within 30 days)
+                //
+                // New: WHERE days_until_expiry <= $1 ORDER BY days_until_expiry DESC LIMIT 1
+                //   Returns the rule with the LARGEST threshold that is <= current days
+                //   e.g. if days=45: returns 30→30% (largest <= 45) — CORRECT
+                let rule_row = sqlx::query("SELECT discount_percentage FROM expiry_sale_rules WHERE is_active = TRUE AND days_until_expiry <= $1 ORDER BY days_until_expiry DESC LIMIT 1")
                     .bind(days_until).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
                 
                 if let Some(rule) = rule_row {

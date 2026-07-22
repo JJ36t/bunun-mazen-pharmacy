@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Debt } from '../../types';
+import { useAuthStore } from '../security/auth.store';
 
 export type { Debt };
 
@@ -33,7 +34,8 @@ export const useDebtsStore = create<DebtsState>((set) => ({
   },
   payDebt: async (debtId, amount, userRole) => {
     try {
-      await invoke('pay_customer_debt_db', { debtId, amount, userRole });
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('pay_customer_debt_db', { debtId, amount, userRole, sessionToken: sessionToken || '' });
       set((state) => ({
         debts: state.debts.map(d => {
           if (d.id === debtId) {

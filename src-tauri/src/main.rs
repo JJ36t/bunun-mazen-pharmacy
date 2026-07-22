@@ -835,10 +835,16 @@ async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, it
     let pool = state.inner();
     // Phase 2 Auth Fix: enforce session verification (was optional + bypassable with empty string)
     let (_session_user_id, _session_username, _session_role) = verify_session_token(pool, &session_token).await?;
+    // Phase 7 Fix: validate total_amount is positive (prevent sign ambiguity)
+    // Previously: if client sent negative total_amount, * -1 made it positive → recorded as SALE
+    if total_amount <= 0.0 {
+        return Err("مبلغ المرتجع يجب أن يكون موجباً".to_string());
+    }
     let total_dec = rust_decimal::Decimal::from_f64(total_amount).ok_or("Invalid total")?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let mut total_refund_profit = rust_decimal::Decimal::ZERO;
-    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role) VALUES ($1, $2, $3) RETURNING id")
+    // Phase 7 Fix: add daily_receipt_number to refund invoices
+    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, daily_receipt_number) VALUES ($1, $2, $3, get_daily_receipt_number()) RETURNING id")
         .bind(total_dec * rust_decimal::Decimal::from(-1)).bind(rust_decimal::Decimal::ZERO).bind(&user_role).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let invoice_id: uuid::Uuid = row.get(0);
     let items: Vec<serde_json::Value> = serde_json::from_str(&items_json).map_err(|e| e.to_string())?;
@@ -1033,19 +1039,39 @@ async fn add_customer_debt_db(state: tauri::State<'_, PgPool>, customer_name: St
 }
 
 #[tauri::command]
-async fn pay_customer_debt_db(state: tauri::State<'_, PgPool>, debt_id: String, amount: f64, user_role: String) -> Result<(), String> {
+async fn pay_customer_debt_db(state: tauri::State<'_, PgPool>, debt_id: String, amount: f64, user_role: String, session_token: String) -> Result<(), String> {
     let pool = state.inner();
+    // Phase 7: require session
+    let _ = verify_session_token(pool, &session_token).await?;
     let amount_dec = rust_decimal::Decimal::from_f64(amount).ok_or("Invalid amount")?;
     let uuid_id = uuid::Uuid::parse_str(&debt_id).map_err(|e| e.to_string())?;
+
+    // Phase 7 Fix: check for overpayment BEFORE deducting
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    let row = sqlx::query("UPDATE customer_debts SET amount = amount - $1 WHERE id = $2 RETURNING amount").bind(amount_dec).bind(uuid_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    // FOR UPDATE: lock the debt row
+    let debt_row = sqlx::query("SELECT amount, customer_name FROM customer_debts WHERE id = $1 FOR UPDATE")
+        .bind(uuid_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    let current_debt: rust_decimal::Decimal = debt_row.get(0);
+    let customer_name: String = debt_row.get(1);
+
+    if amount_dec > current_debt {
+        return Err(format!("مبلغ الدفع ({}) يتجاوز الدين المتبقي ({})", amount_dec, current_debt));
+    }
+
+    let row = sqlx::query("UPDATE customer_debts SET amount = amount - $1 WHERE id = $2 RETURNING amount")
+        .bind(amount_dec).bind(uuid_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let remaining: rust_decimal::Decimal = row.get(0);
     if remaining <= rust_decimal::Decimal::ZERO {
-        sqlx::query("UPDATE customer_debts SET is_paid = TRUE, amount = 0, paid_date = NOW() WHERE id = $1").bind(uuid_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        sqlx::query("UPDATE customer_debts SET is_paid = TRUE, amount = 0, paid_date = NOW() WHERE id = $1")
+            .bind(uuid_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
-    sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role) VALUES ($1, 0, $2)").bind(amount_dec).bind(&user_role).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    let desc = format!("استيفاء دفعة من دين بقيمة {}", amount);
-    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind("DEBT_PAYMENT").bind(desc).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    // Phase 7 Fix: do NOT record as invoice (was inflating sales reports)
+    // Record in audit_logs only — debt collection is not a sale
+    let desc = format!("استيفاء دفعة من دين الزبون {} بقيمة {}", customer_name, amount_dec);
+    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'DEBT_PAYMENT', $2)")
+        .bind(&user_role).bind(&desc).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
