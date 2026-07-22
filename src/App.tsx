@@ -96,7 +96,7 @@ const navItems: { key: TabKey; label: string; icon: React.ComponentType<{ classN
 function PosDashboard() {
   const { cart, addToCart, removeFromCart, updateItemQuantity, calculateSubtotal, calculateTotal, clearCart, discountPercentage, setDiscountPercentage } = usePosStore();
   const { medicines, fetchMedicines } = useInventoryStore();
-  const { totalSales, fetchSummary } = useAccountingStore();
+  const { fetchSummary } = useAccountingStore();
   const { username, sessionToken } = useAuthStore();
   const { pharmacyName } = useSettingsStore();
   const [searchTerm, setSearchTerm] = useState('');
@@ -1153,7 +1153,7 @@ function App() {
                   </div>
                   <div>
                     <p className="text-xs text-slate-500">مبيعات اليوم</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">{totalSales.toLocaleString('en-US')} د.ع</p>
+                    <p className="text-lg font-bold text-slate-800 tabular">— د.ع</p>
                   </div>
                 </div>
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
@@ -1162,7 +1162,7 @@ function App() {
                   </div>
                   <div>
                     <p className="text-xs text-slate-500">الأصناف في المخزون</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">{medicines.filter(m => !m.isDeleted).length} صنف</p>
+                    <p className="text-lg font-bold text-slate-800 tabular">— صنف</p>
                   </div>
                 </div>
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
