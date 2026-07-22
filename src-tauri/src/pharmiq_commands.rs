@@ -196,29 +196,38 @@ pub async fn add_prescription_db(state: tauri::State<'_, PgPool>, patient_id: St
 
 #[tauri::command]
 pub async fn get_prescriptions_db(state: tauri::State<'_, PgPool>, patient_id: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+    // Phase 13 Fix: eliminate N+1 — single query with json_agg for items
     let rows = if let Some(pid) = patient_id {
         let pat_uuid = uuid::Uuid::parse_str(&pid).map_err(|e| e.to_string())?;
-        sqlx::query("SELECT p.id, p.patient_id, p.doctor_name, p.doctor_license, p.prescription_date, p.diagnosis, p.notes, p.is_antibiotic, pat.name as patient_name FROM prescriptions p JOIN patients pat ON p.patient_id = pat.id WHERE p.patient_id = $1 ORDER BY p.prescription_date DESC")
-            .bind(pat_uuid).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
+        sqlx::query(
+            "SELECT p.id, p.patient_id, p.doctor_name, p.doctor_license, p.prescription_date, \
+             p.diagnosis, p.notes, p.is_antibiotic, pat.name as patient_name, \
+             COALESCE(json_agg(json_build_object('medicineName', pi.medicine_name, 'dosage', pi.dosage, 'duration', pi.duration, 'instructions', pi.instructions)) FILTER (WHERE pi.id IS NOT NULL), '[]'::json)::text as items \
+             FROM prescriptions p \
+             JOIN patients pat ON p.patient_id = pat.id \
+             LEFT JOIN prescription_items pi ON pi.prescription_id = p.id \
+             WHERE p.patient_id = $1 \
+             GROUP BY p.id, p.patient_id, p.doctor_name, p.doctor_license, p.prescription_date, p.diagnosis, p.notes, p.is_antibiotic, pat.name \
+             ORDER BY p.prescription_date DESC"
+        ).bind(pat_uuid).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
     } else {
-        sqlx::query("SELECT p.id, p.patient_id, p.doctor_name, p.doctor_license, p.prescription_date, p.diagnosis, p.notes, p.is_antibiotic, pat.name as patient_name FROM prescriptions p JOIN patients pat ON p.patient_id = pat.id ORDER BY p.prescription_date DESC LIMIT 100")
-            .fetch_all(state.inner()).await.map_err(|e| e.to_string())?
+        sqlx::query(
+            "SELECT p.id, p.patient_id, p.doctor_name, p.doctor_license, p.prescription_date, \
+             p.diagnosis, p.notes, p.is_antibiotic, pat.name as patient_name, \
+             COALESCE(json_agg(json_build_object('medicineName', pi.medicine_name, 'dosage', pi.dosage, 'duration', pi.duration, 'instructions', pi.instructions)) FILTER (WHERE pi.id IS NOT NULL), '[]'::json)::text as items \
+             FROM prescriptions p \
+             JOIN patients pat ON p.patient_id = pat.id \
+             LEFT JOIN prescription_items pi ON pi.prescription_id = p.id \
+             GROUP BY p.id, p.patient_id, p.doctor_name, p.doctor_license, p.prescription_date, p.diagnosis, p.notes, p.is_antibiotic, pat.name \
+             ORDER BY p.prescription_date DESC LIMIT 100"
+        ).fetch_all(state.inner()).await.map_err(|e| e.to_string())?
     };
 
     let mut results = Vec::new();
     for row in rows {
         let presc_id: uuid::Uuid = row.get(0);
-        let items = sqlx::query("SELECT medicine_name, dosage, duration, instructions FROM prescription_items WHERE prescription_id = $1")
-            .bind(presc_id).fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
-        let mut items_list = Vec::new();
-        for ir in items {
-            items_list.push(serde_json::json!({
-                "medicineName": ir.get::<String, _>(0),
-                "dosage": ir.get::<String, _>(1),
-                "duration": ir.get::<String, _>(2),
-                "instructions": ir.get::<String, _>(3),
-            }));
-        }
+        let items_str: String = row.get(9);
+        let items: serde_json::Value = serde_json::from_str(&items_str).unwrap_or(serde_json::Value::Array(vec![]));
         results.push(serde_json::json!({
             "id": presc_id.to_string(),
             "patientId": row.get::<uuid::Uuid, _>(1).to_string(),
@@ -229,7 +238,7 @@ pub async fn get_prescriptions_db(state: tauri::State<'_, PgPool>, patient_id: O
             "notes": row.get::<Option<String>, _>(6),
             "isAntibiotic": row.get::<bool, _>(7),
             "patientName": row.get::<String, _>(8),
-            "items": items_list,
+            "items": items,
         }));
     }
     Ok(results)

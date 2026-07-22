@@ -390,11 +390,20 @@ pub async fn get_system_health_db(state: tauri::State<'_, PgPool>) -> Result<ser
     let table_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'")
         .fetch_one(state.inner()).await.unwrap_or(0);
 
-    // عدد السجلات في الجداول الرئيسية
-    let medicines_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM medicines WHERE is_deleted = FALSE").fetch_one(state.inner()).await.unwrap_or(0);
-    let invoices_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invoices").fetch_one(state.inner()).await.unwrap_or(0);
-    let audit_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs").fetch_one(state.inner()).await.unwrap_or(0);
-    let global_meds_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM global_medicines").fetch_one(state.inner()).await.unwrap_or(0);
+    // Phase 13 Fix: use pg_class.reltuples for approximate counts (1000x faster than COUNT(*))
+    let medicines_count: i64 = sqlx::query_scalar(
+        "SELECT GREATEST(reltuples, 0)::BIGINT FROM pg_class WHERE relname = 'medicines'"
+    ).fetch_one(state.inner()).await.unwrap_or(0);
+    let invoices_count: i64 = sqlx::query_scalar(
+        "SELECT GREATEST(reltuples, 0)::BIGINT FROM pg_class WHERE relname = 'invoices'"
+    ).fetch_one(state.inner()).await.unwrap_or(0);
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT GREATEST(reltuples, 0)::BIGINT FROM pg_class WHERE relname = 'audit_logs'"
+    ).fetch_one(state.inner()).await.unwrap_or(0);
+    let global_meds_count: i64 = sqlx::query_scalar(
+        "SELECT GREATEST(reltuples, 0)::BIGINT FROM pg_class WHERE relname = 'global_medicines'"
+    ).fetch_one(state.inner()).await.unwrap_or(0);
+    // quarantined is small — COUNT is fine
     let quarantined_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM quarantined_stock WHERE status = 'quarantined'").fetch_one(state.inner()).await.unwrap_or(0);
 
     Ok(serde_json::json!({

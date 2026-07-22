@@ -11,7 +11,7 @@ use rust_decimal::prelude::FromPrimitive;
 // ===== 1. DRUG INTERACTION ENGINE =====
 // ============================================================
 
-/// فحص تفاعلات الأدوية — يستقبل قائمة المواد الفعالة ويرجع التفاعلات
+/// فحص تفاعلات الأدوية — Phase 13: single query instead of O(N²)
 #[tauri::command]
 pub async fn check_drug_interactions_db(state: tauri::State<'_, PgPool>, drug_names_json: String) -> Result<Vec<serde_json::Value>, String> {
     let drug_names: Vec<String> = serde_json::from_str(&drug_names_json).map_err(|e| e.to_string())?;
@@ -19,36 +19,35 @@ pub async fn check_drug_interactions_db(state: tauri::State<'_, PgPool>, drug_na
         return Ok(vec![]);
     }
 
+    // Phase 13 Fix: single query using ANY array instead of N*(N-1)/2 queries
+    // Query finds all interactions where drug_a OR drug_b is in the drug_names list,
+    // then we filter in Rust to only keep pairs where BOTH drugs are in the list.
+    let rows = sqlx::query(
+        "SELECT id, drug_a, drug_b, severity, description, recommendation
+         FROM drug_interactions
+         WHERE LOWER(drug_a) = ANY($1) OR LOWER(drug_b) = ANY($1)"
+    )
+    .bind(&drug_names.iter().map(|s| s.trim().to_lowercase()).collect::<Vec<_>>())
+    .fetch_all(state.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let drug_set: std::collections::HashSet<String> = drug_names.iter().map(|s| s.trim().to_lowercase()).collect();
     let mut warnings = Vec::new();
-    for i in 0..drug_names.len() {
-        for j in (i + 1)..drug_names.len() {
-            let d1 = drug_names[i].trim();
-            let d2 = drug_names[j].trim();
-            if d1.is_empty() || d2.is_empty() { continue; }
 
-            // البحث بأي اتجاه (drug_a=A, drug_b=B) أو (drug_a=B, drug_b=A)
-            let row = sqlx::query(
-                "SELECT id, drug_a, drug_b, severity, description, recommendation
-                 FROM drug_interactions
-                 WHERE (LOWER(drug_a) = LOWER($1) AND LOWER(drug_b) = LOWER($2))
-                    OR (LOWER(drug_a) = LOWER($2) AND LOWER(drug_b) = LOWER($1))
-                 LIMIT 1"
-            )
-            .bind(d1).bind(d2)
-            .fetch_optional(state.inner())
-            .await
-            .map_err(|e| e.to_string())?;
-
-            if let Some(r) = row {
-                warnings.push(serde_json::json!({
-                    "interactionId": r.get::<uuid::Uuid, _>(0).to_string(),
-                    "drugA": r.get::<String, _>(1),
-                    "drugB": r.get::<String, _>(2),
-                    "severity": r.get::<String, _>(3),
-                    "description": r.get::<String, _>(4),
-                    "recommendation": r.get::<Option<String>, _>(5).unwrap_or_default(),
-                }));
-            }
+    for r in rows {
+        let drug_a: String = r.get(1);
+        let drug_b: String = r.get(2);
+        // Only keep if BOTH drugs are in the user's list
+        if drug_set.contains(&drug_a.to_lowercase()) && drug_set.contains(&drug_b.to_lowercase()) {
+            warnings.push(serde_json::json!({
+                "interactionId": r.get::<uuid::Uuid, _>(0).to_string(),
+                "drugA": drug_a,
+                "drugB": drug_b,
+                "severity": r.get::<String, _>(3),
+                "description": r.get::<String, _>(4),
+                "recommendation": r.get::<Option<String>, _>(5).unwrap_or_default(),
+            }));
         }
     }
 
