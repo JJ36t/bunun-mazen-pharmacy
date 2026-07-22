@@ -1772,6 +1772,16 @@ async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String
     let plaintext = decrypt_data(&encrypted_data, &password)?;
     let backup: serde_json::Value = serde_json::from_str(&plaintext).map_err(|e| format!("فشل تحليل JSON: {}", e))?;
 
+    // Part 2 S13: validate schema version before restore
+    let backup_version = backup.get("version").and_then(|v| v.as_str()).unwrap_or("unknown");
+    if backup_version != "2.3.0" && backup_version != "unknown" {
+        return Err(format!("إصدار النسخة الاحتياطية ({}) غير متوافق مع الإصدار الحالي (2.3.0). لا يمكن الاستعادة.", backup_version));
+    }
+    // Validate backup has expected structure
+    if backup.get("tables").is_none() {
+        return Err("ملف النسخة الاحتياطية تالف أو غير صالح".to_string());
+    }
+
     let pool = state.inner();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let mut restored_counts = serde_json::Map::new();
