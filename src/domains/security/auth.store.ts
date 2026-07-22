@@ -94,13 +94,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    // إغلاق الشفت قبل تسجيل الخروج (بمبلغ 0 — المستخدم يجب أن يُغلق الشفت يدوياً قبل الخروج)
-    const shiftId = get().shiftId;
+    // Phase 4: invalidate session in backend before clearing frontend state
+    const { sessionToken, shiftId } = get();
+    // Close shift first (if open) — warn but don't block logout
     if (shiftId) {
       try {
         await invoke('close_shift_db', { shiftId, closingAmount: 0 });
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error('Failed to close shift during logout:', e); }
     }
+    // Invalidate session in DB
+    if (sessionToken) {
+      try {
+        await invoke('logout_db', { sessionToken });
+      } catch (e) { console.error('Failed to logout session:', e); }
+    }
+    // Clear frontend state
     set({
       isAuthenticated: false, role: null, username: null, userId: null, sessionToken: null,
       shiftId: null, shiftOpeningAmount: 0,

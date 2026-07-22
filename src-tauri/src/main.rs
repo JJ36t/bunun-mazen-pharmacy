@@ -256,7 +256,7 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
                 // Create session
                 let session_token = uuid::Uuid::new_v4().to_string();
                 let device_info = format!("os:{}", std::env::consts::OS);
-                sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at, token, expires_at, last_activity) VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW() + INTERVAL '8 hours', NOW())")
+                sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at, token, expires_at, last_activity, absolute_expires_at) VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW() + INTERVAL '8 hours', NOW(), NOW() + INTERVAL '24 hours')")
                     .bind(user_id).bind(&username).bind(&device_info).bind(&session_token)
                     .execute(state.inner()).await
                     .map_err(|e| format!("فشل إنشاء الجلسة: {}", e))?;
@@ -286,12 +286,13 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
     }
 }
 
-// تحقق من session token — إصلاح P0-1: فحص التوكن الفعلي في user_sessions
+// تحقق من session token — Phase 4: check both sliding + absolute expiry
 pub(crate) async fn verify_session_token(pool: &PgPool, session_token: &str) -> Result<(uuid::Uuid, String, String), String> {
     let row = sqlx::query(
         "SELECT u.id, u.username, u.role FROM user_sessions s JOIN users u ON u.id = s.user_id \
          WHERE s.token = $1 AND s.is_active = TRUE AND u.is_active = TRUE AND u.deleted_at IS NULL \
-         AND (s.expires_at IS NULL OR s.expires_at > NOW()) LIMIT 1"
+         AND (s.expires_at IS NULL OR s.expires_at > NOW()) \
+         AND (s.absolute_expires_at IS NULL OR s.absolute_expires_at > NOW()) LIMIT 1"
     ).bind(session_token).fetch_optional(pool).await.map_err(|e| e.to_string())?;
     match row {
         Some(r) => {
@@ -301,6 +302,16 @@ pub(crate) async fn verify_session_token(pool: &PgPool, session_token: &str) -> 
         },
         None => Err("جلسة غير صالحة أو انتهت صلاحيتها. يرجى إعادة تسجيل الدخول.".to_string()),
     }
+}
+
+// Phase 4: Logout command — invalidate session in DB
+#[tauri::command]
+async fn logout_db(state: tauri::State<'_, PgPool>, session_token: String) -> Result<(), String> {
+    sqlx::query("UPDATE user_sessions SET is_active = FALSE, logout_at = NOW() WHERE token = $1")
+        .bind(&session_token)
+        .execute(state.inner()).await
+        .map_err(|e| format!("فشل تسجيل الخروج: {}", e))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -2095,11 +2106,14 @@ fn main() {
                     let _ = sqlx::query("UPDATE users SET must_change_password = TRUE WHERE username IN ('admin', 'cashier')").execute(&pool).await;
                 }
             });
+            // Phase 4: cleanup expired sessions on startup
+            let _ = sqlx::query("SELECT cleanup_expired_sessions()").execute(&pool).await;
+
             app.manage(pool);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            check_license, login, save_csv_file, get_device_id, activate_license, create_backup, restore_backup, restore_backup_to_db, check_auto_backup,
+            check_license, login, logout_db, save_csv_file, get_device_id, activate_license, create_backup, restore_backup, restore_backup_to_db, check_auto_backup,
             get_medicines_db, add_medicine_db, update_medicine_db, adjust_stock_db, soft_delete_medicine_db, bulk_update_prices_db,
             link_barcode_to_medicine_db,
             record_sale_db, record_refund_db, reverse_refund_db, add_expense_db, get_accounting_summary_db, reset_daily_db,
