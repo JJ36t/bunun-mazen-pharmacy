@@ -2109,6 +2109,9 @@ fn main() {
             // Phase 4: cleanup expired sessions on startup
             let _ = sqlx::query("SELECT cleanup_expired_sessions()").execute(&pool).await;
 
+            // Phase 5: refresh materialized views on startup
+            let _ = sqlx::query("SELECT refresh_all_materialized_views()").execute(&pool).await;
+
             app.manage(pool);
             Ok(())
         })
