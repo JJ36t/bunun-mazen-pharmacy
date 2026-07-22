@@ -569,7 +569,7 @@ function PosDashboard() {
 
   const handleSuspend = async () => {
     if (cart.length === 0) return;
-    await invoke('suspend_invoice_db', { username, itemsJson: JSON.stringify(cart) });
+    await invoke('suspend_invoice_db', { username, itemsJson: JSON.stringify(cart), sessionToken: sessionToken || '' });
     toast.success("تم تعليق الفاتورة بنجاح.");
     clearCart(); fetchSuspended();
   };
@@ -578,7 +578,7 @@ function PosDashboard() {
   const handleRecall = (inv: { id: string; itemsJson: string; date: string }) => {
     const items: CartItem[] = JSON.parse(inv.itemsJson);
     items.forEach((it) => addToCart(it));
-    invoke('delete_suspended_invoice_db', { invId: inv.id });
+    invoke('delete_suspended_invoice_db', { invId: inv.id, sessionToken: sessionToken || '' });
     setShowSuspended(false);
   };
   
@@ -818,7 +818,7 @@ function PosDashboard() {
                         <Play className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => { invoke('delete_suspended_invoice_db', { invId: inv.id }); fetchSuspended(); }} 
+                        onClick={() => { invoke('delete_suspended_invoice_db', { invId: inv.id, sessionToken: sessionToken || '' }); fetchSuspended(); }}
                         className="btn-icon text-red-500 hover:bg-red-50"
                       >
                         <Trash2 className="w-4 h-4" />

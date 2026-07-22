@@ -14,7 +14,8 @@ use chrono;
 // ===== 1. MEDICINE IMPORT (CSV/Excel) =====
 
 #[tauri::command]
-pub async fn import_medicines_csv_db(state: tauri::State<'_, PgPool>, csv_data: String, user_role: String) -> Result<serde_json::Value, String> {
+pub async fn import_medicines_csv_db(state: tauri::State<'_, PgPool>, csv_data: String, user_role: String, session_token: String) -> Result<serde_json::Value, String> {
+    let _ = crate::verify_session_token(state.inner(), &session_token).await?;
     let mut success = 0;
     let mut failed = 0;
     let mut errors: Vec<String> = Vec::new();
@@ -337,7 +338,8 @@ pub async fn get_expiry_losses_db(state: tauri::State<'_, PgPool>, start_date: S
 }
 
 #[tauri::command]
-pub async fn record_expiry_loss_db(state: tauri::State<'_, PgPool>, medicine_id: String, batch_number: Option<String>, expiry_date: String, quantity_lost: i32, cost_per_unit: f64, disposal_method: String, disposal_notes: String, recorded_by: String) -> Result<String, String> {
+pub async fn record_expiry_loss_db(state: tauri::State<'_, PgPool>, medicine_id: String, batch_number: Option<String>, expiry_date: String, quantity_lost: i32, cost_per_unit: f64, disposal_method: String, disposal_notes: String, recorded_by: String, session_token: String) -> Result<String, String> {
+    let _ = crate::verify_session_token(state.inner(), &session_token).await?;
     let med_uuid = uuid::Uuid::parse_str(&medicine_id).map_err(|e| e.to_string())?;
     let expiry = chrono::NaiveDate::parse_from_str(&expiry_date, "%Y-%m-%d").map_err(|e| e.to_string())?;
     let cost_dec = rust_decimal::Decimal::from_f64(cost_per_unit).ok_or("Err")?;
@@ -435,7 +437,8 @@ pub async fn get_supplier_pricing_history_db(state: tauri::State<'_, PgPool>, su
 // ===== 10. SUPPLIER RETURNS =====
 
 #[tauri::command]
-pub async fn create_supplier_return_db(state: tauri::State<'_, PgPool>, supplier_id: String, total_amount: f64, reason: String, requested_by: String) -> Result<String, String> {
+pub async fn create_supplier_return_db(state: tauri::State<'_, PgPool>, supplier_id: String, total_amount: f64, reason: String, requested_by: String, session_token: String) -> Result<String, String> {
+    let _ = crate::verify_session_token(state.inner(), &session_token).await?;
     let sup_uuid = uuid::Uuid::parse_str(&supplier_id).map_err(|e| e.to_string())?;
     let amount_dec = rust_decimal::Decimal::from_f64(total_amount).ok_or("Err")?;
     let row = sqlx::query("INSERT INTO supplier_returns (supplier_id, total_amount, reason, requested_by) VALUES ($1, $2, $3, $4) RETURNING id")

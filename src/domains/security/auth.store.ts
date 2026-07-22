@@ -67,7 +67,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   startShift: async (openingAmount: number) => {
     try {
       const username = get().username || 'Unknown';
-      const id = await invoke<string>('start_shift_db', { username, openingAmount });
+      const sessionToken = get().sessionToken || '';
+      const id = await invoke<string>('start_shift_db', { username, openingAmount, sessionToken });
       set({ shiftId: id, shiftOpeningAmount: openingAmount });
     } catch (e) { console.error("Failed to start shift:", e); }
   },
@@ -75,8 +76,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   closeShift: async (closingAmount: number) => {
     try {
       const id = get().shiftId;
+      const sessionToken = get().sessionToken || '';
       if (!id) return;
-      await invoke('close_shift_db', { shiftId: id, closingAmount });
+      await invoke('close_shift_db', { shiftId: id, closingAmount, sessionToken });
       set({ shiftId: null, shiftOpeningAmount: 0 });
     } catch (e) { console.error("Failed to close shift:", e); }
   },

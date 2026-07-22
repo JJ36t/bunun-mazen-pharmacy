@@ -422,7 +422,8 @@ async fn delete_user_db(state: tauri::State<'_, PgPool>, user_id: String, delete
 }
 
 #[tauri::command]
-async fn start_shift_db(state: tauri::State<'_, PgPool>, username: String, opening_amount: f64) -> Result<String, String> {
+async fn start_shift_db(state: tauri::State<'_, PgPool>, username: String, opening_amount: f64, session_token: String) -> Result<String, String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let row = sqlx::query("INSERT INTO shifts (user_role, opening_amount, status) VALUES ($1, $2, 'open') RETURNING id")
         .bind(&username).bind(rust_decimal::Decimal::from_f64(opening_amount).ok_or("Err")?)
         .fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
@@ -430,7 +431,8 @@ async fn start_shift_db(state: tauri::State<'_, PgPool>, username: String, openi
 }
 
 #[tauri::command]
-async fn close_shift_db(state: tauri::State<'_, PgPool>, shift_id: String, closing_amount: f64) -> Result<(), String> {
+async fn close_shift_db(state: tauri::State<'_, PgPool>, shift_id: String, closing_amount: f64, session_token: String) -> Result<(), String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let uuid_id = uuid::Uuid::parse_str(&shift_id).map_err(|e| e.to_string())?;
     sqlx::query("UPDATE shifts SET status = 'closed', closing_amount = $1, end_time = NOW() WHERE id = $2")
         .bind(rust_decimal::Decimal::from_f64(closing_amount).ok_or("Err")?).bind(uuid_id)
@@ -449,7 +451,8 @@ async fn get_active_shift_db(state: tauri::State<'_, PgPool>, username: String) 
 
 // --- أوامر الفواتير المعلقة (Suspended) ---
 #[tauri::command]
-async fn suspend_invoice_db(state: tauri::State<'_, PgPool>, username: String, items_json: String) -> Result<String, String> {
+async fn suspend_invoice_db(state: tauri::State<'_, PgPool>, username: String, items_json: String, session_token: String) -> Result<String, String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let row = sqlx::query("INSERT INTO suspended_invoices (user_role, items_json) VALUES ($1, $2) RETURNING id")
         .bind(&username).bind(&items_json).fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(row.get::<uuid::Uuid, _>(0).to_string())
@@ -467,7 +470,8 @@ async fn get_suspended_invoices_db(state: tauri::State<'_, PgPool>) -> Result<Ve
 }
 
 #[tauri::command]
-async fn delete_suspended_invoice_db(state: tauri::State<'_, PgPool>, inv_id: String) -> Result<(), String> {
+async fn delete_suspended_invoice_db(state: tauri::State<'_, PgPool>, inv_id: String, session_token: String) -> Result<(), String> {
+    let _ = verify_session_token(state.inner(), &session_token).await?;
     let uuid_id = uuid::Uuid::parse_str(&inv_id).map_err(|e| e.to_string())?;
     sqlx::query("DELETE FROM suspended_invoices WHERE id = $1").bind(uuid_id).execute(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(())
@@ -475,8 +479,11 @@ async fn delete_suspended_invoice_db(state: tauri::State<'_, PgPool>, inv_id: St
 
 // --- أوامر سجل التدقيق ---
 #[tauri::command]
-async fn log_action_db(state: tauri::State<'_, PgPool>, user_role: String, action_type: String, description: String) -> Result<(), String> {
-    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(user_role).bind(action_type).bind(description).execute(state.inner()).await.map_err(|e| e.to_string())?;
+async fn log_action_db(state: tauri::State<'_, PgPool>, user_role: String, action_type: String, description: String, session_token: String) -> Result<(), String> {
+    // Part 2: derive user_role from session, not client
+    let (_uid, session_username, _role) = verify_session_token(state.inner(), &session_token).await?;
+    let effective_role = session_username;
+    sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, $2, $3)").bind(effective_role).bind(action_type).bind(description).execute(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 

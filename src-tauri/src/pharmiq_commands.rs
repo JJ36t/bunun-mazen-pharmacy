@@ -258,7 +258,8 @@ pub async fn get_patient_loyalty_db(state: tauri::State<'_, PgPool>, patient_id:
 }
 
 #[tauri::command]
-pub async fn redeem_loyalty_points_db(state: tauri::State<'_, PgPool>, patient_id: String, points: i32, description: String) -> Result<(), String> {
+pub async fn redeem_loyalty_points_db(state: tauri::State<'_, PgPool>, patient_id: String, points: i32, description: String, session_token: String) -> Result<(), String> {
+    let _ = crate::verify_session_token(state.inner(), &session_token).await?;
     let pat_uuid = uuid::Uuid::parse_str(&patient_id).map_err(|e| e.to_string())?;
     sqlx::query("INSERT INTO customer_loyalty_transactions (patient_id, points, transaction_type, description) VALUES ($1, $2, 'redeem', $3)")
         .bind(pat_uuid).bind(-points).bind(&description)
@@ -360,7 +361,8 @@ pub async fn check_controlled_medicine_db(state: tauri::State<'_, PgPool>, medic
 // ===== 7. SEED IRAQI MEDICINES (للاستيراد) =====
 
 #[tauri::command]
-pub async fn seed_iraqi_medicines_db(state: tauri::State<'_, PgPool>) -> Result<i64, String> {
+pub async fn seed_iraqi_medicines_db(state: tauri::State<'_, PgPool>, session_token: String) -> Result<i64, String> {
+    let _ = crate::verify_session_token(state.inner(), &session_token).await?;
     let pool = state.inner();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -466,7 +468,8 @@ pub async fn convert_currency_db(state: tauri::State<'_, PgPool>, amount: f64, f
 }
 
 #[tauri::command]
-pub async fn update_exchange_rate_db(state: tauri::State<'_, PgPool>, rate: f64) -> Result<(), String> {
+pub async fn update_exchange_rate_db(state: tauri::State<'_, PgPool>, rate: f64, session_token: String) -> Result<(), String> {
+    let _ = crate::verify_session_token(state.inner(), &session_token).await?;
     sqlx::query("INSERT INTO settings (key, value) VALUES ('usd_exchange_rate', $1) ON CONFLICT (key) DO UPDATE SET value = $1")
         .bind(rate.to_string()).execute(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(())
