@@ -348,8 +348,10 @@ async fn verify_admin_password_db(state: tauri::State<'_, PgPool>, password: Str
 }
 
 #[tauri::command]
-async fn get_users_db(state: tauri::State<'_, PgPool>, requester_role: Option<String>) -> Result<Vec<serde_json::Value>, String> {
-    let is_super_admin = requester_role.as_deref() == Some("Super Admin");
+async fn get_users_db(state: tauri::State<'_, PgPool>, session_token: String) -> Result<Vec<serde_json::Value>, String> {
+    // Phase 3 Auth Fix: derive requester role from session, not client parameter
+    let (_uid, _username, requester_role) = verify_session_token(state.inner(), &session_token).await?;
+    let is_super_admin = requester_role == "Super Admin" || requester_role == "Pharmacy Owner";
     let rows = if is_super_admin {
         sqlx::query("SELECT id, username, role, is_active, last_login FROM users WHERE deleted_at IS NULL ORDER BY username")
             .fetch_all(state.inner()).await.map_err(|e| e.to_string())?
