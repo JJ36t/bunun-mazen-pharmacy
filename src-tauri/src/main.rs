@@ -246,8 +246,14 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
             let user_id: uuid::Uuid = r.get(0);
             let hashed_pass: String = r.get(1);
             let role: String = r.get(2);
+            // Debug: print diagnostic info to terminal
+            println!("[LOGIN DEBUG] username='{}' hash_len={} hash_prefix='{}'", username, hashed_pass.len(), &hashed_pass[..hashed_pass.len().min(20)]);
+            println!("[LOGIN DEBUG] input_password='{}' len={}", password, password.len());
             // bcrypt::verify يعيد Err عند hash تالف — نعتبره "كلمة مرور خاطئة"
-            let verified = bcrypt::verify(&password, &hashed_pass).unwrap_or(false);
+            let verified = match bcrypt::verify(&password, &hashed_pass) {
+                Ok(v) => { println!("[LOGIN DEBUG] bcrypt verify result: {}", v); v }
+                Err(e) => { println!("[LOGIN DEBUG] bcrypt verify error: {}", e); false }
+            };
             if verified {
                 // تحديث آخر دخول — best-effort (لا يفشل الدخول لو فشل)
                 if let Err(e) = sqlx::query("UPDATE users SET last_login = NOW() WHERE username = $1")
