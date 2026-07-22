@@ -942,6 +942,12 @@ async fn reverse_refund_db(state: tauri::State<'_, PgPool>, invoice_id: String, 
     for item in items {
         let med_id: uuid::Uuid = item.get(0);
         let qty: i32 = item.get(1);
+        // Phase 10 Fix: check quantity won't go negative before deducting
+        let med_row = sqlx::query("SELECT quantity FROM medicines WHERE id = $1 FOR UPDATE").bind(med_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let current_qty: i32 = med_row.get(0);
+        if current_qty < qty {
+            return Err(format!("الكمية غير كافية للتراجع عن المرتجع. المتوفر: {}، المطلوب: {}", current_qty, qty));
+        }
         sqlx::query("UPDATE medicines SET quantity = quantity - $1 WHERE id = $2").bind(qty).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
         let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 AND quantity > 0 ORDER BY expiry_date ASC FOR UPDATE").bind(med_id).fetch_all(&mut *tx).await.map_err(|e| e.to_string())?;
         let mut remaining_qty = qty;

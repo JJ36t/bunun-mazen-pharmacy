@@ -153,34 +153,78 @@ pub async fn get_refund_reasons_db(state: tauri::State<'_, PgPool>) -> Result<Ve
 }
 
 #[tauri::command]
-pub async fn record_refund_with_reason_db(state: tauri::State<'_, PgPool>, total_amount: f64, items_json: String, user_role: String, refund_reason_code: String, refund_notes: String, approved_by: Option<String>) -> Result<(), String> {
+pub async fn record_refund_with_reason_db(state: tauri::State<'_, PgPool>, total_amount: f64, items_json: String, user_role: String, refund_reason_code: String, refund_notes: String, approved_by: Option<String>, session_token: String) -> Result<(), String> {
+    // Phase 10 Fix: require session + validate inputs
+    let (_uid, _uname, _role) = crate::verify_session_token(state.inner(), &session_token).await?;
+
+    // Phase 10 Fix: validate total_amount > 0 (prevent sign ambiguity)
+    if total_amount <= 0.0 {
+        return Err("مبلغ المرتجع يجب أن يكون موجباً".to_string());
+    }
+    // Phase 10 Fix: validate reason is not empty
+    if refund_reason_code.trim().is_empty() {
+        return Err("سبب المرتجع إلزامي".to_string());
+    }
+    // Phase 10 Fix: limit items_json size
+    if items_json.len() > 100_000 {
+        return Err("حجم قائمة الأصناف كبير جداً".to_string());
+    }
+
     let total_dec = rust_decimal::Decimal::from_f64(total_amount).ok_or("Invalid total")?;
     let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
-    
-    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, refund_reason_code, refund_notes, refund_approved_by) VALUES ($1, 0, $2, $3, $4, $5) RETURNING id")
+
+    let row = sqlx::query("INSERT INTO invoices (total_amount, profit_amount, user_role, refund_reason_code, refund_notes, refund_approved_by, daily_receipt_number) VALUES ($1, 0, $2, $3, $4, $5, get_daily_receipt_number()) RETURNING id")
         .bind(total_dec * rust_decimal::Decimal::from(-1)).bind(&user_role)
         .bind(&refund_reason_code).bind(&refund_notes).bind(approved_by)
         .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     let invoice_id: uuid::Uuid = row.get(0);
-    
+
     let items: Vec<serde_json::Value> = serde_json::from_str(&items_json).map_err(|e| e.to_string())?;
     for item in items {
         let med_id = uuid::Uuid::parse_str(item["id"].as_str().ok_or("Missing id")?).map_err(|e| e.to_string())?;
         let name = item["nameAr"].as_str().unwrap_or("");
         let qty = item["quantity"].as_i64().unwrap_or(0) as i32;
-        let price = rust_decimal::Decimal::from_f64(item["price"].as_f64().unwrap_or(0.0)).ok_or("Err")?;
-        
-        // إرجاع الكمية للمخزون
-        sqlx::query("UPDATE medicines SET quantity = quantity + $1 WHERE id = $2").bind(qty).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-        
-        sqlx::query("INSERT INTO invoice_items (invoice_id, medicine_id, name_ar, quantity, price) VALUES ($1, $2, $3, $4, $5)")
-            .bind(invoice_id).bind(med_id).bind(name).bind(qty).bind(price).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        // Phase 10 Fix: validate qty > 0
+        if qty <= 0 {
+            return Err("الكمية يجب أن تكون أكبر من صفر".to_string());
+        }
+        let price_f64 = item["price"].as_f64().unwrap_or(0.0);
+        if price_f64 < 0.0 {
+            return Err("السعر لا يمكن أن يكون سالباً".to_string());
+        }
+        let price = rust_decimal::Decimal::from_f64(price_f64).ok_or("Invalid price")?;
+
+        // Phase 10 Fix: restore to nearest-expiry batch (FEFO) + sync medicines.quantity
+        let batch_row = sqlx::query("SELECT id FROM medicine_batches WHERE medicine_id = $1 ORDER BY expiry_date ASC LIMIT 1")
+            .bind(med_id).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
+        let batch_id: Option<uuid::Uuid> = if let Some(b_row) = batch_row {
+            let bid: uuid::Uuid = b_row.get(0);
+            sqlx::query("UPDATE medicine_batches SET quantity = quantity + $1 WHERE id = $2")
+                .bind(qty).bind(bid).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+            Some(bid)
+        } else {
+            let med_data = sqlx::query("SELECT batch_number, expiry_date FROM medicines WHERE id = $1")
+                .bind(med_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+            let bn: Option<String> = med_data.get(0);
+            let ed: Option<chrono::NaiveDate> = med_data.get(1);
+            let new_batch = sqlx::query("INSERT INTO medicine_batches (medicine_id, batch_number, expiry_date, quantity) VALUES ($1, $2, $3, $4) RETURNING id")
+                .bind(med_id).bind(bn).bind(ed).bind(qty).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+            Some(new_batch.get(0))
+        };
+        // Always sync medicines.quantity
+        sqlx::query("UPDATE medicines SET quantity = quantity + $1 WHERE id = $2")
+            .bind(qty).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        // Phase 10: store batch_id in invoice_items
+        sqlx::query("INSERT INTO invoice_items (invoice_id, medicine_id, name_ar, quantity, price, batch_id) VALUES ($1, $2, $3, $4, $5, $6)")
+            .bind(invoice_id).bind(med_id).bind(name).bind(qty).bind(price).bind(batch_id)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
-    
+
     let desc = format!("مرتجع بسبب: {} - {}", refund_reason_code, refund_notes);
     sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'SALES_REFUND', $2)")
         .bind(&user_role).bind(&desc).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    
+
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
