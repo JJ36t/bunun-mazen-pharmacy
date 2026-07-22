@@ -1863,21 +1863,23 @@ async fn get_role_permissions_db(state: tauri::State<'_, PgPool>, role_id: Strin
     Ok(perms)
 }
 
-// check_permission_db — يدعم كلا المسارين: role_id FK و role VARCHAR (للتوافق مع الكود القديم)
+// check_permission_db — Phase 3: verify session first, derive username from session
 #[tauri::command]
-async fn check_permission_db(state: tauri::State<'_, PgPool>, username: String, permission_name: String) -> Result<bool, String> {
+async fn check_permission_db(state: tauri::State<'_, PgPool>, session_token: String, permission_name: String) -> Result<bool, String> {
+    // Phase 3 Auth Fix: verify session and derive username from it
+    let (_uid, session_username, _session_role) = verify_session_token(state.inner(), &session_token).await?;
     // محاولة 1: عبر role_id FK
     let result: Option<i64> = sqlx::query_scalar(
         "SELECT COUNT(*) FROM users u JOIN roles r ON u.role_id = r.id JOIN role_permissions rp ON r.id = rp.role_id JOIN permissions p ON rp.permission_id = p.id WHERE u.username = $1 AND p.name = $2 AND u.is_active = TRUE"
     )
-    .bind(&username).bind(&permission_name)
+    .bind(&session_username).bind(&permission_name)
     .fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
     if result.unwrap_or(0) > 0 { return Ok(true); }
     // محاولة 2: عبر role VARCHAR مباشرة (للمستخدمين بدون role_id)
     let result2: Option<i64> = sqlx::query_scalar(
         "SELECT COUNT(*) FROM users u JOIN roles r ON (LOWER(u.role) = LOWER(r.name) OR LOWER(u.role) = LOWER(r.display_name)) JOIN role_permissions rp ON r.id = rp.role_id JOIN permissions p ON rp.permission_id = p.id WHERE u.username = $1 AND p.name = $2 AND u.is_active = TRUE"
     )
-    .bind(&username).bind(&permission_name)
+    .bind(&session_username).bind(&permission_name)
     .fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
     Ok(result2.unwrap_or(0) > 0)
 }
