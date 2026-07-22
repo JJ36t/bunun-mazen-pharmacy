@@ -255,24 +255,31 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
                 Err(e) => { println!("[LOGIN DEBUG] bcrypt verify error: {}", e); false }
             };
             if verified {
+                println!("[LOGIN DEBUG] bcrypt OK — inserting session...");
                 // تحديث آخر دخول — best-effort (لا يفشل الدخول لو فشل)
                 if let Err(e) = sqlx::query("UPDATE users SET last_login = NOW() WHERE username = $1")
                     .bind(&username).execute(state.inner()).await {
-                    tracing::warn!(error = %e, "Failed to update last_login");
+                    println!("[LOGIN DEBUG] last_login update error: {}", e);
                 }
                 // Security fix: propagate session insert error
-                // Previously: let _ = ... → user gets token not in DB → verify_session_token always rejects
                 let session_token = uuid::Uuid::new_v4().to_string();
                 let device_info = format!("os:{}", std::env::consts::OS);
-                sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at, token, expires_at, last_activity) VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW() + INTERVAL '8 hours', NOW())")
+                match sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at, token, expires_at, last_activity) VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW() + INTERVAL '8 hours', NOW())")
                     .bind(user_id).bind(&username).bind(&device_info).bind(&session_token)
-                    .execute(state.inner()).await
-                    .map_err(|e| format!("فشل إنشاء الجلسة: {}. حاول مرة أخرى.", e))?;
-                // Security fix: log audit entry — best-effort but warn on failure
-                if let Err(e) = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN', 'تسجيل دخول ناجح')")
-                    .bind(&username).execute(state.inner()).await {
-                    tracing::warn!(error = %e, "Failed to log successful login to audit_logs");
+                    .execute(state.inner()).await {
+                    Ok(_) => println!("[LOGIN DEBUG] session inserted OK"),
+                    Err(e) => {
+                        println!("[LOGIN DEBUG] session insert FAILED: {}", e);
+                        return Err(format!("فشل إنشاء الجلسة: {}", e));
+                    }
                 }
+                // Security fix: log audit entry
+                match sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN', 'تسجيل دخول ناجح')")
+                    .bind(&username).execute(state.inner()).await {
+                    Ok(_) => println!("[LOGIN DEBUG] audit log OK"),
+                    Err(e) => println!("[LOGIN DEBUG] audit log FAILED: {}", e),
+                }
+                println!("[LOGIN DEBUG] returning success JSON");
                 Ok(serde_json::json!({ "username": username, "role": role, "sessionToken": session_token, "userId": user_id.to_string() }))
             } else {
                 // Security fix: log failed attempt — best-effort but warn on failure
