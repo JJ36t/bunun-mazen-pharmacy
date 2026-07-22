@@ -212,9 +212,15 @@ pub async fn record_cash_drawer_event_db(state: tauri::State<'_, PgPool>, shift_
     let shift_uuid = uuid::Uuid::parse_str(&shift_id).map_err(|e| e.to_string())?;
     let amount_dec = rust_decimal::Decimal::from_f64(amount).ok_or("Err")?;
     
-    // حساب الرصيد الجديد
+    // Phase 6: wrap in transaction + FOR UPDATE on last event to prevent race
+    let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
+    
+    // FOR UPDATE: lock the shift row to serialize concurrent cash events
+    let _ = sqlx::query("SELECT id FROM shifts WHERE id = $1 FOR UPDATE")
+        .bind(shift_uuid).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    
     let last_balance: Option<rust_decimal::Decimal> = sqlx::query_scalar("SELECT balance_after FROM cash_drawer_events WHERE shift_id = $1 ORDER BY created_at DESC LIMIT 1")
-        .bind(shift_uuid).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
+        .bind(shift_uuid).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
     
     let current_balance = last_balance.unwrap_or(rust_decimal::Decimal::ZERO);
     let new_balance = if event_type == "cash_in" || event_type == "sale" {
@@ -227,7 +233,9 @@ pub async fn record_cash_drawer_event_db(state: tauri::State<'_, PgPool>, shift_
     
     sqlx::query("INSERT INTO cash_drawer_events (shift_id, event_type, amount, balance_after, description, user_role) VALUES ($1, $2, $3, $4, $5, $6)")
         .bind(shift_uuid).bind(&event_type).bind(amount_dec).bind(new_balance).bind(&description).bind(&user_role)
-        .execute(state.inner()).await.map_err(|e| e.to_string())?;
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 

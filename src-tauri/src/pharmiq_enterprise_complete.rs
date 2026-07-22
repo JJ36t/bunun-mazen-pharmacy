@@ -12,9 +12,11 @@ use chrono;
 
 // ===== 1. FINANCIAL LEDGER =====
 
-// دالة مساعدة داخلية (بدون Tauri State) للاستدعاء من داخل دوال أخرى
+// Phase 6 Fix: record_ledger_entry_inner now accepts a transaction reference
+// so callers can wrap multiple entries in a single DB transaction.
+// Also adds FOR UPDATE on ledger_accounts to prevent race conditions.
 async fn record_ledger_entry_inner(
-    pool: &PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     transaction_id: uuid::Uuid,
     account_code: &str,
     debit: f64,
@@ -24,23 +26,23 @@ async fn record_ledger_entry_inner(
     reference_id: Option<uuid::Uuid>,
     user_role: &str,
 ) -> Result<(), String> {
-    let account = sqlx::query("SELECT id FROM ledger_accounts WHERE account_code = $1")
-        .bind(account_code).fetch_one(pool).await.map_err(|e| e.to_string())?;
+    // Phase 6: FOR UPDATE prevents concurrent postings from reading stale balance
+    let account = sqlx::query("SELECT id FROM ledger_accounts WHERE account_code = $1 FOR UPDATE")
+        .bind(account_code).fetch_one(&mut **tx).await.map_err(|e| e.to_string())?;
     let account_id: uuid::Uuid = account.get(0);
+    
+    let debit_dec = rust_decimal::Decimal::from_f64(debit).ok_or("Invalid debit")?;
+    let credit_dec = rust_decimal::Decimal::from_f64(credit).ok_or("Invalid credit")?;
     
     sqlx::query("INSERT INTO ledger_entries (transaction_id, account_id, debit_amount, credit_amount, description, reference_type, reference_id, user_role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
         .bind(transaction_id).bind(account_id)
-        .bind(rust_decimal::Decimal::from_f64(debit).ok_or("Err")?)
-        .bind(rust_decimal::Decimal::from_f64(credit).ok_or("Err")?)
+        .bind(debit_dec).bind(credit_dec)
         .bind(description).bind(reference_type).bind(reference_id).bind(user_role)
-        .execute(pool).await.map_err(|e| e.to_string())?;
+        .execute(&mut **tx).await.map_err(|e| e.to_string())?;
     
-    // تحديث رصيد الحساب
-    let debit_dec = rust_decimal::Decimal::from_f64(debit).unwrap_or(rust_decimal::Decimal::ZERO);
-    let credit_dec = rust_decimal::Decimal::from_f64(credit).unwrap_or(rust_decimal::Decimal::ZERO);
     sqlx::query("UPDATE ledger_accounts SET balance = balance + $1 - $2 WHERE id = $3")
         .bind(debit_dec).bind(credit_dec).bind(account_id)
-        .execute(pool).await.map_err(|e| e.to_string())?;
+        .execute(&mut **tx).await.map_err(|e| e.to_string())?;
     
     Ok(())
 }
@@ -49,27 +51,32 @@ async fn record_ledger_entry_inner(
 pub async fn record_ledger_entry_db(state: tauri::State<'_, PgPool>, transaction_id: String, account_code: String, debit: f64, credit: f64, description: String, reference_type: String, reference_id: Option<String>, user_role: String) -> Result<(), String> {
     let tx_id = uuid::Uuid::parse_str(&transaction_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
     let ref_uuid = reference_id.and_then(|s| uuid::Uuid::parse_str(&s).ok());
-    record_ledger_entry_inner(state.inner(), tx_id, &account_code, debit, credit, &description, &reference_type, ref_uuid, &user_role).await
+    // Phase 6: wrap in transaction
+    let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
+    record_ledger_entry_inner(&mut tx, tx_id, &account_code, debit, credit, &description, &reference_type, ref_uuid, &user_role).await?;
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn record_sale_ledger_db(state: tauri::State<'_, PgPool>, invoice_id: String, total_amount: f64, cost_amount: f64, user_role: String) -> Result<(), String> {
     let tx_id = uuid::Uuid::new_v4();
     let inv_uuid = uuid::Uuid::parse_str(&invoice_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
-    let pool = state.inner();
+    
+    // Phase 6: wrap all 4 entries in a single transaction
+    // Previously: 4 separate calls without transaction — single DB hiccup breaks trial balance
+    let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
     
     // مدين: الصندوق النقدي (الأصل يزيد)
-    record_ledger_entry_inner(pool, tx_id, "1000", total_amount, 0.0, &format!("بيع فاتورة {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
-    
+    record_ledger_entry_inner(&mut tx, tx_id, "1000", total_amount, 0.0, &format!("بيع فاتورة {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
     // دائن: المبيعات (الإيراد يزيد)
-    record_ledger_entry_inner(pool, tx_id, "4000", 0.0, total_amount, &format!("إيراد مبيعات {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
-    
+    record_ledger_entry_inner(&mut tx, tx_id, "4000", 0.0, total_amount, &format!("إيراد مبيعات {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
     // مدين: تكلفة البضاعة المباعة
-    record_ledger_entry_inner(pool, tx_id, "5000", cost_amount, 0.0, &format!("تكلفة بضاعة مباعة {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
-    
+    record_ledger_entry_inner(&mut tx, tx_id, "5000", cost_amount, 0.0, &format!("تكلفة بضاعة مباعة {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
     // دائن: المخزون (الأصل ينقص)
-    record_ledger_entry_inner(pool, tx_id, "1200", 0.0, cost_amount, &format!("تخفيض مخزون {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
+    record_ledger_entry_inner(&mut tx, tx_id, "1200", 0.0, cost_amount, &format!("تخفيض مخزون {}", invoice_id), "sale", Some(inv_uuid), &user_role).await?;
     
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -143,18 +150,29 @@ pub async fn get_trial_balance_db(state: tauri::State<'_, PgPool>) -> Result<Vec
 #[tauri::command]
 pub async fn quarantine_stock_db(state: tauri::State<'_, PgPool>, medicine_id: String, batch_number: Option<String>, quantity: i32, reason: String, notes: String, quarantined_by: String) -> Result<String, String> {
     let med_uuid = uuid::Uuid::parse_str(&medicine_id).map_err(|e| e.to_string())?;
+    // Phase 6: wrap INSERT + UPDATE in transaction + FOR UPDATE on medicine
+    let mut tx = state.inner().begin().await.map_err(|e| e.to_string())?;
+    
+    // FOR UPDATE: prevent concurrent modifications during quarantine
+    let med_row = sqlx::query("SELECT quantity FROM medicines WHERE id = $1 FOR UPDATE")
+        .bind(med_uuid).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    let current_qty: i32 = med_row.get(0);
+    if current_qty < quantity {
+        return Err(format!("الكمية غير كافية للعزل. المتوفر: {}، المطلوب: {}", current_qty, quantity));
+    }
+    
     let row = sqlx::query("INSERT INTO quarantined_stock (medicine_id, batch_number, quantity, quarantine_reason, notes, quarantined_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id")
         .bind(med_uuid).bind(&batch_number).bind(quantity).bind(&reason).bind(&notes).bind(&quarantined_by)
-        .fetch_one(state.inner()).await.map_err(|e| e.to_string())?;
+        .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
     
-    // خصم الكمية من المخزون
     sqlx::query("UPDATE medicines SET quantity = quantity - $1 WHERE id = $2").bind(quantity).bind(med_uuid)
-        .execute(state.inner()).await.map_err(|e| e.to_string())?;
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     
     let desc = format!("عزل {} وحدة من المخزون (السبب: {})", quantity, reason);
     let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'QUARANTINE_STOCK', $2)")
-        .bind(&quarantined_by).bind(&desc).execute(state.inner()).await;
+        .bind(&quarantined_by).bind(&desc).execute(&mut *tx).await;
     
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(row.get::<uuid::Uuid, _>(0).to_string())
 }
 

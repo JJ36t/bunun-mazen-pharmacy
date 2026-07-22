@@ -287,10 +287,18 @@ pub async fn complete_stock_count_db(state: tauri::State<'_, PgPool>, count_id: 
     let mut adjusted = 0;
     for item in items {
         let med_id: uuid::Uuid = item.get(0);
+        let expected: i32 = item.get(1);
         let counted: Option<i32> = item.get(2);
         if let Some(c) = counted {
-            sqlx::query("UPDATE medicines SET quantity = $1, updated_at = NOW() WHERE id = $2")
-                .bind(c).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+            // Phase 6 Fix: use delta (counted - expected) instead of absolute assignment
+            // Previously: SET quantity = $1 (overwrites concurrent sales during count)
+            // Now: SET quantity = quantity + (counted - expected) (preserves concurrent changes)
+            let delta = c - expected;
+            // FOR UPDATE: lock medicine row during update
+            let _ = sqlx::query("SELECT quantity FROM medicines WHERE id = $1 FOR UPDATE")
+                .bind(med_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+            sqlx::query("UPDATE medicines SET quantity = quantity + $1, updated_at = NOW() WHERE id = $2")
+                .bind(delta).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
             adjusted += 1;
         }
     }
