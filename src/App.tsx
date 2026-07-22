@@ -96,7 +96,7 @@ const navItems: { key: TabKey; label: string; icon: React.ComponentType<{ classN
 function PosDashboard() {
   const { cart, addToCart, removeFromCart, updateItemQuantity, calculateSubtotal, calculateTotal, clearCart, discountPercentage, setDiscountPercentage } = usePosStore();
   const { medicines, fetchMedicines } = useInventoryStore();
-  const { fetchSummary } = useAccountingStore();
+  const { totalSales, fetchSummary } = useAccountingStore();
   const { username, sessionToken } = useAuthStore();
   const { pharmacyName } = useSettingsStore();
   const [searchTerm, setSearchTerm] = useState('');
@@ -221,7 +221,10 @@ function PosDashboard() {
     }
 
     // ===== فحص التفاعلات الدوائية عند الإضافة للسلة =====
-    const newCartItems = [...cart, { id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price }];
+    // Phase 11 Fix: use usePosStore.getState().cart instead of closure-captured cart
+    // Previously: rapid scans missed interaction checks between items 1 and 2
+    const currentCart = usePosStore.getState().cart;
+    const newCartItems = [...currentCart, { id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price }];
     const activeIngredients = newCartItems
       .map(item => {
         const m = medicines.find((med) => med.id === item.id);
@@ -588,7 +591,7 @@ function PosDashboard() {
     };
     window.addEventListener('keydown', handleKeyDown); 
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, medicines, discountPercentage]);
+  }, [cart, medicines, discountPercentage, discountAmount]);
 
   return (
     <div className="flex-1 flex overflow-hidden animate-fade-in">
@@ -1150,7 +1153,7 @@ function App() {
                   </div>
                   <div>
                     <p className="text-xs text-slate-500">مبيعات اليوم</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">{useAccountingStore.getState().totalSales.toLocaleString('en-US')} د.ع</p>
+                    <p className="text-lg font-bold text-slate-800 tabular">{totalSales.toLocaleString('en-US')} د.ع</p>
                   </div>
                 </div>
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
@@ -1159,7 +1162,7 @@ function App() {
                   </div>
                   <div>
                     <p className="text-xs text-slate-500">الأصناف في المخزون</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">{useInventoryStore.getState().medicines.filter(m => !m.isDeleted).length} صنف</p>
+                    <p className="text-lg font-bold text-slate-800 tabular">{medicines.filter(m => !m.isDeleted).length} صنف</p>
                   </div>
                 </div>
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
