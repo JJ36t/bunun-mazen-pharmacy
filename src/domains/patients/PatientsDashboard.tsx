@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Plus, Users, User, Phone, FileText, Search, Heart, ShoppingBag, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuthStore } from '../security/auth.store';
 
 export function PatientsDashboard() {
   const [patients, setPatients] = useState<any[]>([]);
@@ -23,7 +24,8 @@ export function PatientsDashboard() {
     e.preventDefault();
     if (!name || !nationalId) return;
     try {
-      await invoke('add_patient_db', { name, nationalId, phone, notes });
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('add_patient_db', { name, nationalId, phone, notes, sessionToken: sessionToken || '' });
       toast.success('تمت إضافة المريض بنجاح.');
       setName(''); setNationalId(''); setPhone(''); setNotes('');
       setShowForm(false);

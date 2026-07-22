@@ -47,12 +47,12 @@ export function DebtsDashboard() {
   const handleDelete = async (debtId: string) => {
     if (!window.confirm("هل أنت متأكد من حذف هذا الدين نهائياً؟")) return;
     try {
-      await invoke('delete_customer_debt_db', { debtId });
+      const { sessionToken } = useAuthStore.getState();
+      await invoke('delete_customer_debt_db', { debtId, sessionToken: sessionToken || '' });
       await fetchDebts();
       toast.success("تم حذف الدين.");
     } catch (e: unknown) {
       toast.error('فشل الحذف: ' + e);
-    } finally {
     }
   };
 

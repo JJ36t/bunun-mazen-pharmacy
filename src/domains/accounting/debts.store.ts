@@ -10,6 +10,7 @@ interface DebtsState {
   fetchDebts: () => Promise<void>;
   addDebt: (customerName: string, amount: number, note: string, userRole: string) => Promise<void>;
   payDebt: (debtId: string, amount: number, userRole: string) => Promise<void>;
+  deleteDebt: (debtId: string) => Promise<void>;
 }
 
 export const useDebtsStore = create<DebtsState>((set) => ({
