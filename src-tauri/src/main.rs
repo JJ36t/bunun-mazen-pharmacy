@@ -184,8 +184,12 @@ fn desktop_dir() -> Result<std::path::PathBuf, String> {
 
 #[tauri::command]
 fn save_csv_file(filename: String, content: String) -> Result<String, String> {
+    // Part 2 S11: reject filenames containing path separators or .. (path traversal)
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Err("اسم الملف غير صالح".to_string());
+    }
     let dir = desktop_dir()?;
-    let path = dir.join(filename);
+    let path = dir.join(&filename);
     std::fs::File::create(&path).map_err(|e| e.to_string())?.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
 }
@@ -239,13 +243,14 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
         return Err("تم تجاوز عدد محاولات الدخول المسموحة. حاول بعد 5 دقائق.".to_string());
     }
 
-    let row = sqlx::query("SELECT id, password, role FROM users WHERE username = $1 AND is_active = TRUE AND deleted_at IS NULL")
+    let row = sqlx::query("SELECT id, password, role, must_change_password FROM users WHERE username = $1 AND is_active = TRUE AND deleted_at IS NULL")
         .bind(&username).fetch_optional(state.inner()).await.map_err(|e| e.to_string())?;
     match row {
         Some(r) => {
             let user_id: uuid::Uuid = r.get(0);
             let hashed_pass: String = r.get(1);
             let role: String = r.get(2);
+            let must_change: bool = r.get::<bool, _>(3);
             let verified = bcrypt::verify(&password, &hashed_pass).unwrap_or(false);
             if verified {
                 // تحديث آخر دخول — best-effort
@@ -265,7 +270,7 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
                     .bind(&username).execute(state.inner()).await {
                     tracing::warn!(error = %e, "Failed to log successful login");
                 }
-                Ok(serde_json::json!({ "username": username, "role": role, "sessionToken": session_token, "userId": user_id.to_string() }))
+                Ok(serde_json::json!({ "username": username, "role": role, "sessionToken": session_token, "userId": user_id.to_string(), "mustChangePassword": must_change }))
             } else {
                 // Security fix: log failed attempt — best-effort but warn on failure
                 if let Err(e) = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'LOGIN_FAILED', 'محاولة دخول فاشلة')")
