@@ -4,7 +4,7 @@ import { Lock, User, AlertCircle, KeyRound, ShieldCheck, Eye, EyeOff } from 'luc
 import { toast } from 'sonner';
 
 export function Login() {
-  const { login, isLicensed, deviceId, activate, activationError } = useAuthStore();
+  const { login, isLicensed, deviceId, activate, activationError, error: authError } = useAuthStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -16,8 +16,10 @@ export function Login() {
     setLoginError('');
     const success = await login(username, password);
     if (!success) {
-      setLoginError('بيانات الدخول غير صحيحة');
-      toast.error('بيانات الدخول غير صحيحة');
+      // Show actual error from auth store (not hardcoded message)
+      const errMsg = authError || 'بيانات الدخول غير صحيحة';
+      setLoginError(errMsg);
+      toast.error(errMsg);
     }
   };
 
