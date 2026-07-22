@@ -747,24 +747,44 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
         }
     }
 
+    // Phase 9 Fix: validate discount_percentage range (0-100)
+    if discount_percentage < 0.0 || discount_percentage > 100.0 {
+        return Err("نسبة الخصم يجب أن تكون بين 0 و 100".to_string());
+    }
     let settings_row = sqlx::query("SELECT value FROM settings WHERE key = 'max_discount'").fetch_optional(pool).await.map_err(|e| e.to_string())?;
     let max_discount: f64 = if let Some(row) = settings_row { row.get::<String, _>(0).parse::<f64>().unwrap_or(10.0) } else { 10.0 };
     if discount_percentage > max_discount { return Err(format!("الخصم يتجاوز الحد الأقصى المسموح به ({})%", max_discount)); }
 
+    // Phase 9 Fix: limit items_json size (prevent DoS via huge JSON)
+    if items_json.len() > 100_000 {
+        return Err("حجم قائمة الأصناف كبير جداً (الحد الأقصى 100KB)".to_string());
+    }
     let items: Vec<serde_json::Value> = serde_json::from_str(&items_json).map_err(|e| e.to_string())?;
+    if items.is_empty() {
+        return Err("لا يمكن تسجيل بيع بدون أصناف".to_string());
+    }
+
     let mut subtotal = rust_decimal::Decimal::ZERO;
     let mut total_profit = rust_decimal::Decimal::ZERO;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     for item in &items {
-        let med_uuid = uuid::Uuid::parse_str(item["id"].as_str().ok_or("Err")?).map_err(|e| e.to_string())?;
-        let price = rust_decimal::Decimal::from_f64(item["price"].as_f64().ok_or("Err")?).ok_or("Err")?;
-        let qty = rust_decimal::Decimal::from(item["quantity"].as_i64().ok_or("Err")?);
+        // Phase 9 Fix: validate qty > 0 and price >= 0
+        let qty_i32 = item["quantity"].as_i64().ok_or("Missing quantity")? as i32;
+        if qty_i32 <= 0 {
+            return Err("الكمية يجب أن تكون أكبر من صفر".to_string());
+        }
+        let price_f64 = item["price"].as_f64().ok_or("Missing price")?;
+        if price_f64 < 0.0 {
+            return Err("السعر لا يمكن أن يكون سالباً".to_string());
+        }
+        let med_uuid = uuid::Uuid::parse_str(item["id"].as_str().ok_or("Missing item id")?).map_err(|e| e.to_string())?;
+        let price = rust_decimal::Decimal::from_f64(price_f64).ok_or("Invalid price")?;
+        let qty = rust_decimal::Decimal::from(qty_i32);
         subtotal += price * qty;
         let med_row = sqlx::query("SELECT cost_price, quantity FROM medicines WHERE id = $1 FOR UPDATE").bind(med_uuid).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
         let cost_price: rust_decimal::Decimal = med_row.get(0);
         let current_qty: i32 = med_row.get(1);
-        let qty_i32 = item["quantity"].as_i64().ok_or("Err")? as i32;
         if current_qty < qty_i32 {
             return Err(format!("الكمية غير كافية للدواء. المتوفر: {}، المطلوب: {}", current_qty, qty_i32));
         }

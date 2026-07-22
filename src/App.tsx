@@ -448,7 +448,7 @@ function PosDashboard() {
     try {
         // Idempotency key — يمنع تكرار البيع عند الانهيار
         const operationId = crypto.randomUUID();
-        await invoke('record_sale_db', {
+        const saleResult = await invoke<any>('record_sale_db', {
           discountPercentage: discountPercentage,
           itemsJson: JSON.stringify(currentItems),
           userRole: username || 'Unknown',
@@ -456,6 +456,28 @@ function PosDashboard() {
           discountAmount: discountAmount > 0 ? discountAmount : null,
           sessionToken: sessionToken || '',
         });
+
+        // Phase 9 Fix: record payment method after sale succeeds
+        const invoiceId = saleResult?.invoiceId;
+        if (invoiceId && selectedPaymentMethod && selectedPaymentMethod !== 'credit') {
+          try {
+            // Get payment method ID from backend
+            const methods = await invoke<any[]>('get_payment_methods_db');
+            const method = methods.find(m => m.name === selectedPaymentMethod);
+            if (method) {
+              await invoke('record_invoice_payment_db', {
+                invoiceId,
+                paymentMethodId: method.id,
+                amount: selectedPaymentMethod === 'mixed'
+                  ? (parseFloat(mixedCash || '0') + parseFloat(mixedCard || '0'))
+                  : finalTotal,
+                referenceNumber: selectedPaymentMethod === 'cheque' ? chequeNumber || null : null,
+                chequeDate: null,
+                bankName: null,
+              });
+            }
+          } catch (e) { console.error('Failed to record payment method:', e); }
+        }
 
         // إذا كان الدفع آجل، أضف دين للزبون (اسم الزبون إلزامي)
         if (selectedPaymentMethod === 'credit') {
