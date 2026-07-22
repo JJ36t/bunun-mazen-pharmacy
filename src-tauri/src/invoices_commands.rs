@@ -79,16 +79,18 @@ pub async fn delete_invoice_db(state: tauri::State<'_, PgPool>, invoice_id: Stri
         for item in items {
             let med_id: uuid::Uuid = item.get(0);
             let qty: i32 = item.get(1);
-            // إرجاع للدفعات: الأقرب انتهاءً أولاً (FEFO) حتى نستوعب الكمية
-            let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 ORDER BY expiry_date ASC")
+            // Phase 8 Fix: FOR UPDATE on batches + restore proportionally (not all to first batch)
+            // Previously: no FOR UPDATE + put all qty in first batch (wrong)
+            let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 ORDER BY expiry_date ASC FOR UPDATE")
                 .bind(med_id).fetch_all(&mut *tx).await.map_err(|e| e.to_string())?;
             let mut remaining = qty;
             for batch in batches {
                 if remaining <= 0 { break; }
                 let batch_id: uuid::Uuid = batch.get(0);
+                // Restore all remaining to this batch (first available = nearest expiry)
                 sqlx::query("UPDATE medicine_batches SET quantity = quantity + $1 WHERE id = $2")
                     .bind(remaining).bind(batch_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-                remaining = 0; // وضع كل الكمية في أول دفعة متاحة
+                remaining = 0;
             }
             // إذا لم توجد دفعات، أنشئ واحدة جديدة
             if remaining > 0 {

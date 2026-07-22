@@ -798,25 +798,40 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
         let qty = item["quantity"].as_i64().ok_or("Missing qty")? as i32;
         let med_uuid = uuid::Uuid::parse_str(item["id"].as_str().ok_or("Err")?).map_err(|e| e.to_string())?;
         let price = rust_decimal::Decimal::from_f64(item["price"].as_f64().ok_or("Err")?).ok_or("Err")?;
-        
-        sqlx::query("INSERT INTO invoice_items (invoice_id, medicine_id, name_ar, quantity, price) VALUES ($1, $2, $3, $4, $5)")
-            .bind(invoice_id).bind(med_uuid).bind(name).bind(qty).bind(price).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-            
+
+        // Phase 8 Fix: track which batch each item was deducted from
+        // Deduct from batches (FEFO) and record batch_id in invoice_items
         let batches = sqlx::query("SELECT id, quantity FROM medicine_batches WHERE medicine_id = $1 AND quantity > 0 ORDER BY expiry_date ASC FOR UPDATE")
             .bind(med_uuid).fetch_all(&mut *tx).await.map_err(|e| e.to_string())?;
         let mut remaining_qty = qty;
+        let mut primary_batch_id: Option<uuid::Uuid> = None;
+
         for batch in batches {
             if remaining_qty <= 0 { break; }
             let batch_id: uuid::Uuid = batch.get(0);
             let batch_qty: i32 = batch.get(1);
             let deduct = std::cmp::min(batch_qty, remaining_qty);
-            sqlx::query("UPDATE medicine_batches SET quantity = quantity - $1 WHERE id = $2").bind(deduct).bind(batch_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+            sqlx::query("UPDATE medicine_batches SET quantity = quantity - $1 WHERE id = $2")
+                .bind(deduct).bind(batch_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+            // Record the first batch used (for invoice_items.batch_id)
+            if primary_batch_id.is_none() {
+                primary_batch_id = Some(batch_id);
+            }
             remaining_qty -= deduct;
         }
-        // إصلاح P0-2: خصم مزدوج — نطرح remaining_qty فقط (ما لم تغطّه الدفعات)
-        if remaining_qty > 0 {
-            sqlx::query("UPDATE medicines SET quantity = quantity - $1 WHERE id = $2").bind(remaining_qty).bind(med_uuid).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-        }
+
+        // Phase 8 Fix: ALWAYS sync medicines.quantity with total batch quantities
+        // Previously: only deducted remaining_qty (what batches didn't cover)
+        // This caused medicines.quantity and SUM(medicine_batches.quantity) to drift
+        // Now: deduct full qty from medicines.quantity (keeping it in sync)
+        sqlx::query("UPDATE medicines SET quantity = quantity - $1 WHERE id = $2")
+            .bind(qty).bind(med_uuid).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        // Insert invoice_items WITH batch_id (Phase 8)
+        sqlx::query("INSERT INTO invoice_items (invoice_id, medicine_id, name_ar, quantity, price, batch_id) VALUES ($1, $2, $3, $4, $5, $6)")
+            .bind(invoice_id).bind(med_uuid).bind(name).bind(qty).bind(price).bind(primary_batch_id)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
         items_desc.push(format!("{} (x{})", name, qty));
     }
     
@@ -856,24 +871,32 @@ async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, it
         let qty = item["quantity"].as_i64().ok_or("Missing qty")? as i32;
         let price_f64 = item["price"].as_f64().ok_or("Missing price")?;
         let price_dec = rust_decimal::Decimal::from_f64(price_f64).ok_or("Invalid item price")?;
-        
-        sqlx::query("UPDATE medicines SET quantity = quantity + $1 WHERE id = $2").bind(qty).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-        let batch_row = sqlx::query("SELECT id FROM medicine_batches WHERE medicine_id = $1 ORDER BY created_at DESC LIMIT 1")
+        // Phase 8 Fix: restore to nearest-expiry batch (FEFO) instead of latest batch
+        // Previously: ORDER BY created_at DESC (latest) — broke FEFO
+        let batch_row = sqlx::query("SELECT id FROM medicine_batches WHERE medicine_id = $1 ORDER BY expiry_date ASC LIMIT 1")
             .bind(med_id).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
-        if let Some(b_row) = batch_row {
+        let refund_batch_id: Option<uuid::Uuid> = if let Some(b_row) = batch_row {
             let batch_id: uuid::Uuid = b_row.get(0);
             sqlx::query("UPDATE medicine_batches SET quantity = quantity + $1 WHERE id = $2").bind(qty).bind(batch_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+            Some(batch_id)
         } else {
+            // No batches exist — create one
             let med_data = sqlx::query("SELECT batch_number, expiry_date FROM medicines WHERE id = $1").bind(med_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
             let bn: Option<String> = med_data.get(0);
             let ed: Option<chrono::NaiveDate> = med_data.get(1);
-            sqlx::query("INSERT INTO medicine_batches (medicine_id, batch_number, expiry_date, quantity) VALUES ($1, $2, $3, $4)").bind(med_id).bind(bn).bind(ed).bind(qty).execute(&mut *tx).await.map_err(|e| e.to_string())?;
-        }
+            let new_batch = sqlx::query("INSERT INTO medicine_batches (medicine_id, batch_number, expiry_date, quantity) VALUES ($1, $2, $3, $4) RETURNING id").bind(med_id).bind(bn).bind(ed).bind(qty).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+            Some(new_batch.get(0))
+        };
+        // Phase 8 Fix: ALWAYS sync medicines.quantity with batch quantities
+        sqlx::query("UPDATE medicines SET quantity = quantity + $1 WHERE id = $2").bind(qty).bind(med_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
         let med_data = sqlx::query("SELECT cost_price FROM medicines WHERE id = $1").bind(med_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
         let cost_price: rust_decimal::Decimal = med_data.get(0);
         let item_profit = (price_dec - cost_price) * rust_decimal::Decimal::from(qty);
         total_refund_profit -= item_profit;
-        sqlx::query("INSERT INTO invoice_items (invoice_id, medicine_id, name_ar, quantity, price) VALUES ($1, $2, $3, $4, $5)").bind(invoice_id).bind(med_id).bind(name).bind(qty).bind(price_dec).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        // Phase 8: store batch_id in invoice_items
+        sqlx::query("INSERT INTO invoice_items (invoice_id, medicine_id, name_ar, quantity, price, batch_id) VALUES ($1, $2, $3, $4, $5, $6)")
+            .bind(invoice_id).bind(med_id).bind(name).bind(qty).bind(price_dec).bind(refund_batch_id)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
         items_desc.push(format!("{} (x{})", name, qty));
     }
     sqlx::query("UPDATE invoices SET profit_amount = $1 WHERE id = $2").bind(total_refund_profit).bind(invoice_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
