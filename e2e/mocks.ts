@@ -12,7 +12,8 @@ export async function mockTauriCommands(page: Page) {
           case 'check_license':
             return true;
           case 'login':
-            return { username: 'admin', role: 'Super Admin' };
+            // Phase 14 Fix: return sessionToken + userId (was missing — broke auth.store)
+            return { username: 'admin', role: 'Super Admin', sessionToken: 'mock-session-token-123', userId: '00000000-0000-0000-0000-000000000001' };
           case 'get_medicines_db':
             return [
               { id: '1', nameAr: 'باراسيتامول', nameEn: 'Paracetamol', scientificName: 'Paracetamol', barcode: '123', price: 5.0, costPrice: 3.0, wholesalePrice: 4.0, quantity: 100, batchNumber: 'B1', expiryDate: '2026-12-31', isDeleted: false }
@@ -56,9 +57,10 @@ export async function mockTauriCommands(page: Page) {
     // توفير الـ API العام الذي تستدعيه مكتبة @tauri-apps/api
     window.__TAURI__ = {
       core: {
-        invoke: (cmd: string, args?: any) => window.__TAURI_INTERNALS__.invoke(cmd, args)
+        invoke: (cmd: string, args?: any) => window.__TAURI_INTERNALS__?.invoke(cmd, args)
       },
       event: {
+        // Phase 14 Fix: return proper UnlistenFn shape
         listen: () => Promise.resolve(() => {})
       }
     };

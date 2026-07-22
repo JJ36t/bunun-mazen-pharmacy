@@ -2311,3 +2311,53 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+// ========================================
+// Phase 14: Unit tests for crypto functions (moved from integration_tests.rs)
+// ========================================
+#[cfg(test)]
+mod crypto_tests {
+    use super::*;
+
+    #[test]
+    fn test_encrypt_decrypt_roundtrip() {
+        let data = "بيانات سرية للنسخ الاحتياطي";
+        let password = "test_password_123";
+        let encrypted = encrypt_data(data, password).unwrap();
+        let decrypted = decrypt_data(&encrypted, password).unwrap();
+        assert_eq!(data, decrypted);
+    }
+
+    #[test]
+    fn test_wrong_password_fails() {
+        let encrypted = encrypt_data("secret", "correct").unwrap();
+        assert!(decrypt_data(&encrypted, "wrong").is_err());
+    }
+
+    #[test]
+    fn test_different_encryptions_differ() {
+        let enc1 = encrypt_data("data", "pass").unwrap();
+        let enc2 = encrypt_data("data", "pass").unwrap();
+        assert_ne!(enc1, enc2); // different salt/nonce
+    }
+
+    #[test]
+    fn test_derive_key_deterministic() {
+        let salt = [0u8; 16];
+        let k1 = derive_aes_key("password", &salt);
+        let k2 = derive_aes_key("password", &salt);
+        assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn test_derive_key_different_passwords() {
+        let salt = [0u8; 16];
+        assert_ne!(derive_aes_key("p1", &salt), derive_aes_key("p2", &salt));
+    }
+
+    #[test]
+    fn test_decrypt_invalid_format() {
+        assert!(decrypt_data("invalid", "pass").is_err());
+        assert!(decrypt_data("", "pass").is_err());
+    }
+}
