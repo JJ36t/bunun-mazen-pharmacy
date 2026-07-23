@@ -316,14 +316,15 @@ where
                             }
                         }
                         _ => {}
-                    } // close match msg_type
-                } // close if let Ok(data)
-            } // close Message::Text(text) => {}
+                    }
+                }
+            }
             Message::Close(_) => break,
             _ => {}
-        } // close match msg
-        } // close Ok(Some(Ok(msg))) => {}
-    } // close loop
+        }
+        }
+        }
+    }
     println!("[MobileScanner] Device disconnected: {}", addr);
     Ok(())
 }
