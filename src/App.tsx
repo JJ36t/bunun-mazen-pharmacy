@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import type { Medicine, CartItem } from './types';
 import { useAuthStore } from './domains/security/auth.store';
 import { Login } from './domains/security/Login';
@@ -582,7 +582,9 @@ function PosDashboard() {
     setShowSuspended(false);
   };
   
-  const results = searchTerm.trim() ? searchMedicines(searchTerm, medicines.filter((m:any) => !m.isDeleted)) : [];
+  // Part 4 S6: useMemo for search results — avoid recomputing on every render
+  const activeMedicines = useMemo(() => medicines.filter((m: Medicine) => !m.isDeleted), [medicines]);
+  const results = searchTerm.trim() ? searchMedicines(searchTerm, activeMedicines) : [];
   
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => { 
@@ -604,7 +606,7 @@ function PosDashboard() {
               type="text"
               value={searchTerm}
               onChange={handleSearch}
-              onKeyPress={handleSearchKeyPress}
+              onKeyDown={handleSearchKeyPress}
               placeholder="ابحث أو امسح الباركود... (F1 للدفع، F2 للتعليق)"
               className="input-lg pr-12 pl-4 shadow-sm"
               autoFocus
