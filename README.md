@@ -316,14 +316,17 @@ InvoiceCreated → StockAdjust + AuditLog + DashboardRefresh + PluginNotify
 
 | المقياس | القيمة |
 |---------|--------|
-| أسطر Rust | ~5000 |
-| أسطر TypeScript | ~8000 |
-| Tauri commands | 100+ |
-| Database tables | 40+ |
-| Migrations | 23 |
-| Unit/Integration tests | 43+ |
-| TypeScript interfaces | 25+ |
-| `any` في الكود | 0 |
+| أسطر Rust | ~7,000 |
+| أسطر TypeScript | ~10,400 |
+| Tauri commands | 84+ |
+| Database tables | 54+ |
+| Migrations | 38 |
+| Unit/Integration tests | 18+ |
+| TypeScript interfaces | 21 |
+| أوامر تفرض session verification | 43/84 |
+| CHECK constraints | 30+ |
+| Foreign Key constraints | 20+ |
+| Indexes | 30+ |
 
 ---
 

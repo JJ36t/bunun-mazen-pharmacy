@@ -1,19 +1,18 @@
 // ========================================
-// Plugins Index - تهيئة جميع الإضافات
+// Plugins Index - تهيئة الإضافات
 // ========================================
+// Part 4 S14: Removed mock plugins (cloudSync, whatsapp, aiInsights)
+// They were stubs with console.log only — no real implementation.
+// Plugin system remains for future use, but no fake plugins loaded.
 
 import { pluginRegistry } from '../lib/core/pluginRegistry';
-import { cloudSyncPlugin } from './cloudSync';
-import { whatsappPlugin } from './whatsapp';
-import { aiInsightsPlugin } from './aiInsights';
 
-// تسجيل وتفعيل جميع الـ plugins
+// No plugins registered — system is ready for real plugins when available
 export async function registerAllPlugins(): Promise<void> {
-  pluginRegistry.register(cloudSyncPlugin);
-  pluginRegistry.register(whatsappPlugin);
-  pluginRegistry.register(aiInsightsPlugin);
-  // فعّل plugins بأمان — الأخطاء تُسجَّل لكن لا تُوقف التطبيق
-  await pluginRegistry.enableAll();
+  // Future: register real plugins here
+  // pluginRegistry.register(cloudSyncPlugin);
+  // pluginRegistry.register(whatsappPlugin);
+  // pluginRegistry.register(aiInsightsPlugin);
 }
 
 export { pluginRegistry } from '../lib/core/pluginRegistry';

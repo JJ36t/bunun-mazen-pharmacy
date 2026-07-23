@@ -1379,7 +1379,7 @@ fn print_receipt_direct(printer_name: String, pharmacy_name: String, invoice_num
     #[cfg(target_os = "windows")]
     {
         let printer_arg = format!("/d:{}", printer_name);
-        let output = Command::new("print").arg(&printer_arg).arg(temp_file.to_str().unwrap()).output()
+        let output = Command::new("print").arg(&printer_arg).arg(temp_file.to_str().ok_or("مسار الملف غير صالح")?).output()
             .map_err(|e| format!("فشل الطباعة: {}", e))?;
         if !output.status.success() {
             return Err(format!("فشل الطباعة: {}", String::from_utf8_lossy(&output.stderr)));
@@ -1387,7 +1387,7 @@ fn print_receipt_direct(printer_name: String, pharmacy_name: String, invoice_num
     }
     #[cfg(target_os = "macos")]
     {
-        let output = Command::new("lp").arg("-d").arg(&printer_name).arg(temp_file.to_str().unwrap()).output()
+        let output = Command::new("lp").arg("-d").arg(&printer_name).arg(temp_file.to_str().ok_or("مسار الملف غير صالح")?).output()
             .map_err(|e| format!("فشل الطباعة: {}", e))?;
         if !output.status.success() {
             return Err(format!("فشل الطباعة: {}", String::from_utf8_lossy(&output.stderr)));
@@ -1395,7 +1395,7 @@ fn print_receipt_direct(printer_name: String, pharmacy_name: String, invoice_num
     }
     #[cfg(target_os = "linux")]
     {
-        let output = Command::new("lp").arg("-d").arg(&printer_name).arg(temp_file.to_str().unwrap()).output()
+        let output = Command::new("lp").arg("-d").arg(&printer_name).arg(temp_file.to_str().ok_or("مسار الملف غير صالح")?).output()
             .map_err(|e| format!("فشل الطباعة: {}", e))?;
         if !output.status.success() {
             return Err(format!("فشل الطباعة: {}", String::from_utf8_lossy(&output.stderr)));

@@ -122,7 +122,7 @@ pub async fn print_labels_direct_db(_label_data: String, printer_name: String) -
     
     let printer_arg = format!("/d:{}", printer_name);
     let output = std::process::Command::new("print")
-        .arg(&printer_arg).arg(temp_file.to_str().unwrap())
+        .arg(&printer_arg).arg(temp_file.to_str().ok_or("مسار الملف غير صالح")?)
         .output().map_err(|e| format!("فشل الطباعة: {}", e))?;
     
     if !output.status.success() {
