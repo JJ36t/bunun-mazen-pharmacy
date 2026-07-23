@@ -318,9 +318,9 @@ where
                         _ => {}
                     }
                 }
+                Message::Close(_) => break,
+                _ => {}
             }
-            Message::Close(_) => break,
-            _ => {}
         }
     }
     println!("[MobileScanner] Device disconnected: {}", addr);
