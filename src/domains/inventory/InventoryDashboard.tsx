@@ -23,7 +23,7 @@ export function InventoryDashboard() {
     setShowForm(true); 
   };
 
-  const handleEdit = (med: Medicine) => { 
+  const handleEdit = (med: any) => { 
     setEditId(med.id); 
     setForm({ nameAr: med.nameAr, nameEn: med.nameEn, scientificName: med.scientificName || '', barcode: med.barcode, price: med.price, costPrice: med.costPrice, quantity: med.quantity, batchNumber: med.batchNumber, expiryDate: med.expiryDate }); 
     setShowForm(true); 
@@ -43,7 +43,7 @@ export function InventoryDashboard() {
     // توليد باركود EAN-13 صحيح (13 رقم مع checksum) — نفس صيغة الكاشيرات العالمية
     // بادئة 200 = مخصصة للاستخدام الداخلي وفق GS1
     const existingMax = medicines
-      .filter((m: Medicine) => !m.isDeleted && m.barcode && String(m.barcode).startsWith('200') && String(m.barcode).length === 13)
+      .filter((m: any) => !m.isDeleted && m.barcode && String(m.barcode).startsWith('200') && String(m.barcode).length === 13)
       .reduce((max: number, m: unknown) => {
         const seq = parseInt(String(m.barcode).substring(3, 12), 10);
         return isNaN(seq) ? max : Math.max(max, seq);
@@ -87,7 +87,7 @@ export function InventoryDashboard() {
     }
   };
 
-  const filteredMeds = medicines.filter((m: Medicine) => !m.isDeleted && (
+  const filteredMeds = medicines.filter((m: any) => !m.isDeleted && (
     m.nameAr.includes(search) ||
     (m.barcode && String(m.barcode).includes(search)) ||
     (m.nameEn && m.nameEn.toLowerCase().includes(search.toLowerCase()))
@@ -253,7 +253,7 @@ export function InventoryDashboard() {
                   </div>
                 </td>
               </tr>
-            ) : paginatedItems.map((med: unknown) => {
+            ) : paginatedItems.map((med: any) => {
               const isLowStock = med.quantity < 50;
               const isExpiringSoon = med.expiryDate && new Date(med.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
               const isExpired = med.expiryDate && new Date(med.expiryDate) < new Date();

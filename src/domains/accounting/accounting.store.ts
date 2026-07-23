@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Expense } from '../../types';
-import { useAuthStore } from '../security/auth.store';
 
 export type { Expense };
 

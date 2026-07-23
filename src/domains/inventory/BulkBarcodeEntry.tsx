@@ -185,7 +185,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
     try {
       const result = await invoke<any>('generate_pairing_qr');
       setPairingQR(result.qrCode);
-    } catch (e: Medicine) {
+    } catch (e: unknown) {
       toast.error('فشل توليد QR: ' + e);
     } finally {
       setPhoneLoading(false);
@@ -213,7 +213,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
         });
       setMedicines(items);
       setFilteredMeds(items);
-    } catch (e: Medicine) {
+    } catch (e: unknown) {
       toast.error('فشل تحميل الأدوية: ' + e);
     } finally {
       setLoading(false);
@@ -332,7 +332,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
       setPendingBarcode(null);
       setShowNewMedForm(false);
       onSaved();
-    } catch (e: Medicine) {
+    } catch (e: unknown) {
       toast.error('فشل الإضافة: ' + e);
     } finally {
       setSaving(false);
@@ -368,7 +368,7 @@ export function BulkBarcodeEntry({ onClose, onSaved }: BulkBarcodeEntryProps) {
 
       // إعادة تحميل بعد فترة قصيرة لتحديث الحالة
       onSaved();
-    } catch (e: Medicine) {
+    } catch (e: unknown) {
       setMedicines(prev => prev.map(m =>
         m.id === medId ? { ...m, status: 'error' as const } : m
       ));

@@ -49,7 +49,7 @@ export function QuickPurchaseDashboard() {
     }
   };
 
-  const addToCart = (med: unknown) => {
+  const addToCart = (med: any) => {
     const existing = cart.find(i => i.id === med.id);
     if (existing) {
       setCart(prev => prev.map(i => i.id === med.id ? { ...i, qty: i.qty + 1 } : i));
@@ -185,7 +185,7 @@ export function QuickPurchaseDashboard() {
               <input type="text" value={search} onChange={e => setSearch(e.target.value)} className="input pr-10" placeholder="ابحث بالاسم أو الباركود..." />
             </div>
             <div className="max-h-64 overflow-auto space-y-1">
-              {filteredMeds.slice(0, 30).map((med: unknown) => (
+              {filteredMeds.slice(0, 30).map((med: any) => (
                 <div key={med.id} onClick={() => { addToCart(med); setSearch(''); }} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 hover:bg-brand-50 cursor-pointer">
                   <div className="flex items-center gap-2">
                     <Package className="w-4 h-4 text-slate-400" />

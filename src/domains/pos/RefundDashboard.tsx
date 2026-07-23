@@ -163,7 +163,7 @@ function NewRefundForm({ medicines, onClose, onSuccess, userRole }: {
     ? medicines.filter(m => m.nameAr?.includes(search) || m.barcode?.includes(search))
     : [];
 
-  const handleAdd = (med: unknown) => {
+  const handleAdd = (med: any) => {
     const existing = cart.find(i => i.id === med.id);
     if (existing) {
       setCart(prev => prev.map(i => i.id === med.id ? { ...i, quantity: i.quantity + 1 } : i));
