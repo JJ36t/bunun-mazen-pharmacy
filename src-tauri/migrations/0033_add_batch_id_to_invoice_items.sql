@@ -17,5 +17,12 @@ ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS batch_id UUID;
 CREATE INDEX IF NOT EXISTS idx_invoice_items_batch ON invoice_items(batch_id) WHERE batch_id IS NOT NULL;
 
 -- FK constraint (deferred — batch may be deleted later)
-ALTER TABLE invoice_items ADD CONSTRAINT fk_inv_items_batch
-    FOREIGN KEY (batch_id) REFERENCES medicine_batches(id) ON DELETE SET NULL;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_inv_items_batch' AND table_name = 'invoice_items'
+    ) THEN
+        ALTER TABLE invoice_items ADD CONSTRAINT fk_inv_items_batch
+            FOREIGN KEY (batch_id) REFERENCES medicine_batches(id) ON DELETE SET NULL;
+    END IF;
+END $$;
