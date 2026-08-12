@@ -29,4 +29,29 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+
+  // P2 fix: manual chunks for better caching + smaller initial bundle
+  // Splits vendor code into separate chunks that can be cached independently
+  build: {
+    target: "esnext",
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core (rarely changes)
+          "react-vendor": ["react", "react-dom"],
+          // State management
+          "state-vendor": ["zustand"],
+          // Charts (large library — separate chunk)
+          "charts-vendor": ["recharts"],
+          // Icons
+          "icons-vendor": ["lucide-react"],
+          // Date utilities
+          "date-vendor": ["date-fns"],
+          // Tauri bridge
+          "tauri-vendor": ["@tauri-apps/api", "@tauri-apps/plugin-opener"],
+        },
+      },
+    },
+  },
 }));

@@ -1,3 +1,4 @@
+import type { Medicine } from '../../types';
 // ========================================
 // Daily Inventory Checks Modal
 // ========================================
@@ -8,12 +9,22 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { X, AlertOctagon, AlertTriangle, TrendingDown, Package } from 'lucide-react';
 
+interface MedicineWithDaysLeft extends Medicine {
+  daysLeft?: number;
+}
+
+interface DailyChecksData {
+  expired: Medicine[];
+  expiringSoon: MedicineWithDaysLeft[];
+  lowStock: Medicine[];
+}
+
 interface DailyChecksModalProps {
   onClose: () => void;
 }
 
 export function DailyChecksModal({ onClose }: DailyChecksModalProps) {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<DailyChecksData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,7 +34,7 @@ export function DailyChecksModal({ onClose }: DailyChecksModalProps) {
   const loadChecks = async () => {
     setLoading(true);
     try {
-      const result = await invoke<any>('get_daily_inventory_checks_db');
+      const result = await invoke<DailyChecksData>('get_daily_inventory_checks_db');
       setData(result);
     } catch (e) {
       console.error('Daily checks failed:', e);
@@ -45,8 +56,7 @@ export function DailyChecksModal({ onClose }: DailyChecksModalProps) {
 
   if (!data) return null;
 
-  const { expired, expiringSoon, lowStock, summary } = data as {
-    expired: any[]; expiringSoon: any[]; lowStock: any[];
+  const { expired, expiringSoon, lowStock, summary } = data as DailyChecksData & {
     summary: { expiredCount: number; expiringSoonCount: number; lowStockCount: number; totalAlerts: number; };
   };
   const totalAlerts = summary.totalAlerts;
@@ -104,7 +114,7 @@ export function DailyChecksModal({ onClose }: DailyChecksModalProps) {
                 <h4 className="text-sm font-bold text-rose-700">منتهي الصلاحية — أزل من الرف فوراً</h4>
               </div>
               <div className="space-y-1 max-h-32 overflow-auto bg-rose-50/50 rounded-xl p-2 border border-rose-100">
-                {expired.map((m: any) => (
+                {expired.map((m: Medicine) => (
                   <div key={m.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-rose-100">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 text-rose-400" />
@@ -125,7 +135,7 @@ export function DailyChecksModal({ onClose }: DailyChecksModalProps) {
                 <h4 className="text-sm font-bold text-amber-700">قارب الانتهاء</h4>
               </div>
               <div className="space-y-1 max-h-32 overflow-auto bg-amber-50/50 rounded-xl p-2 border border-amber-100">
-                {expiringSoon.map((m: any) => (
+                {expiringSoon.map((m: MedicineWithDaysLeft) => (
                   <div key={m.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-amber-100">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 text-amber-400" />
@@ -146,7 +156,7 @@ export function DailyChecksModal({ onClose }: DailyChecksModalProps) {
                 <h4 className="text-sm font-bold text-yellow-700">مخزون منخفض — يحتاج تزويد</h4>
               </div>
               <div className="space-y-1 max-h-32 overflow-auto bg-yellow-50/50 rounded-xl p-2 border border-yellow-100">
-                {lowStock.map((m: any) => (
+                {lowStock.map((m: Medicine) => (
                   <div key={m.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-yellow-100">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 text-yellow-400" />

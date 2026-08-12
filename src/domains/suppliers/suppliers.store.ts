@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
 import type { Supplier } from '../../types';
 import { useAuthStore } from '../security/auth.store';
+import { suppliersService } from '../../lib/services';
 
 export type { Supplier };
 
@@ -9,51 +9,72 @@ interface SuppliersState {
   suppliers: Supplier[];
   fetchSuppliers: () => Promise<void>;
   addSupplier: (name: string, phone: string) => Promise<void>;
-  recordPurchase: (supplierId: string, medicineId: string, quantity: number, costPrice: number, sellingPrice: number, wholesalePrice: number, userRole: string) => Promise<void>;
+  recordPurchase: (
+    supplierId: string,
+    medicineId: string,
+    quantity: number,
+    costPrice: number,
+    sellingPrice: number,
+    wholesalePrice: number,
+    userRole: string,
+  ) => Promise<void>;
   paySupplier: (supplierId: string, amount: number, userRole: string) => Promise<void>;
 }
 
-export const useSuppliersStore = create<SuppliersState>((set) => ({
+// P1 fix: store now uses the service layer instead of calling invoke() directly.
+// Activates caching (MemoryCache) + crash recovery (journal) + event publishing.
+export const useSuppliersStore = create<SuppliersState>((set, get) => ({
   suppliers: [],
+
   fetchSuppliers: async () => {
-    try { set({ suppliers: await invoke<Supplier[]>('get_suppliers_db') }); } 
-    catch (e) { console.error("Failed to fetch suppliers:", e); }
+    try {
+      // Uses cache (60s TTL) via suppliersService.getAll
+      const data = await suppliersService.getAll();
+      set({ suppliers: data });
+    } catch (e) {
+      console.error('Failed to fetch suppliers:', e);
+    }
   },
+
   addSupplier: async (name, phone) => {
     try {
       const { sessionToken } = useAuthStore.getState();
-      await invoke('add_supplier_db', { name, phone, sessionToken: sessionToken || '' });
-      const { fetchSuppliers } = useSuppliersStore.getState();
-      await fetchSuppliers();
-    } catch (e) { alert("فشل إضافة المورد: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ"))); }
-  },
-  recordPurchase: async (supplierId, medicineId, quantity, costPrice, sellingPrice, wholesalePrice, userRole) => {
-    try {
-      // التأكد من أن جميع القيم الرقمية يتم إرسالها كـ Numbers
-      const { sessionToken } = useAuthStore.getState();
-      await invoke('record_purchase_db', { 
-        supplierId, 
-        medicineId, 
-        quantity: Number(quantity), 
-        costPrice: Number(costPrice), 
-        sellingPrice: Number(sellingPrice), 
-        wholesalePrice: Number(wholesalePrice), 
-        userRole,
-        sessionToken: sessionToken || ''
-      });
-      const { fetchSuppliers } = useSuppliersStore.getState();
-      await fetchSuppliers();
-    } catch (e: unknown) { 
-      console.error(e);
-      alert("فشل تسجيل الشراء: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ"))); 
+      // Service layer handles cache invalidation + event publishing
+      await suppliersService.add(name, phone || undefined, sessionToken || '');
+      await get().fetchSuppliers();
+    } catch (e) {
+      alert('فشل إضافة المورد: ' + (typeof e === 'string' ? e : ((e as Error)?.message || 'خطأ')));
     }
   },
+
+  recordPurchase: async (supplierId, medicineId, quantity, costPrice, sellingPrice, wholesalePrice, userRole) => {
+    try {
+      const { sessionToken } = useAuthStore.getState();
+      // Service layer runs crashRecovery.startOperation + cache invalidation + event publishing
+      await suppliersService.recordPurchase(
+        supplierId,
+        medicineId,
+        Number(quantity),
+        Number(costPrice),
+        Number(sellingPrice),
+        Number(wholesalePrice),
+        userRole,
+        sessionToken || '',
+      );
+      await get().fetchSuppliers();
+    } catch (e: unknown) {
+      console.error(e);
+      alert('فشل تسجيل الشراء: ' + (typeof e === 'string' ? e : ((e as Error)?.message || 'خطأ')));
+    }
+  },
+
   paySupplier: async (supplierId, amount, userRole) => {
     try {
       const { sessionToken } = useAuthStore.getState();
-      await invoke('pay_supplier_db', { supplierId, amount, userRole, sessionToken: sessionToken || '' });
-      const { fetchSuppliers } = useSuppliersStore.getState();
-      await fetchSuppliers();
-    } catch (e) { alert("فشل سداد المورد: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ"))); }
-  }
+      await suppliersService.pay(supplierId, amount, userRole, sessionToken || '');
+      await get().fetchSuppliers();
+    } catch (e) {
+      alert('فشل سداد المورد: ' + (typeof e === 'string' ? e : ((e as Error)?.message || 'خطأ')));
+    }
+  },
 }));

@@ -1,4 +1,4 @@
-import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
+import type { Medicine } from "../../types";
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useInventoryStore } from '../inventory/inventory.store';
@@ -8,14 +8,23 @@ import { useAccountingStore } from '../accounting/accounting.store';
 import { Search, Barcode, Plus, Trash2, Upload, FileDown, ShoppingCart, Package, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
+interface PurchaseCartItem {
+  id: string;
+  name: string;
+  barcode: string;
+  qty: number;
+  cost: number;
+  sell: number;
+}
+
 export function QuickPurchaseDashboard() {
   const { suppliers, fetchSuppliers } = useSuppliersStore();
   const { medicines, fetchMedicines } = useInventoryStore();
   const { role } = useAuthStore();
   const { fetchSummary } = useAccountingStore();
-  
+
   const [supplierId, setSupplierId] = useState('');
-  const [cart, setCart] = useState<any[]>([]);
+  const [cart, setCart] = useState<PurchaseCartItem[]>([]);
   const [search, setSearch] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,9 +36,9 @@ export function QuickPurchaseDashboard() {
     barcodeRef.current?.focus();
   }, []);
 
-  const filteredMeds = search.trim() 
+  const filteredMeds = search.trim()
     ? medicines.filter((m: Medicine) => !m.isDeleted && (
-        m.nameAr?.includes(search) || 
+        m.nameAr?.includes(search) ||
         m.barcode?.includes(search) ||
         m.nameEn?.toLowerCase().includes(search.toLowerCase())
       ))
@@ -49,10 +58,10 @@ export function QuickPurchaseDashboard() {
     }
   };
 
-  const addToCart = (med: any) => {
-    const existing = cart.find(i => i.id === med.id);
+  const addToCart = (med: Medicine) => {
+    const existing = cart.find((i: PurchaseCartItem) => i.id === med.id);
     if (existing) {
-      setCart(prev => prev.map(i => i.id === med.id ? { ...i, qty: i.qty + 1 } : i));
+      setCart(prev => prev.map((i: PurchaseCartItem) => i.id === med.id ? { ...i, qty: i.qty + 1 } : i));
     } else {
       const cost = med.costPrice || Math.round(med.price * 0.7);
       const sell = med.price || Math.round(cost * 1.4);
@@ -62,16 +71,16 @@ export function QuickPurchaseDashboard() {
   };
 
   const updateQty = (id: string, qty: number) => {
-    if (qty <= 0) { setCart(prev => prev.filter(i => i.id !== id)); return; }
-    setCart(prev => prev.map(i => i.id === id ? { ...i, qty } : i));
+    if (qty <= 0) { setCart(prev => prev.filter((i: PurchaseCartItem) => i.id !== id)); return; }
+    setCart(prev => prev.map((i: PurchaseCartItem) => i.id === id ? { ...i, qty } : i));
   };
 
   const updatePrice = (id: string, field: 'cost' | 'sell', value: number) => {
-    setCart(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
+    setCart(prev => prev.map((i: PurchaseCartItem) => i.id === id ? { ...i, [field]: value } : i));
   };
 
   const removeFromCart = (id: string) => {
-    setCart(prev => prev.filter(i => i.id !== id));
+    setCart(prev => prev.filter((i: PurchaseCartItem) => i.id !== id));
   };
 
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,7 +194,7 @@ export function QuickPurchaseDashboard() {
               <input type="text" value={search} onChange={e => setSearch(e.target.value)} className="input pr-10" placeholder="ابحث بالاسم أو الباركود..." />
             </div>
             <div className="max-h-64 overflow-auto space-y-1">
-              {filteredMeds.slice(0, 30).map((med: any) => (
+              {filteredMeds.slice(0, 30).map((med: Medicine) => (
                 <div key={med.id} onClick={() => { addToCart(med); setSearch(''); }} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 hover:bg-brand-50 cursor-pointer">
                   <div className="flex items-center gap-2">
                     <Package className="w-4 h-4 text-slate-400" />

@@ -6,7 +6,7 @@
 import type { ComponentType } from 'react';
 import { LucideIcon } from 'lucide-react';
 import { eventBus } from './eventBus';
-import type { Invoice, Medicine, Debt } from '../../types';
+import type { Invoice, Medicine } from '../../types';
 
 export interface PharmacyPlugin {
   // معلومات أساسية

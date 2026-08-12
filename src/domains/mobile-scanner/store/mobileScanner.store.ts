@@ -34,11 +34,11 @@ export const useMobileScannerStore = create<MobileScannerState>((set) => ({
   pairingUrl: null,
   showQRModal: false,
 
-  setServerStatus: (status) => set({
+  setServerStatus: (status: { serverRunning?: boolean; serverUrl?: string; wsUrl?: string; mobileUrl?: string; localIp?: string; ip?: string; port?: number }) => set({
     serverRunning: true,
     wsUrl: status.wsUrl || '',
     mobileUrl: status.mobileUrl || '',
-    localIp: status.ip || '',
+    localIp: status.localIp || status.ip || '',
     port: status.port || 8080,
   }),
 

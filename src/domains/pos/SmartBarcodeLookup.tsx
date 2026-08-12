@@ -1,4 +1,3 @@
-import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
 // ========================================
 // Smart Barcode Lookup Component
 // ========================================
@@ -13,6 +12,32 @@ import { X, Search, Loader, Plus, AlertCircle, CheckCircle } from 'lucide-react'
 import { toast } from 'sonner';
 import { useAuthStore } from '../security/auth.store';
 
+interface BarcodeResult {
+  source: string;
+  name?: string;
+  brandName?: string;
+  activeIngredient?: string;
+  dosageForm?: string;
+  dosageFormAr?: string;
+  strength?: string;
+  manufacturer?: string;
+  barcode?: string;
+  price?: number;
+  categories?: string;
+  quantity?: string;
+  imageUrl?: string;
+  found?: boolean;
+  nameAr?: string;
+  nameEn?: string;
+  costPrice?: number;
+}
+
+interface SmartLookupResponse {
+  found: boolean;
+  results: BarcodeResult[];
+  errors?: string[];
+}
+
 interface SmartBarcodeLookupProps {
   barcode: string;
   onClose: () => void;
@@ -21,8 +46,8 @@ interface SmartBarcodeLookupProps {
 
 export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartBarcodeLookupProps) {
   const [loading, setLoading] = useState(true);
-  const [results, setResults] = useState<any>(null);
-  const [selected, setSelected] = useState<any>(null);
+  const [results, setResults] = useState<SmartLookupResponse | null>(null);
+  const [selected, setSelected] = useState<BarcodeResult | null>(null);
   const [price, setPrice] = useState('');
   const [costPrice, setCostPrice] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -43,11 +68,11 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
   const performLookup = async () => {
     setLoading(true);
     try {
-      const data = await invoke<any>('smart_barcode_lookup', { barcode });
+      const data = await invoke<SmartLookupResponse>('smart_barcode_lookup', { barcode });
       setResults(data);
       // Auto-select first result
       if (data?.results?.length > 0) {
-        const firstReal = data.results.find((r: { source: string; name?: string; barcode?: string; price?: number }) => r.source !== 'gs1_prefix_analysis') || data.results[0];
+        const firstReal = data.results.find((r: BarcodeResult) => r.source !== 'gs1_prefix_analysis') || data.results[0];
         setSelected(firstReal);
       }
     } catch (e: unknown) {
@@ -57,10 +82,13 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
     }
   };
 
-  const handleSave = async (manualData?: { nameAr: string; nameEn?: string; price: number; costPrice: number; quantity: number; batchNumber?: string; expiryDate?: string }) => {
+  const handleSave = async (manualData?: { nameAr: string; nameEn?: string; price: number; costPrice: number; quantity: number; batchNumber?: string; expiryDate?: string; name?: string }) => {
     // manualData يأتي من ManualAddForm (عند عدم العثور على الباركود)
     // selected يأتي من نتائج البحث (عند العثور)
-    const data = manualData || selected;
+    let data: BarcodeResult | null = selected;
+    if (manualData) {
+      data = { ...(selected || {}), ...manualData, name: manualData.name || manualData.nameAr } as unknown as BarcodeResult;
+    }
     if (!data) {
       toast.error('اختر دواءً أولاً أو أدخل بيانات يدوياً');
       return;
@@ -143,13 +171,13 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4 flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
                 <p className="text-sm text-emerald-700">
-                  تم العثور على {results.results.length} نتيجة من {Array.from(new Set(results.results.map((r: { source: string; name?: string; barcode?: string; price?: number }) => r.source))).join('، ')}
+                  تم العثور على {results.results.length} نتيجة من {Array.from(new Set(results.results.map((r: BarcodeResult) => r.source))).join('، ')}
                 </p>
               </div>
 
               {/* Results list */}
               <div className="space-y-2 mb-4">
-                {results.results.map((r: { source: string; name?: string; barcode?: string; price?: number }, i: number) => (
+                {results.results.map((r: BarcodeResult, i: number) => (
                   <button
                     key={r.source + "-" + i}
                     onClick={() => setSelected(r)}
@@ -207,7 +235,7 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
                     </div>
                   </div>
                   <button
-                    onClick={handleSave}
+                    onClick={() => { void handleSave(); }}
                     disabled={saving}
                     className="btn-primary w-full py-3 disabled:opacity-50"
                   >
@@ -240,7 +268,7 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
           )}
 
           {/* Show errors if any */}
-          {results?.errors?.length > 0 && (
+          {(results?.errors?.length ?? 0) > 0 && (
             <div className="mt-4 text-xs text-slate-400">
               <p>أخطاء البحث: {results.errors.join('; ')}</p>
             </div>
@@ -255,7 +283,7 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
 // يستخدم state من parent (manualName/manualDosageForm) — لا state محلي
 interface ManualAddFormProps {
   barcode: string;
-  onSave: () => void;
+  onSave: (data?: { nameAr: string; nameEn?: string; price: number; costPrice: number; quantity: number; batchNumber?: string; expiryDate?: string; name?: string; dosageForm?: string; source?: string }) => Promise<void>;
   saving: boolean;
   price: string;
   setPrice: (v: string) => void;
@@ -323,7 +351,7 @@ function ManualAddForm({ barcode, onSave, saving, price, setPrice, costPrice, se
           <input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} className="input" />
         </div>
       </div>
-      <button onClick={() => onSave({ name: manualName, dosageForm: manualDosageForm, source: 'manual' })} disabled={saving || !manualName} className="btn-primary w-full py-3 disabled:opacity-50">
+      <button onClick={() => { void onSave({ name: manualName, nameAr: manualName, dosageForm: manualDosageForm, source: 'manual', price: parseFloat(price) || 0, costPrice: parseFloat(costPrice) || 0, quantity: parseInt(quantity) || 0 }); }} disabled={saving || !manualName} className="btn-primary w-full py-3 disabled:opacity-50">
         {saving ? <Loader className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
         إضافة للمخزون + متابعة البيع
       </button>

@@ -1,4 +1,4 @@
-import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
+import type { Medicine } from "../../types";
 // ========================================
 // Refund Dashboard (المرتجع المتقدم)
 // ========================================
@@ -11,8 +11,17 @@ import { useInventoryStore } from '../inventory/inventory.store';
 import { Undo2, RotateCcw, Receipt, Plus, Search, X, Package } from 'lucide-react';
 import { toast } from 'sonner';
 
+interface RefundInvoice {
+  id: string;
+  totalAmount: number;
+  userRole: string;
+  createdAt: string;
+  isReversed: boolean;
+  items?: Array<{ name: string; qty: number; price: number }>;
+}
+
 export function RefundDashboard() {
-  const [refunds, setRefunds] = useState<any[]>([]);
+  const [refunds, setRefunds] = useState<RefundInvoice[]>([]);
   const [showRefundForm, setShowRefundForm] = useState(false);
   const [reversing, setReversing] = useState<string | null>(null);
   const { role } = useAuthStore();
@@ -25,19 +34,18 @@ export function RefundDashboard() {
 
   const fetchRefunds = async () => {
     try {
-      // استخدام endpoint مخصص للمرتجعات بدل جلب كل الفواتير
-      const data = await invoke<any[]>('get_refunds_db', { limit: 100 });
+      const data = await invoke<RefundInvoice[]>('get_refunds_db', { limit: 100 });
       setRefunds(data);
-    } catch (e) { 
-      console.error(e); 
+    } catch (e) {
+      console.error(e);
       // fallback للطريقة القديمة إذا فشل endpoint الجديد
       try {
-        const fallback = await invoke<any[]>('get_invoice_details_report', { 
-          startDate: '2000-01-01 00:00:00', 
-          endDate: '2100-01-01 00:00:00', 
-          userFilter: 'all' 
+        const fallback = await invoke<RefundInvoice[]>('get_invoice_details_report', {
+          startDate: '2000-01-01 00:00:00',
+          endDate: '2100-01-01 00:00:00',
+          userFilter: 'all',
         });
-        setRefunds(fallback.filter(inv => inv.totalAmount < 0 && !inv.isReversed));
+        setRefunds(fallback.filter((inv) => inv.totalAmount < 0 && !inv.isReversed));
       } catch (e2) { console.error('fallback failed:', e2); }
     }
   };
@@ -57,7 +65,7 @@ export function RefundDashboard() {
     }
   };
 
-  const totalRefundAmount = refunds.reduce((sum, r) => sum + Math.abs(r.totalAmount), 0);
+  const totalRefundAmount = refunds.reduce((sum: number, r: RefundInvoice) => sum + Math.abs(r.totalAmount), 0);
 
   return (
     <div className="p-8 overflow-auto h-full bg-slate-50 animate-fade-in">
@@ -123,7 +131,7 @@ export function RefundDashboard() {
                 </td>
                 <td className="p-4 text-sm font-bold text-rose-600 tabular">{ref.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></td>
                 <td className="p-4 text-sm text-slate-600">{ref.userRole || '-'}</td>
-                <td className="p-4 text-xs text-slate-400 tabular">{new Date(ref.date).toLocaleString('en-GB')}</td>
+                <td className="p-4 text-xs text-slate-400 tabular">{new Date(ref.createdAt).toLocaleString('en-GB')}</td>
                 <td className="p-4">
                   <button 
                     onClick={() => handleReverse(ref.id)} 
@@ -147,37 +155,44 @@ export function RefundDashboard() {
 }
 
 // ===== نموذج مرتجع جديد =====
-function NewRefundForm({ medicines, onClose, onSuccess, userRole }: { 
-  medicines: Invoice[]; 
-  onClose: () => void; 
+interface RefundCartItem {
+  id: string;
+  nameAr: string;
+  quantity: number;
+  price: number;
+}
+
+function NewRefundForm({ medicines, onClose, onSuccess, userRole }: {
+  medicines: Medicine[];
+  onClose: () => void;
   onSuccess: () => void;
   userRole: string;
 }) {
   const [search, setSearch] = useState('');
-  const [cart, setCart] = useState<any[]>([]);
+  const [cart, setCart] = useState<RefundCartItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refundReason, setRefundReason] = useState('');
   const [refundNotes, setRefundNotes] = useState('');
 
-  const filteredMeds = search.trim() 
-    ? medicines.filter(m => m.nameAr?.includes(search) || m.barcode?.includes(search))
+  const filteredMeds = search.trim()
+    ? medicines.filter((m: Medicine) => m.nameAr?.includes(search) || m.barcode?.includes(search))
     : [];
 
-  const handleAdd = (med: any) => {
-    const existing = cart.find(i => i.id === med.id);
+  const handleAdd = (med: Medicine) => {
+    const existing = cart.find((i: RefundCartItem) => i.id === med.id);
     if (existing) {
-      setCart(prev => prev.map(i => i.id === med.id ? { ...i, quantity: i.quantity + 1 } : i));
+      setCart(prev => prev.map((i: RefundCartItem) => i.id === med.id ? { ...i, quantity: i.quantity + 1 } : i));
     } else {
       setCart([...cart, { id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price }]);
     }
   };
 
   const handleQtyChange = (id: string, qty: number) => {
-    if (qty <= 0) { setCart(prev => prev.filter(i => i.id !== id)); return; }
-    setCart(prev => prev.map(i => i.id === id ? { ...i, quantity: qty } : i));
+    if (qty <= 0) { setCart(prev => prev.filter((i: RefundCartItem) => i.id !== id)); return; }
+    setCart(prev => prev.map((i: RefundCartItem) => i.id === id ? { ...i, quantity: qty } : i));
   };
 
-  const total = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+  const total = cart.reduce((sum: number, i: RefundCartItem) => sum + (i.price * i.quantity), 0);
 
   const handleSubmit = async () => {
     if (cart.length === 0) { toast.error('أضف صنفاً واحداً على الأقل'); return; }

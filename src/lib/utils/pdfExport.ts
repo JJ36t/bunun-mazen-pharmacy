@@ -16,7 +16,7 @@ interface PdfOptions {
   subtitle?: string;
   pharmacyName?: string;
   columns: PdfColumn[];
-  rows: unknown[];
+  rows: Array<Record<string, unknown>>;
   summary?: { label: string; value: string }[];
   orientation?: 'portrait' | 'landscape';
 }

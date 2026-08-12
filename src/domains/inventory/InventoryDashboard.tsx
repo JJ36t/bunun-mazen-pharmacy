@@ -1,5 +1,7 @@
+import type { Medicine } from '../../types';
 import { useState } from 'react';
-import { useInventoryStore, Medicine } from './inventory.store';
+import { useInventoryStore } from './inventory.store';
+// Note: Medicine type is imported from '../../types' above; inventory.store re-exports it but we use the type-only import.
 import { useAuthStore } from '../security/auth.store';
 import { Plus, Pencil, Trash2, X, Package, AlertTriangle, Search, Barcode, TrendingUp, Boxes, Clock, ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,7 +17,7 @@ export function InventoryDashboard() {
   const [search, setSearch] = useState('');
   const [showBulkBarcode, setShowBulkBarcode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState<any>({ nameAr: '', nameEn: '', scientificName: '', barcode: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
+  const [form, setForm] = useState<Omit<Medicine, 'id' | 'isDeleted'>>({ nameAr: '', nameEn: '', scientificName: '', barcode: '', price: 0, costPrice: 0, quantity: 0, batchNumber: '', expiryDate: '' });
 
   const handleAddNew = () => { 
     setEditId(null); 
@@ -23,7 +25,7 @@ export function InventoryDashboard() {
     setShowForm(true); 
   };
 
-  const handleEdit = (med: any) => { 
+  const handleEdit = (med: Medicine) => { 
     setEditId(med.id); 
     setForm({ nameAr: med.nameAr, nameEn: med.nameEn, scientificName: med.scientificName || '', barcode: med.barcode, price: med.price, costPrice: med.costPrice, quantity: med.quantity, batchNumber: med.batchNumber, expiryDate: med.expiryDate }); 
     setShowForm(true); 
@@ -43,8 +45,8 @@ export function InventoryDashboard() {
     // توليد باركود EAN-13 صحيح (13 رقم مع checksum) — نفس صيغة الكاشيرات العالمية
     // بادئة 200 = مخصصة للاستخدام الداخلي وفق GS1
     const existingMax = medicines
-      .filter((m: any) => !m.isDeleted && m.barcode && String(m.barcode).startsWith('200') && String(m.barcode).length === 13)
-      .reduce((max: number, m: unknown) => {
+      .filter((m: Medicine) => !m.isDeleted && m.barcode && String(m.barcode).startsWith('200') && String(m.barcode).length === 13)
+      .reduce((max: number, m: Medicine) => {
         const seq = parseInt(String(m.barcode).substring(3, 12), 10);
         return isNaN(seq) ? max : Math.max(max, seq);
       }, 0);
@@ -87,7 +89,7 @@ export function InventoryDashboard() {
     }
   };
 
-  const filteredMeds = medicines.filter((m: any) => !m.isDeleted && (
+  const filteredMeds = medicines.filter((m: Medicine) => !m.isDeleted && (
     m.nameAr.includes(search) ||
     (m.barcode && String(m.barcode).includes(search)) ||
     (m.nameEn && m.nameEn.toLowerCase().includes(search.toLowerCase()))
@@ -253,7 +255,7 @@ export function InventoryDashboard() {
                   </div>
                 </td>
               </tr>
-            ) : paginatedItems.map((med: any) => {
+            ) : paginatedItems.map((med: Medicine) => {
               const isLowStock = med.quantity < 50;
               const isExpiringSoon = med.expiryDate && new Date(med.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
               const isExpired = med.expiryDate && new Date(med.expiryDate) < new Date();

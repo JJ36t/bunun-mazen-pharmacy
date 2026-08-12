@@ -1,8 +1,18 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
-import type { Medicine, CartItem } from './types';
+// ========================================
+// App — Root Component (خفيف بعد التقسيم)
+// ========================================
+// P1 fix: تم تقسيم God component (1274 سطر) إلى:
+//   - App.tsx (هذا الملف) — router للتابات + تهيئة الأنظمة
+//   - domains/pos/PosDashboard.tsx — شاشة نقاط البيع
+//   - domains/dashboard/DashboardHome.tsx — الصفحة الرئيسية
+//   - domains/intelligence/ShiftModal.tsx — نافذة الشفت
+//   - lib/appConfig.ts — الأنواع المشتركة و navItems
+//
+// تم تخفيض App.tsx من 1274 سطر إلى ~250 سطر (تخفيض 80%)
+
+import { useEffect, useState } from 'react';
 import { useAuthStore } from './domains/security/auth.store';
 import { Login } from './domains/security/Login';
-import { usePosStore } from './domains/pos/pos.store';
 import { useInventoryStore } from './domains/inventory/inventory.store';
 import { useAccountingStore } from './domains/accounting/accounting.store';
 import { useSettingsStore } from './domains/settings/settings.store';
@@ -27,1231 +37,210 @@ import { InvoicesDashboard } from './domains/reporting/InvoicesDashboard';
 import { QuickPurchaseDashboard } from './domains/suppliers/QuickPurchaseDashboard';
 import { RefundDashboard } from './domains/pos/RefundDashboard';
 import { PatientsDashboard } from './domains/patients/PatientsDashboard';
-import { Receipt } from './domains/pos/Receipt';
-import { PaymentModal } from './domains/pos/PaymentModal';
-import { TouchKeypad } from './domains/pos/TouchKeypad';
-
-import { searchMedicinesIndexed as searchMedicines } from './lib/utils/search';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { SmartBarcodeLookup } from './domains/pos/SmartBarcodeLookup';
-import { DrugInteractionChecker } from './domains/pos/DrugInteractionChecker';
-import { DailyChecksModal } from './domains/intelligence/DailyChecksModal';
 import { MobileScannerModal } from './domains/mobile-scanner';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Toaster, toast } from 'sonner';
-import { parseISO, startOfDay, isBefore, isAfter, addDays } from 'date-fns';
-import {
-  Search, LogOut, Calculator, ShoppingCart, RotateCcw, Home, Smartphone,
-  Package, Calculator as CalcIcon, Users, FileBarChart, ScrollText, Database, Settings, Truck, UserCog,
-  Pause, Play, Trash2, X, Hash, Tag, Receipt as ReceiptIcon, Shield
-} from 'lucide-react';
 
-// استيراد الأنظمة المؤسسية الجديدة
 import { hasPermission, Permission } from './lib/core/rbac';
-import { eventBus, EventNames } from './lib/core/eventBus';
 import { sessionManager } from './lib/core/sessionManager';
-import { fraudDetector } from './lib/core/fraudDetector';
 import { crashRecovery } from './lib/core/crashRecovery';
-import { cache } from './lib/cache/MemoryCache';
-import { registerAllPlugins } from './plugins';
+import { type TabKey, ensurePluginsInitialized } from './lib/appConfig';
+import { DashboardHome } from './domains/dashboard/DashboardHome';
+import { PosDashboard } from './domains/pos/PosDashboard';
+import { ShiftModal } from './domains/intelligence/ShiftModal';
 
-// تهيئة الـ plugins مرة واحدة
-let pluginsInitialized = false;
-async function ensurePluginsInitialized() {
-  if (!pluginsInitialized) {
-    await registerAllPlugins();
-    pluginsInitialized = true;
-  }
-}
-
-type TabKey = 'dashboard' | 'pos' | 'refund' | 'inventory' | 'accounting' | 'debts' | 'suppliers' | 'quick_purchase' | 'patients' | 'reporting' | 'invoices' | 'audit' | 'backup' | 'settings' | 'users' | 'stock_count' | 'prescriptions' | 'import' | 'cash_drawer' | 'label_printing' | 'enterprise';
-
-const navItems: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }>; group: string; permission?: Permission }[] = [
-  // 'dashboard' تم إزالته من القائمة — الشاشة الرئيسية تظهر افتراضياً
-  { key: 'pos', label: 'نقاط البيع', icon: ShoppingCart, group: 'العمليات', permission: 'pos.use' as Permission },
-  { key: 'refund', label: 'مرتجع المبيعات', icon: RotateCcw, group: 'العمليات', permission: 'pos.refund' as Permission },
-  { key: 'prescriptions', label: 'الوصفات الطبية', icon: ScrollText, group: 'العمليات', permission: 'pos.use' as Permission },
-  { key: 'cash_drawer', label: 'موازنة الصندوق', icon: CalcIcon, group: 'العمليات', permission: 'pos.use' as Permission },
-  { key: 'inventory', label: 'المخزون', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
-  { key: 'label_printing', label: 'طباعة الملصقات', icon: Package, group: 'الإدارة', permission: 'inventory.view' as Permission },
-  { key: 'stock_count', label: 'الجرد', icon: Package, group: 'الإدارة', permission: 'inventory.adjust' as Permission },
-  { key: 'import', label: 'استيراد الأدوية', icon: Package, group: 'الإدارة', permission: 'inventory.add' as Permission },
-  { key: 'enterprise', label: 'الإدارة المؤسسية', icon: Database, group: 'النظام', permission: 'system.settings' as Permission },
-  { key: 'accounting', label: 'المحاسبة', icon: CalcIcon, group: 'الإدارة', permission: 'accounting.view' as Permission },
-  { key: 'debts', label: 'الديون', icon: Users, group: 'الإدارة', permission: 'accounting.debts' as Permission },
-  { key: 'suppliers', label: 'الموردون', icon: Truck, group: 'الإدارة', permission: 'accounting.suppliers' as Permission },
-  { key: 'quick_purchase', label: 'الشراء السريع', icon: Truck, group: 'الإدارة', permission: 'accounting.suppliers' as Permission },
-  { key: 'patients', label: 'المرضى', icon: UserCog, group: 'الإدارة', permission: 'system.patients' as Permission },
-  { key: 'reporting', label: 'التقارير', icon: FileBarChart, group: 'النظام', permission: 'reports.view' as Permission },
-  { key: 'invoices', label: 'الفواتير الشاملة', icon: FileBarChart, group: 'النظام', permission: 'reports.view' as Permission },
-  { key: 'audit', label: 'سجل التدقيق', icon: ScrollText, group: 'النظام', permission: 'system.audit' as Permission },
-  { key: 'backup', label: 'النسخ الاحتياطي', icon: Database, group: 'النظام', permission: 'system.backup' as Permission },
-  { key: 'users', label: 'المستخدمون', icon: UserCog, group: 'النظام', permission: 'system.users' as Permission },
-  { key: 'settings', label: 'الإعدادات', icon: Settings, group: 'النظام', permission: 'system.settings' as Permission },
-
-];
-
-
-function PosDashboard() {
-  const { cart, addToCart, removeFromCart, updateItemQuantity, calculateSubtotal, calculateTotal, clearCart, discountPercentage, setDiscountPercentage } = usePosStore();
-  const { medicines, fetchMedicines } = useInventoryStore();
-  const { fetchSummary } = useAccountingStore();
-  const { username, sessionToken } = useAuthStore();
-  const { pharmacyName } = useSettingsStore();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [invoiceData, setInvoiceData] = useState<{ items: CartItem[], total: number, invoiceNumber: string, discountAmount?: number } | null>(null);
-  const [suspendedInvs, setSuspendedInvs] = useState<any[]>([]);
-  const [showSuspended, setShowSuspended] = useState(false);
-  const [keypadTarget, setKeypadTarget] = useState<string | null>(null);
-  const draftLoadedRef = useRef(false);
-
-  useEffect(() => {
-    if (draftLoadedRef.current) return;
-    draftLoadedRef.current = true;
-    const loadDraft = async () => {
-      try {
-        const draft = await invoke<any | null>('load_draft_session_db', { sessionKey: 'pos_cart' });
-        if (draft && draft.items && Array.isArray(draft.items) && draft.items.length > 0 && cart.length === 0) {
-          draft.items.forEach((item: CartItem) => addToCart(item));
-          if (draft.discount) setDiscountPercentage(draft.discount);
-          toast.info('تم استرجاع السلة المحفوظة');
-        }
-      } catch (e) { console.error(e); }
-    };
-    loadDraft();
-  }, []);
-
-  // حفظ السلة عند كل تغيير
-  useEffect(() => {
-    if (cart.length > 0) {
-      invoke('save_draft_session_db', {
-        sessionKey: 'pos_cart',
-        sessionData: JSON.stringify({ items: cart, discount: discountPercentage }),
-        userRole: username || 'Unknown',
-      }).catch(() => {});
-    } else {
-      invoke('clear_draft_session_db', { sessionKey: 'pos_cart' }).catch(() => {});
-    }
-  }, [cart, discountPercentage]);
-  const [showPayment, setShowPayment] = useState(false);
-  const [smartLookupBarcode, setSmartLookupBarcode] = useState<string | null>(null);
-  const [showInteractionCheck, setShowInteractionCheck] = useState(false);
-  const [interactionOverrideGranted, setInteractionOverrideGranted] = useState(false);
-  const [showDailyChecks, setShowDailyChecks] = useState(false);
-  const [showMobileScanner, setShowMobileScanner] = useState(false);
-  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
-  const [paidAmount, setPaidAmount] = useState('');
-  const [mixedCash, setMixedCash] = useState('');
-  const [mixedCard, setMixedCard] = useState('');
-  const [chequeNumber, setChequeNumber] = useState('');
-  const [customerName, setCustomerName] = useState('');
-
-  // تحميل طرق الدفع
-  useEffect(() => {
-    invoke<any[]>('get_payment_methods_db').then(setPaymentMethods).catch(() => {});
-  }, []);
-
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); };
-  
-  const handleSearchKeyPress = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      const trimmed = searchTerm.trim();
-      if (!trimmed) return;
-
-      // 1. مطابقة محلية سريعة في medicines.barcode (المحملة في الذاكرة)
-      const localMatch = medicines.find((m:any) =>
-        m.barcode && String(m.barcode).trim() === trimmed
-      );
-      if (localMatch) { handleAddToCart(localMatch); setSearchTerm(''); return; }
-
-      // 2. للباركودات الرقمية (8+ أرقام): استعلام قاعدة البيانات
-      //     يشمل medicine_barcodes التي قد لا تكون محملة في الذاكرة
-      if (/^\d{8,}$/.test(trimmed)) {
-        try {
-          const result = await invoke<any | null>('lookup_barcode_db', { barcode: trimmed });
-          if (result && result.medicineId) {
-            const med = medicines.find((m:any) => m.id === result.medicineId);
-            if (med) { handleAddToCart(med); setSearchTerm(''); return; }
-          }
-        } catch (err) { console.error('Barcode lookup failed:', err); }
-      }
-
-      // 3. البحث بالاسم (يشمل الباركود الجزئي)
-      const results = searchMedicines(searchTerm, medicines.filter((m:any) => !m.isDeleted));
-      if (results.length === 1) { handleAddToCart(results[0]); setSearchTerm(''); return; }
-
-      // 4. لو الباركود رقمي وما لقيناه في أي مكان → افتح البحث الذكي
-      if (/^\d{8,}$/.test(trimmed) && results.length === 0) {
-        setSmartLookupBarcode(trimmed);
-      }
-    }
-  };
-
-  // بعد إضافة دواء من SmartBarcodeLookup
-  const handleSmartLookupAdded = async (medicineId: string) => {
-    await fetchMedicines();
-    const newMed = (await invoke<Medicine[]>('get_medicines_db')).find((m) => m.id === medicineId);
-    if (newMed) handleAddToCart(newMed);
-    setSmartLookupBarcode(null);
-  };
-  
-  const handleAddToCart = async (med: Medicine) => {
-    if (med.quantity <= 0) {
-      toast.error("نفد هذا الدواء.");
-      return;
-    }
-
-    const expiryDateStr = med.expiryDate ? String(med.expiryDate).split('T')[0] : null;
-    if (!expiryDateStr) return;
-
-    const expDate = parseISO(expiryDateStr);
-    const today = startOfDay(new Date());
-
-    if (isBefore(expDate, today)) {
-      toast.error(`تنبيه: (${med.nameAr}) منتهي الصلاحية!`);
-      return;
-    }
-
-    const ninetyDaysLater = addDays(today, 90);
-
-    if (isAfter(expDate, today) && isBefore(expDate, ninetyDaysLater)) {
-      toast.warning(`تنبيه: (${med.nameAr}) على وشك الانتهاء.`);
-    }
-
-    // ===== فحص التفاعلات الدوائية عند الإضافة للسلة =====
-    // Phase 11 Fix: use usePosStore.getState().cart instead of closure-captured cart
-    // Previously: rapid scans missed interaction checks between items 1 and 2
-    const currentCart = usePosStore.getState().cart;
-    const newCartItems = [...currentCart, { id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price }];
-    const activeIngredients = newCartItems
-      .map(item => {
-        const m = medicines.find((med) => med.id === item.id);
-        return m?.scientificName || m?.nameAr || '';
-      })
-      .filter(name => name && name.trim().length > 0);
-
-    if (activeIngredients.length >= 2) {
-      try {
-        const interactions = await invoke<any[]>('check_drug_interactions_db', {
-          drugNamesJson: JSON.stringify(activeIngredients),
-        });
-        if (interactions.length > 0) {
-          // أضف الدواء للسلة أولاً
-          addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
-          setSearchTerm('');
-          // ثم اعرض نافذة التفاعلات
-          setShowInteractionCheck(true);
-          return;
-        }
-      } catch (e) { console.error('Interaction check failed:', e); }
-    }
-
-    addToCart({ id: med.id, nameAr: med.nameAr, quantity: 1, price: med.price });
-    setSearchTerm('');
-  };
-
-  // ===== مستمع حدث المسح اللاسلكي =====
-  // عند مسح باركود من الموبايل، يُصدر السيرفر حدث 'mobile-scan-received'
-  // إذا وُجد الدواء: أضفه للسلة تلقائياً
-  // إذا لم يُوجد: افتح نافذة SmartBarcodeLookup لإضافته يدوياً
-  const medicinesRef = useRef(medicines);
-  medicinesRef.current = medicines;
-  const fetchMedicinesRef = useRef(fetchMedicines);
-  fetchMedicinesRef.current = fetchMedicines;
-  const handleAddToCartRef = useRef(handleAddToCart);
-  handleAddToCartRef.current = handleAddToCart;
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-
-    const setup = async () => {
-      try {
-        unlisten = await listen<any>('mobile-scan-received', async (event) => {
-          const result = event.payload;
-          console.log('[MobileScan] Received in App:', result);
-          if (!result) return;
-
-          // لو نافذة إدخال الباركودات الجماعي مفتوحة، تخطّى المعالجة هنا
-          // (النافذة نفسها لها مستمع يربط الباركود بالأدوية)
-          if ((window as any).__bulkBarcodeActive) {
-            console.log('[MobileScan] Skipped — bulk barcode entry is active');
-            return;
-          }
-
-          const barcode = String(result.barcode || '');
-          const status = String(result.status || '');
-          console.log('[MobileScan] Processing — barcode:', barcode, 'status:', status);
-
-          if (status === 'found' && result.medicineId) {
-            // ابحث عن الدواء في الذاكرة
-            let med = medicinesRef.current.find((m) => m.id === result.medicineId);
-            if (!med) {
-              // أعد تحميل الأدوية ثم ابحث مرة أخرى
-              try {
-                await fetchMedicinesRef.current();
-                const allMeds = await invoke<any[]>('get_medicines_db');
-                med = allMeds.find((m) => m.id === result.medicineId);
-              } catch (e) { console.error('Failed to reload medicines:', e); }
-            }
-            if (med) {
-              handleAddToCartRef.current(med);
-              toast.success(`تم إضافة: ${med.nameAr}`);
-            } else {
-              toast.error('الدواء غير موجود في المخزون رغم تأكيد السيرفر');
-            }
-          } else if (status === 'global_found') {
-            // الباركود موجود في القاعدة العالمية — افتح نافذة الإضافة
-            setSmartLookupBarcode(null);
-            setTimeout(() => setSmartLookupBarcode(barcode), 50);
-            toast.info(`تم العثور على الباركود في القاعدة العالمية — أكمل البيانات`);
-          } else if (status === 'not_found') {
-            // الباركود غير معروف — افتح نافذة الإضافة اليدوية
-            setSmartLookupBarcode(null);
-            setTimeout(() => setSmartLookupBarcode(barcode), 50);
-            toast.info(`باركود غير معروف: ${barcode} — أضف الدواء لإكمال البيع`);
-          }
-        });
-        console.log('[MobileScan] Listener registered');
-      } catch (e) {
-        console.error('[MobileScan] Failed to register listener:', e);
-      }
-    };
-
-    setup();
-
-    return () => {
-      if (unlisten) {
-        try { unlisten(); } catch (e) { console.error(e); }
-      }
-    };
-  }, []);
-
-  const handleIncreaseCartQty = (item: CartItem) => {
-    const medData = medicines.find((m:any) => m.id === item.id);
-    if (medData && item.quantity < medData.quantity) addToCart({ ...item, quantity: 1 });
-    else toast.error("الكمية المتوفرة لا تكفي.");
-  };
-
-  const handleDecreaseCartQty = (item: CartItem) => {
-    if (item.quantity > 1) {
-      updateItemQuantity(item.id, item.quantity - 1);
-    } else {
-      removeFromCart(item.id);
-    }
-  };
-
-  const handleKeypadConfirm = (val: string) => {
-    if (!val) return;
-    const qty = parseInt(val, 10);
-    if (isNaN(qty)) { setKeypadTarget(null); return; }
-    if (keypadTarget) {
-      const item = cart.find(i => i.id === keypadTarget);
-      const medData = medicines.find((m:any) => m.id === keypadTarget);
-      if (item && medData) {
-        if (qty <= medData.quantity) updateItemQuantity(item.id, qty);
-        else toast.error("الكمية تتجاوز المخزون!");
-      }
-    }
-    setKeypadTarget(null);
-  };
-
-  const [discountAmount, setDiscountAmount] = useState(0);
-  const [discountLimit, setDiscountLimit] = useState<any>(null);
-  const [showAdminDiscount, setShowAdminDiscount] = useState(false);
-  const [adminDiscountPass, setAdminDiscountPass] = useState('');
-  const [pendingDiscount, setPendingDiscount] = useState(0);
-
-  // تحميل حد الخصم عند الدخول
-  useEffect(() => {
-    invoke<any>('get_discount_limit_db', { userRole: username || 'cashier' })
-      .then(setDiscountLimit).catch(() => {});
-  }, [username]);
-
-  const handleDiscountChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value) || 0;
-    setDiscountAmount(val);
-    setDiscountPercentage(0); // صفر النسبة القديمة، نستخدم المبلغ
-
-    if (val > 0 && discountLimit) {
-      const remaining = discountLimit.remaining || 0;
-      if (val > remaining) {
-        // تجاوز الحد — اطلب كلمة مرور المدير
-        setPendingDiscount(val);
-        setShowAdminDiscount(true);
-        return;
-      }
-      // ضمن الحد — لا تسجل الاستخدام هنا! سيُسجَّل بعد إتمام البيع في handleConfirmPayment
-    }
-  };
-
-  const handleAdminDiscountConfirm = async () => {
-    try {
-      const ok = await invoke<boolean>('admin_override_discount_db', {
-        password: adminDiscountPass,
-        discountAmount: pendingDiscount,
-        userRole: username || 'cashier',
-      });
-      if (ok) {
-        setDiscountAmount(pendingDiscount);
-        // لا تسجل الاستخدام هنا — سيُسجَّل بعد إتمام البيع في handleConfirmPayment
-        toast.success('تم تجاوز حد الخصم بإذن المدير');
-        setShowAdminDiscount(false);
-        setAdminDiscountPass('');
-      } else {
-        toast.error('كلمة مرور المدير غير صحيحة');
-      }
-    } catch (e: unknown) {
-      toast.error('فشل: ' + (typeof e === 'string' ? e : (e as Error)?.message || 'خطأ'));
-    }
-  };
-
-  const handleCheckout = () => {
-    if (cart.length === 0) return;
-    setShowPayment(true);
-  };
-
-  const handleConfirmPayment = async () => {
-    const currentItems = [...cart];
-    // finalTotal = المجموع الفرعي - الخصم المطلق (لأن discountPercentage = 0 دائماً)
-    const finalTotal = Math.max(0, calculateTotal() - (discountAmount || 0));
-    const newInvoiceNum = `INV-${Date.now()}`;
-
-    // التحقق من اسم الزبون عند الدفع الآجل
-    if (selectedPaymentMethod === 'credit' && !customerName.trim()) {
-      toast.error("يجب إدخال اسم الزبون للدفع الآجل!");
-      return;
-    }
-
-    // فحص تفاعلات الأدوية قبل إتمام البيع (لو لم يتم التجاوز مسبقاً)
-    if (!interactionOverrideGranted) {
-      // اجمع المواد الفعالة من السلة
-      const activeIngredients = currentItems
-        .map(item => {
-          const med = medicines.find((m: Medicine) => m.id === item.id);
-          return med?.scientificName || med?.nameAr || '';
-        })
-        .filter(name => name && name.trim().length > 0);
-
-      if (activeIngredients.length >= 2) {
-        try {
-          const interactions = await invoke<any[]>('check_drug_interactions_db', {
-            drugNamesJson: JSON.stringify(activeIngredients),
-          });
-          if (interactions.length > 0) {
-            setShowPayment(false); // أغلق نافذة الدفع أولاً
-            setShowInteractionCheck(true);
-            return; // أوقف البيع حتى يراجع الصيدلي
-          }
-        } catch (e) { console.error('Interaction check failed:', e); }
-      }
-    }
-
-    try {
-        // Idempotency key — يمنع تكرار البيع عند الانهيار
-        const operationId = crypto.randomUUID();
-        const saleResult = await invoke<any>('record_sale_db', {
-          discountPercentage: discountPercentage,
-          itemsJson: JSON.stringify(currentItems),
-          userRole: username || 'Unknown',
-          operationId,
-          discountAmount: discountAmount > 0 ? discountAmount : null,
-          sessionToken: sessionToken || '',
-        });
-
-        // Phase 9 Fix: record payment method after sale succeeds
-        const invoiceId = saleResult?.invoiceId;
-        if (invoiceId && selectedPaymentMethod && selectedPaymentMethod !== 'credit') {
-          try {
-            // Get payment method ID from backend
-            const methods = await invoke<any[]>('get_payment_methods_db');
-            const method = methods.find(m => m.name === selectedPaymentMethod);
-            if (method) {
-              await invoke('record_invoice_payment_db', {
-                invoiceId,
-                paymentMethodId: method.id,
-                amount: selectedPaymentMethod === 'mixed'
-                  ? (parseFloat(mixedCash || '0') + parseFloat(mixedCard || '0'))
-                  : finalTotal,
-                referenceNumber: selectedPaymentMethod === 'cheque' ? chequeNumber || null : null,
-                chequeDate: null,
-                bankName: null,
-              });
-            }
-          } catch (e) { console.error('Failed to record payment method:', e); }
-        }
-
-        // إذا كان الدفع آجل، أضف دين للزبون (اسم الزبون إلزامي)
-        if (selectedPaymentMethod === 'credit') {
-          const debtCustomerName = customerName.trim();
-          await invoke('add_customer_debt_db', {
-            customerName: debtCustomerName,
-            amount: finalTotal,
-            note: `فاتورة آجلة - ${newInvoiceNum}`,
-            userRole: username || 'Unknown',
-          });
-          toast.info(`تم تسجيل دين بقيمة ${finalTotal.toFixed(0)} د.ع للزبون: ${debtCustomerName}`);
-        }
-
-        await fetchMedicines();
-        await fetchSummary();
-
-        // طباعة مباشرة تلقائياً (استخدم طابعة الإيصالات المحفوظة)
-        try {
-          let printerName = '';
-          try {
-            const printerSettings = await invoke<any>('get_printer_settings_db');
-            printerName = printerSettings.receiptPrinter || '';
-          } catch {}
-          if (!printerName) {
-            const printers = await invoke<string[]>('get_available_printers');
-            printerName = printers[0] || '';
-          }
-          if (printerName) {
-            await invoke('print_receipt_direct', {
-              printerName,
-              pharmacyName,
-              invoiceNum: newInvoiceNum,
-              itemsJson: JSON.stringify(currentItems),
-              total: finalTotal.toFixed(2)
-            });
-          }
-        } catch (e) { console.error('Print failed:', e); }
-
-        // اعرض إيصال الفاتورة بعد نجاح البيع
-        setInvoiceData({ items: currentItems, total: finalTotal, invoiceNumber: newInvoiceNum, discountAmount: discountAmount || undefined });
-
-        clearCart();
-        setShowPayment(false);
-        setInteractionOverrideGranted(false); // reset للفاتورة الجاية
-        setPaidAmount(''); setMixedCash(''); setMixedCard(''); setChequeNumber(''); setCustomerName('');
-
-        // سجّل استخدام الخصم بعد نجاح البيع فعلياً (وليس عند كتابة الخصم)
-        if (discountAmount && discountAmount > 0) {
-          try {
-            await invoke('record_discount_usage_db', { userRole: username || 'cashier', amount: discountAmount });
-            invoke<any>('get_discount_limit_db', { userRole: username || 'cashier' }).then(setDiscountLimit);
-          } catch (e) { console.error('Failed to record discount usage:', e); }
-        }
-        setDiscountAmount(0); // صفر الخصم للفاتورة الجديدة
-
-        toast.success("تم تسجيل البيع والطباعة بنجاح.");
-    } catch (e: unknown) {
-        toast.error(typeof e === 'string' ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || 'فشل تسجيل الفاتورة! تحقق من الصلاحيات.'));
-    }
-  };
-
-  const handlePrintOnly = async () => {
-    if (cart.length === 0) return;
-    const currentItems = [...cart];
-    const finalTotal = Math.max(0, calculateTotal() - (discountAmount || 0));
-    const newInvoiceNum = `PRINT-${Date.now()}`;
-    
-    try {
-      const printers = await invoke<string[]>('get_available_printers');
-      if (printers.length === 0) {
-        toast.error("لا توجد طابعة متاحة");
-        return;
-      }
-      await invoke('print_receipt_direct', {
-        printerName: printers[0],
-        pharmacyName,
-        invoiceNum: newInvoiceNum,
-        itemsJson: JSON.stringify(currentItems),
-        total: finalTotal.toFixed(2)
-      });
-      toast.success("تم طباعة الوصل بنجاح (بدون تسجيل بيع).");
-    } catch (e: unknown) {
-      toast.error("فشلت الطباعة: " + e);
-    }
-  };
-
-  const handleSuspend = async () => {
-    if (cart.length === 0) return;
-    await invoke('suspend_invoice_db', { username, itemsJson: JSON.stringify(cart), sessionToken: sessionToken || '' });
-    toast.success("تم تعليق الفاتورة بنجاح.");
-    clearCart(); fetchSuspended();
-  };
-  
-  const fetchSuspended = async () => { try { setSuspendedInvs(await invoke<any[]>('get_suspended_invoices_db')); } catch (e) { console.error(e); } };
-  const handleRecall = (inv: { id: string; itemsJson: string; date: string }) => {
-    const items: CartItem[] = JSON.parse(inv.itemsJson);
-    items.forEach((it) => addToCart(it));
-    invoke('delete_suspended_invoice_db', { invId: inv.id, sessionToken: sessionToken || '' });
-    setShowSuspended(false);
-  };
-  
-  // Part 4 S6: useMemo for search results — avoid recomputing on every render
-  const activeMedicines = useMemo(() => medicines.filter((m: Medicine) => !m.isDeleted), [medicines]);
-  const results = searchTerm.trim() ? searchMedicines(searchTerm, activeMedicines) : [];
-  
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => { 
-      if (e.key === 'F1') { e.preventDefault(); handleCheckout(); } 
-      if (e.key === 'F2') { e.preventDefault(); handleSuspend(); } 
-    };
-    window.addEventListener('keydown', handleKeyDown); 
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, medicines, discountPercentage, discountAmount]);
-
-  return (
-    <div className="flex-1 flex overflow-hidden animate-fade-in">
-      {/* القسم الأيمن - البحث والنتائج */}
-      <div className="flex-1 flex flex-col p-6 overflow-hidden">
-        <div className="flex gap-2 mb-5 items-center">
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={handleSearch}
-              onKeyDown={handleSearchKeyPress}
-              placeholder="ابحث أو امسح الباركود... (F1 للدفع، F2 للتعليق)"
-              className="input-lg pr-12 pl-4 shadow-sm"
-              autoFocus
-            />
-          </div>
-          <button
-            onClick={() => { fetchSuspended(); setShowSuspended(true); }}
-            className="btn-ghost bg-white border border-slate-200 flex-shrink-0"
-          >
-            <Pause className="w-4 h-4" />
-            <span className="hidden lg:inline">الفواتير المعلقة</span>
-            {suspendedInvs.length > 0 && (
-              <span className="badge-warning">{suspendedInvs.length}</span>
-            )}
-          </button>
-          <button
-            onClick={() => setShowMobileScanner(true)}
-            className="btn-primary flex-shrink-0"
-            title="الماسح اللاسلكي"
-          >
-            <Smartphone className="w-5 h-5" />
-            <span>ماسح لاسلكي</span>
-          </button>
-        </div>
-        
-        <div className="flex-1 overflow-auto">
-          {searchTerm && !medicines.find((m:any) => m.barcode && String(m.barcode).trim() === searchTerm.trim()) && (
-            <div className="card overflow-hidden animate-slide-up">
-              {results.length === 0 ? (
-                <div className="empty-state">
-                  <div className="empty-state-icon">
-                    <Search className="w-9 h-9 text-slate-300" />
-                  </div>
-                  <p className="text-slate-400 text-sm">لا توجد نتائج مطابقة</p>
-                  <p className="text-slate-300 text-xs mt-1">جرّب كلمات أخرى أو تحقق من الباركود</p>
-                </div>
-              ) : results.map((med:any) => (
-                <div 
-                  key={med.id} 
-                  className="p-4 border-b border-slate-100 last:border-0 hover:bg-brand-50/40 cursor-pointer flex items-center justify-between transition-colors" 
-                  onClick={() => handleAddToCart(med)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-100 to-brand-50 flex items-center justify-center ring-1 ring-brand-200/50">
-                      <Package className="w-5 h-5 text-brand-600" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-800">{med.nameAr}</p>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <span className="text-xs text-slate-400 flex items-center gap-1">
-                          <Hash className="w-3 h-3" />{med.barcode}
-                        </span>
-                        <span className="text-xs text-slate-400 flex items-center gap-1">
-                          <Tag className="w-3 h-3" />متوفر: {med.quantity}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <span className="font-bold text-brand-700 text-lg tabular">{Number(med.price || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">د.ع</span></span>
-                </div>
-              ))}
-            </div>
-          )}
-          {!searchTerm && (
-            <div className="empty-state h-full">
-              <div className="empty-state-icon bg-gradient-to-br from-brand-100 to-brand-50 ring-1 ring-brand-200/50">
-                <ShoppingCart className="w-9 h-9 text-brand-400" />
-              </div>
-              <p className="text-slate-500 text-base font-semibold">ابحث عن دواء لبدء البيع</p>
-              <p className="text-slate-400 text-sm mt-1">اكتب اسم الدواء أو امسح الباركود</p>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {/* القسم الأيسر - الفاتورة الحالية */}
-      <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col">
-        <div className="p-5 border-b border-slate-200 bg-gradient-subtle">
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-              <ReceiptIcon className="w-4 h-4 text-brand-600" />
-              الفاتورة الحالية
-            </h3>
-            <div className="flex gap-2">
-              {cart.length > 0 && (
-                <button onClick={handleSuspend} className="btn-warning px-4 py-2 text-sm">
-                  <Pause className="w-4 h-4" /> تعليق الفاتورة
-                </button>
-              )}
-              {cart.length > 0 && (
-                <button onClick={clearCart} className="btn-danger px-4 py-2 text-sm">
-                  <Trash2 className="w-4 h-4" /> إفراغ السلة
-                </button>
-              )}
-            </div>
-          </div>
-          <p className="text-xs text-slate-400">{pharmacyName}</p>
-        </div>
-        
-        <div className="flex-1 overflow-auto p-5">
-          {cart.length === 0 ? (
-            <div className="empty-state h-full">
-              <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mb-3">
-                <ShoppingCart className="w-6 h-6 text-slate-300" />
-              </div>
-              <p className="text-slate-300 text-sm">لم تتم إضافة أصناف بعد</p>
-            </div>
-          ) : (
-            <div className="space-y-3 animate-fade-in">
-              {cart.map(item => (
-                <div key={item.id} className="flex items-start justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-100">
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-slate-800">{item.nameAr}</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <button 
-                        onClick={() => handleDecreaseCartQty(item)} 
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-red-500 hover:bg-red-50 hover:border-red-200 text-sm font-bold active:scale-95"
-                      >−</button>
-                      <button 
-                        onClick={() => setKeypadTarget(item.id)} 
-                        className="text-sm font-semibold text-brand-700 min-w-[44px] text-center bg-brand-50 px-3 py-1 rounded-lg hover:bg-brand-100 tabular"
-                      >{item.quantity}</button>
-                      <button 
-                        onClick={() => handleIncreaseCartQty(item)} 
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 text-sm font-bold active:scale-95"
-                      >+</button>
-                      <span className="text-xs text-slate-400 mr-2 tabular">× {Number(item.price || 0).toFixed(2)}</span>
-                    </div>
-                  </div>
-                  <span className="text-sm font-bold text-slate-800 tabular">{(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        <div className="p-5 border-t border-slate-200 bg-slate-50/50">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm text-slate-500">المجموع الفرعي</span>
-            <span className="text-sm font-bold text-slate-700 tabular">{Number(calculateSubtotal() || 0).toFixed(2)} د.ع</span>
-          </div>
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <label className="text-sm text-slate-500">الخصم (د.ع)</label>
-              {discountLimit && (
-                <p className="text-[10px] text-slate-400 tabular">
-                  المتبقي اليوم: {discountLimit.remaining?.toFixed(0) || 0} د.ع
-                </p>
-              )}
-            </div>
-            <input
-              type="number"
-              min="0"
-              value={discountAmount || ''}
-              onChange={handleDiscountChange}
-              className="w-28 px-3 py-1.5 text-sm text-left border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 tabular"
-              placeholder="0"
-            />
-          </div>
-          <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-200">
-            <span className="text-sm text-slate-600 font-semibold">الإجمالي المستحق</span>
-            <span className="text-3xl font-bold text-brand-700 tabular">{Number(Math.max(0, Number(calculateTotal() || 0) - Number(discountAmount || 0)) || 0).toFixed(2)} <span className="text-sm font-normal text-slate-400">د.ع</span></span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button 
-              onClick={handleCheckout} 
-              disabled={cart.length === 0} 
-              className="btn-primary py-4 text-base shadow-md"
-            >
-              <Calculator className="w-5 h-5" />
-              إتمام البيع + طباعة (F1)
-            </button>
-            <button 
-              onClick={handlePrintOnly} 
-              disabled={cart.length === 0}
-              className="btn-outline py-4 text-base"
-            >
-              <ReceiptIcon className="w-5 h-5" />
-              طباعة الوصل فقط
-            </button>
-          </div>
-        </div>
-      </div>
-      
-      {showSuspended && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={() => setShowSuspended(false)}>
-          <div className="bg-white p-6 rounded-3xl shadow-2xl w-96 animate-scale-in" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <Pause className="w-4 h-4 text-amber-500" />
-                الفواتير المعلقة
-              </h3>
-              <button onClick={() => setShowSuspended(false)} className="btn-icon"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="space-y-2 max-h-80 overflow-auto">
-              {suspendedInvs.length === 0 ? (
-                <div className="empty-state py-12">
-                  <div className="empty-state-icon">
-                    <Pause className="w-8 h-8 text-slate-300" />
-                  </div>
-                  <p className="text-slate-400 text-sm">لا توجد فواتير معلقة</p>
-                </div>
-              ) : suspendedInvs.map(inv => (
-                  <div key={inv.id} className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-100">
-                    <div>
-                      <p className="text-sm font-medium text-slate-700 tabular">{new Date(inv.date).toLocaleString('en-GB')}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{JSON.parse(inv.itemsJson).length} أصناف</p>
-                    </div>
-                    <div className="flex gap-1">
-                      <button onClick={() => handleRecall(inv)} className="btn-icon text-brand-600 hover:bg-brand-50">
-                        <Play className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => { invoke('delete_suspended_invoice_db', { invId: inv.id, sessionToken: sessionToken || '' }); fetchSuspended(); }}
-                        className="btn-icon text-red-500 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {keypadTarget && <TouchKeypad onConfirm={handleKeypadConfirm} onClose={() => setKeypadTarget(null)} />}
-
-      {smartLookupBarcode && (
-        <SmartBarcodeLookup
-          key={smartLookupBarcode}
-          barcode={smartLookupBarcode}
-          onClose={() => setSmartLookupBarcode(null)}
-          onMedicineAdded={handleSmartLookupAdded}
-        />
-      )}
-
-      {showInteractionCheck && (
-        <DrugInteractionChecker
-          drugNames={cart.map(item => {
-            const med = medicines.find((m: Medicine) => m.id === item.id);
-            return med?.scientificName || med?.nameAr || '';
-          }).filter(name => name && name.trim().length > 0)}
-          onOverride={() => {
-            setInteractionOverrideGranted(true);
-            setShowInteractionCheck(false);
-            toast.success('تم تجاوز التحذيرات. اضغط "تأكيد الدفع" مرة أخرى.');
-          }}
-          onClose={() => setShowInteractionCheck(false)}
-        />
-      )}
-
-      {showDailyChecks && (
-        <DailyChecksModal onClose={() => setShowDailyChecks(false)} />
-      )}
-
-      {showMobileScanner && (
-        <MobileScannerModal onClose={() => setShowMobileScanner(false)} />
-      )}
-
-      {showPayment && (
-        <PaymentModal
-          total={Math.max(0, calculateTotal() - (discountAmount || 0))}
-          paymentMethods={paymentMethods}
-          selectedMethod={selectedPaymentMethod}
-          setSelectedMethod={setSelectedPaymentMethod}
-          paidAmount={paidAmount}
-          setPaidAmount={setPaidAmount}
-          mixedCash={mixedCash}
-          setMixedCash={setMixedCash}
-          mixedCard={mixedCard}
-          setMixedCard={setMixedCard}
-          chequeNumber={chequeNumber}
-          setChequeNumber={setChequeNumber}
-          customerName={customerName}
-          setCustomerName={setCustomerName}
-          onConfirm={handleConfirmPayment}
-          onClose={() => setShowPayment(false)}
-        />
-      )}
-      {invoiceData && <Receipt invoiceNumber={invoiceData.invoiceNumber} items={invoiceData.items} total={invoiceData.total} discountAmount={invoiceData.discountAmount} onClose={() => setInvoiceData(null)} />}
-
-      {/* نافذة تجاوز حد الخصم */}
-      {showAdminDiscount && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl w-80">
-            <h3 className="text-base font-bold text-slate-800 mb-2">تجاوز حد الخصم</h3>
-            <p className="text-xs text-slate-500 mb-4">الخصم المطلوب: {pendingDiscount} د.ع يتجاوز الحد المتبقي. أدخل كلمة مرور المدير.</p>
-            <input
-              type="password"
-              value={adminDiscountPass}
-              onChange={e => setAdminDiscountPass(e.target.value)}
-              className="input-lg text-center mb-4"
-              placeholder="••••••••"
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <button onClick={handleAdminDiscountConfirm} className="btn-primary flex-1 py-2.5">تأكيد</button>
-              <button onClick={() => { setShowAdminDiscount(false); setDiscountAmount(0); setAdminDiscountPass(''); }} className="btn-ghost border border-slate-200 flex-1 py-2.5">إلغاء</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+import { LogOut, Home, Smartphone } from 'lucide-react';
 
 function App() {
-  const { isAuthenticated, isLicensed, checkLicense, role, username, logout, shiftId, checkShift, startShift, closeShift } = useAuthStore();
-  const { fetchMedicines } = useInventoryStore(); const { fetchSummary } = useAccountingStore();
-  const { fetchSettings } = useSettingsStore(); const { fetchDebts } = useDebtsStore();
+  const {
+    isAuthenticated, isLicensed, checkLicense, role, username, logout,
+    shiftId, checkShift, startShift, closeShift,
+  } = useAuthStore();
+  const { fetchMedicines } = useInventoryStore();
+  const { fetchSummary } = useAccountingStore();
+  const { fetchSettings } = useSettingsStore();
+  const { fetchDebts } = useDebtsStore();
   const { fetchSuppliers } = useSuppliersStore();
   const { pharmacyName } = useSettingsStore();
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [shiftAmount, setShiftAmount] = useState('');
-  const [showDailyChecks, setShowDailyChecks] = useState(false);
+  const [showMobileScanner, setShowMobileScanner] = useState(false);
 
+  // التحقق من الترخيص عند الإقلاع
   useEffect(() => { checkLicense(); }, [checkLicense]);
-  
+
   // تهيئة الأنظمة المؤسسية عند بدء التشغيل
   useEffect(() => {
-    if (isLicensed && isAuthenticated) {
-      // تهيئة الـ plugins + بدء الجلسة
-      (async () => {
-        await ensurePluginsInitialized();
-      })();
-      
-      // بدء جلسة المستخدم — استخدم userId من auth store
-      const userId = useAuthStore.getState().userId || 'user-id';
-      sessionManager.startSession(userId, username || 'unknown');
-      
-      // استرجاع العمليات المعلقة (Crash Recovery)
-      crashRecovery.recoverPendingOperations().then(result => {
-        if (result.recovered > 0) {
-          toast.success(`تم استرجاع ${result.recovered} عملية معلقة`);
-        }
-        if (result.failed > 0) {
-          toast.warning(`فشل استرجاع ${result.failed} عملية`);
-        }
-      });
-      
-      // نشر حدث تسجيل الدخول
-      eventBus.emit(EventNames.USER_LOGGED_IN, { username, role });
+    if (!isLicensed || !isAuthenticated) return;
 
-      // تحميل البيانات
-      fetchMedicines(); fetchSummary(); fetchSettings(); fetchDebts(); fetchSuppliers();
-      checkShift().then(() => {
-        if (!useAuthStore.getState().shiftId) setShowShiftModal(true);
-      });
+    (async () => {
+      await ensurePluginsInitialized();
+    })();
 
-      // فحص يومي للمخزون (تنبيهات الانتهاء والمخزون المنخفض)
-      setTimeout(() => setShowDailyChecks(true), 1500);
+    const userId = useAuthStore.getState().userId || 'user-id';
+    sessionManager.startSession(userId, username || 'unknown');
 
-      // فحص النسخ الاحتياطي التلقائي
-      invoke<boolean>('check_auto_backup').then(shouldBackup => {
-        if (shouldBackup) {
-          invoke<string>('create_auto_backup_db', { userRole: username || 'system' })
-            .then(() => toast.info('تم إنشاء نسخة احتياطية تلقائية'))
-            .catch(() => {});
-        }
-      }).catch(() => {});
-    }
-  }, [isLicensed, isAuthenticated, fetchMedicines, fetchSummary, fetchSettings, fetchDebts, fetchSuppliers, checkShift, username, role]);
-  
-  // Cleanup عند الخروج — يُنفَّذ عند unmount أو عند تغيّر isAuthenticated
+    // استرجاع العمليات المعلقة (Crash Recovery)
+    crashRecovery.recoverPendingOperations().catch((e) => {
+      console.warn('[CrashRecovery] Failed to recover:', e);
+    });
+
+    // جلب البيانات الأولية
+    fetchMedicines();
+    fetchSummary();
+    fetchSettings();
+    fetchDebts();
+    fetchSuppliers();
+
+    // تحقق من الوردية عند الإقلاع
+    checkShift().then(() => {
+      if (!useAuthStore.getState().shiftId) {
+        // setShowShiftModal(true) — uncomment to force shift modal on startup
+      }
+    });
+  }, [isLicensed, isAuthenticated, username, fetchMedicines, fetchSummary, fetchSettings, fetchDebts, fetchSuppliers, checkShift]);
+
+  // اختصارات لوحة المفاتيح (F1=POS, F2=Inventory, ESC=back)
   useEffect(() => {
-    if (!isAuthenticated && !isLicensed) {
-      // عند تسجيل الخروج: نظّف الجلسة والكاش
-      sessionManager.endSession();
-      fraudDetector.resetSession();
-      cache.clear();
-    }
-    return () => {
-      // عند إغلاق التطبيق نهائياً
-      sessionManager.endSession();
-      fraudDetector.resetSession();
-      cache.clear();
+    if (!isAuthenticated) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F1') { e.preventDefault(); setActiveTab('pos'); }
+      else if (e.key === 'F2') { e.preventDefault(); setActiveTab('inventory'); }
+      else if (e.key === 'F3') { e.preventDefault(); setActiveTab('accounting'); }
+      else if (e.key === 'Escape' && activeTab !== 'dashboard') { setActiveTab('dashboard'); }
     };
-  }, [isAuthenticated, isLicensed]);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isAuthenticated, activeTab]);
 
-  if (!isLicensed || !isAuthenticated) return <><Login /><Toaster richColors position="bottom-left" /></>;
-
-  const handleStartShift = () => {
-    const amt = parseFloat(shiftAmount) || 0;
-    startShift(amt);
-    setShowShiftModal(false); setShiftAmount('');
-  };
-
-  const handleCloseShift = async () => {
-    const closingAmountStr = prompt("أدخل المبلغ الفعلي الموجود في الصندوق لإغلاق الشفت:");
-    if (closingAmountStr !== null) {
-      const closingAmount = parseFloat(closingAmountStr) || 0;
-      await closeShift(closingAmount);
-      useAuthStore.setState({ shiftId: null });
-      toast.success("تم إغلاق الشفت بنجاح.");
+  // معالج بدء الشفت
+  const handleStartShift = async () => {
+    const amount = parseFloat(shiftAmount) || 0;
+    if (amount < 0) { toast.error('المبلغ غير صالح'); return; }
+    try {
+      await startShift(amount);
+      toast.success('تم بدء الشفت بنجاح');
+      setShowShiftModal(false);
+      setShiftAmount('');
+    } catch (e) {
+      toast.error('فشل بدء الشفت: ' + (typeof e === 'string' ? e : 'خطأ'));
     }
   };
+
+  // معالج إغلاق الشفت
+  const handleCloseShift = async () => {
+    if (!shiftId) { toast.info('لا يوجد شفت نشط'); return; }
+    try {
+      await closeShift(0); // 0 = no manual closing amount (auto-compute from sales)
+      toast.success('تم إغلاق الشفت');
+    } catch (e) {
+      toast.error('فشل إغلاق الشفت: ' + (typeof e === 'string' ? e : 'خطأ'));
+    }
+  };
+
+  // شاشة تسجيل الدخول أو الترخيص
+  if (!isLicensed || !isAuthenticated) {
+    return (
+      <ErrorBoundary>
+        <Login />
+        <Toaster position="top-center" richColors />
+      </ErrorBoundary>
+    );
+  }
 
   return (
     <ErrorBoundary>
-    <div dir="rtl" className="h-screen flex flex-col bg-slate-50 font-sans no-select overflow-hidden">
-      <Toaster richColors position="bottom-left" />
-
-      {/* ===== نافذة الفحص اليومي ===== */}
-      {showDailyChecks && (
-        <DailyChecksModal onClose={() => setShowDailyChecks(false)} />
-      )}
-
-      {/* ===== الشريط العلوي ===== */}
-      <header className="bg-brand-900 text-white px-6 py-3 flex items-center justify-between shadow-md flex-shrink-0">
-        <div className="flex items-center gap-3">
-          {activeTab !== 'dashboard' && (
-            <button onClick={() => setActiveTab('dashboard')} className="btn-ghost text-white hover:bg-white/10 px-3 py-2">
+      <div className="h-screen flex flex-col bg-slate-50 text-slate-800 overflow-hidden">
+        {/* ===== Header ===== */}
+        <header className="bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between print:hidden">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`p-2 rounded-lg ${activeTab === 'dashboard' ? 'bg-brand-100 text-brand-700' : 'hover:bg-slate-100'}`}
+              title="الصفحة الرئيسية"
+            >
               <Home className="w-5 h-5" />
-              الرئيسية
             </button>
-          )}
-          <div className="w-10 h-10 rounded-xl bg-white/95 p-1 flex items-center justify-center">
-            <img src="/logo.png" alt="شعار الصيدلية" className="w-full h-full object-contain" />
+            <h1 className="font-bold text-slate-800 text-sm hidden sm:block">
+              {pharmacyName || 'Bunun Mazen Pharmacy'}
+            </h1>
           </div>
-          <div>
-            <p className="text-sm font-bold">{pharmacyName || 'صيدلية بنين مازن'}</p>
-            <p className="text-[11px] text-brand-200">نظام الإدارة - v2.3</p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={handleCloseShift} 
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
-              shiftId 
-                ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30' 
-                : 'bg-emerald-500/20 text-emerald-200'
-            }`}
-          >
-            {shiftId ? 'إغلاق الشفت' : 'شفت مغلق'}
-          </button>
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-brand-600 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">{username?.charAt(0)}</span>
-            </div>
-            <div className="text-right">
-              <p className="text-sm font-semibold">{username}</p>
-              <p className="text-[11px] text-brand-200">{role}</p>
-            </div>
+            <button
+              onClick={() => setShowMobileScanner(true)}
+              className="btn-ghost text-xs"
+              title="ماسح الباركود اللاسلكي"
+            >
+              <Smartphone className="w-4 h-4" />
+              <span className="hidden sm:inline">ماسح</span>
+            </button>
+            {shiftId && (
+              <button onClick={handleCloseShift} className="btn-ghost text-xs text-amber-700">
+                إغلاق الشفت
+              </button>
+            )}
+            <button
+              onClick={() => { logout(); }}
+              className="btn-ghost text-xs text-red-600"
+              title="تسجيل الخروج"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">خروج</span>
+            </button>
           </div>
-          <button onClick={() => logout()} className="p-2 text-red-300 hover:bg-red-500/20 rounded-lg">
-            <LogOut className="w-5 h-5" />
-          </button>
+        </header>
+
+        {/* ===== Main Content ===== */}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === 'dashboard' ? (
+            <DashboardHome setActiveTab={setActiveTab} />
+          ) : (
+            <div className="h-full overflow-hidden">
+              <main className="h-full overflow-auto print:overflow-visible">
+                {activeTab === 'pos' && <PosDashboard />}
+                {activeTab === 'refund' && <RefundDashboard />}
+                {activeTab === 'inventory' && <InventoryDashboard />}
+                {hasPermission(role || 'cashier', 'accounting.view' as Permission) && activeTab === 'accounting' && <AccountingDashboard />}
+                {hasPermission(role || 'cashier', 'accounting.debts' as Permission) && activeTab === 'debts' && <DebtsDashboard />}
+                {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'suppliers' && <SuppliersDashboard />}
+                {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'quick_purchase' && <QuickPurchaseDashboard />}
+                {hasPermission(role || 'cashier', 'system.patients' as Permission) && activeTab === 'patients' && <PatientsDashboard />}
+                {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'reporting' && <ReportingDashboard />}
+                {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'invoices' && <InvoicesDashboard />}
+                {hasPermission(role || 'cashier', 'system.audit' as Permission) && activeTab === 'audit' && <AuditDashboard />}
+                {hasPermission(role || 'cashier', 'system.backup' as Permission) && activeTab === 'backup' && <BackupDashboard />}
+                {hasPermission(role || 'cashier', 'system.users' as Permission) && activeTab === 'users' && <UserManagementDashboard />}
+                {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'settings' && <SettingsDashboard />}
+                {activeTab === 'stock_count' && <StockCountDashboard />}
+                {activeTab === 'prescriptions' && <PrescriptionsDashboard />}
+                {activeTab === 'cash_drawer' && <CashDrawerDashboard />}
+                {activeTab === 'import' && <ImportDashboard />}
+                {activeTab === 'label_printing' && <LabelPrintingDashboard />}
+                {activeTab === 'enterprise' && <EnterpriseDashboard />}
+              </main>
+            </div>
+          )}
         </div>
-      </header>
 
-      {/* ===== المحتوى الرئيسي ===== */}
-      <div className="flex-1 overflow-hidden">
-        {activeTab === 'dashboard' ? (
-          /* ===== الصفحة الرئيسية المحسّنة ===== */
-          <div className="h-full overflow-auto bg-gradient-to-br from-slate-50 via-brand-50/30 to-slate-50">
-            <div className="max-w-6xl mx-auto px-6 py-6">
+        {/* ===== Modals ===== */}
+        {showShiftModal && (
+          <ShiftModal
+            shiftAmount={shiftAmount}
+            setShiftAmount={setShiftAmount}
+            onStart={handleStartShift}
+          />
+        )}
 
-              {/* ===== ترحيب + تاريخ ===== */}
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h1 className="text-2xl font-bold text-slate-800">أهلاً، {username} 👋</h1>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {new Date().toLocaleDateString('ar-IQ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                  </p>
-                </div>
-                <div className={`px-4 py-2 rounded-xl text-sm font-semibold ${shiftId ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                  {shiftId ? '✓ الشفت مفتوح' : '⚠ الشفت مغلق'}
-                </div>
-              </div>
-
-              {/* ===== قسم العمليات ===== */}
-              <div className="mb-6">
-                <h2 className="text-sm font-bold text-slate-600 mb-3 px-1">العمليات</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  {navItems.filter(item => (!item.permission || hasPermission(role || 'cashier', item.permission)) && item.group === 'العمليات').map(item => {
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.key}
-                        onClick={() => setActiveTab(item.key)}
-                        className="nav-tile h-40 p-4"
-                      >
-                        <div className="nav-tile-icon bg-brand-50 text-brand-700 w-16 h-16">
-                          <Icon className="w-8 h-8" />
-                        </div>
-                        <p className="nav-tile-label text-base">{item.label}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ===== قسم الإدارة ===== */}
-              <div className="mb-6">
-                <h2 className="text-sm font-bold text-slate-600 mb-3 px-1">الإدارة</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  {navItems.filter(item => (!item.permission || hasPermission(role || 'cashier', item.permission)) && item.group === 'الإدارة').map(item => {
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.key}
-                        onClick={() => setActiveTab(item.key)}
-                        className="nav-tile h-40 p-4"
-                      >
-                        <div className="nav-tile-icon bg-emerald-50 text-emerald-700 w-16 h-16">
-                          <Icon className="w-8 h-8" />
-                        </div>
-                        <p className="nav-tile-label text-base">{item.label}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ===== قسم النظام ===== */}
-              <div className="mb-6">
-                <h2 className="text-sm font-bold text-slate-600 mb-3 px-1">النظام</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  {navItems.filter(item => (!item.permission || hasPermission(role || 'cashier', item.permission)) && item.group === 'النظام').map(item => {
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.key}
-                        onClick={() => setActiveTab(item.key)}
-                        className="nav-tile h-40 p-4"
-                      >
-                        <div className="nav-tile-icon bg-amber-50 text-amber-700 w-16 h-16">
-                          <Icon className="w-8 h-8" />
-                        </div>
-                        <p className="nav-tile-label text-base">{item.label}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ===== الإحصائيات السريعة (في الأسفل) ===== */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-8 pt-6 border-t border-slate-200">
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center">
-                    <ShoppingCart className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">مبيعات اليوم</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">— د.ع</p>
-                  </div>
-                </div>
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                    <Package className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">الأصناف في المخزون</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">— صنف</p>
-                  </div>
-                </div>
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-                    <Database className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">قاعدة الأدوية العالمية</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">9,375 دواء</p>
-                  </div>
-                </div>
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-                    <Shield className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">تفاعلات دوائية</p>
-                    <p className="text-lg font-bold text-slate-800 tabular">1,051 تفاعل</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* ===== صفحة القسم المختار ===== */
-          <div className="h-full overflow-hidden">
-            <main className="h-full overflow-auto print:overflow-visible">
-              {activeTab === 'pos' && <PosDashboard />}
-              {activeTab === 'refund' && <RefundDashboard />}
-              {activeTab === 'inventory' && <InventoryDashboard />}
-              {hasPermission(role || 'cashier', 'accounting.view' as Permission) && activeTab === 'accounting' && <AccountingDashboard />}
-              {hasPermission(role || 'cashier', 'accounting.debts' as Permission) && activeTab === 'debts' && <DebtsDashboard />}
-              {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'suppliers' && <SuppliersDashboard />}
-              {hasPermission(role || 'cashier', 'accounting.suppliers' as Permission) && activeTab === 'quick_purchase' && <QuickPurchaseDashboard />}
-              {hasPermission(role || 'cashier', 'system.patients' as Permission) && activeTab === 'patients' && <PatientsDashboard />}
-              {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'reporting' && <ReportingDashboard />}
-              {hasPermission(role || 'cashier', 'reports.view' as Permission) && activeTab === 'invoices' && <InvoicesDashboard />}
-              {hasPermission(role || 'cashier', 'system.audit' as Permission) && activeTab === 'audit' && <AuditDashboard />}
-              {hasPermission(role || 'cashier', 'system.backup' as Permission) && activeTab === 'backup' && <BackupDashboard />}
-              {hasPermission(role || 'cashier', 'system.users' as Permission) && activeTab === 'users' && <UserManagementDashboard />}
-              {hasPermission(role || 'cashier', 'system.settings' as Permission) && activeTab === 'settings' && <SettingsDashboard />}
-              {activeTab === 'stock_count' && <StockCountDashboard />}
-              {activeTab === 'prescriptions' && <PrescriptionsDashboard />}
-              {activeTab === 'cash_drawer' && <CashDrawerDashboard />}
-              {activeTab === 'import' && <ImportDashboard />}
-              {activeTab === 'label_printing' && <LabelPrintingDashboard />}
-              {activeTab === 'enterprise' && <EnterpriseDashboard />}
-            </main>
-          </div>
+        {showMobileScanner && (
+          <MobileScannerModal onClose={() => setShowMobileScanner(false)} />
         )}
       </div>
 
-      {showShiftModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-          <div className="bg-white p-7 rounded-3xl shadow-2xl w-96 animate-scale-in">
-            <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-brand-100 flex items-center justify-center">
-                <Calculator className="w-4 h-4 text-brand-700" />
-              </div>
-              بدء شفت جديد
-            </h3>
-            <p className="text-xs text-slate-500 mb-5">أدخل المبلغ الافتتاحي الموجود في الصندوق لبداية الشفت.</p>
-            <input 
-              type="number" 
-              value={shiftAmount} 
-              onChange={e => setShiftAmount(e.target.value)} 
-              className="input-lg text-center text-2xl font-bold tabular mb-5" 
-              placeholder="0.00" 
-              autoFocus
-            />
-            <button onClick={handleStartShift} className="btn-primary w-full py-3 text-base">
-              بدء الشفت
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+      <Toaster position="top-center" richColors />
     </ErrorBoundary>
   );
 }
 
-// ========================================
-// Payment Modal - نافذة الدفع (دينار عراقي فقط)
-// ========================================
-
 export default App;
-
-// ===== Daily Checks Modal render =====
-// ملاحظة: showDailyChecks يُدار في كل من PosDashboard و App بشكل منفصل
-// النافذة تظهر في PosDashboard عند بدء التشغيل

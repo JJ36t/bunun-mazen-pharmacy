@@ -1,4 +1,3 @@
-import type { Medicine } from "../../types";
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { UserPlus, UserX, Check, KeyRound, User, Shield, Trash2 } from 'lucide-react';

@@ -174,3 +174,138 @@ export interface Permission {
   displayName: string;
   category: string;
 }
+
+// ========================================
+// API Response Types — replaces `any` in invoke<T>() calls
+// ========================================
+
+export interface PaymentMethod {
+  id: string;
+  name: string;
+  label: string;
+  isCash: boolean;
+  isActive: boolean;
+}
+
+export interface DiscountLimit {
+  maxPercentage: number;
+  maxAmount: number | null;
+  role: string;
+}
+
+export interface DrugInteraction {
+  medicineA: string;
+  medicineB: string;
+  severity: 'low' | 'medium' | 'high';
+  description: string;
+}
+
+export interface SaleResult {
+  invoiceId: string;
+  dailyReceiptNumber: number;
+  total: number;
+  profit: number;
+}
+
+export interface SuspendedInvoice {
+  id: string;
+  items: CartItem[];
+  total: number;
+  createdAt: string;
+  username: string;
+}
+
+export interface BarcodeLookupResult {
+  found: boolean;
+  medicine?: Medicine;
+  source: 'local' | 'openfoodfacts' | 'gs1' | 'none';
+  barcode: string;
+  name?: string;
+  brandName?: string;
+}
+
+export interface PrinterSettings {
+  name: string;
+  paperWidth: 80 | 58;
+  encoding: 'utf8' | 'cp720' | 'cp1256';
+  autoCut: boolean;
+  footerText?: string;
+}
+
+export interface DashboardStats {
+  todaySales: number;
+  todayInvoices: number;
+  todayProfit: number;
+  lowStockCount: number;
+  expiringSoonCount: number;
+  activeDebtsTotal: number;
+}
+
+export interface WeeklySales {
+  date: string;
+  total: number;
+  count: number;
+}
+
+export interface AccountingSummary {
+  totalSales: number;
+  totalRefunds: number;
+  totalExpenses: number;
+  totalPurchases: number;
+  netProfit: number;
+  debtsTotal: number;
+  debtsPaid: number;
+  suppliersTotal: number;
+  suppliersPaid: number;
+  cashInDrawer: number;
+}
+
+export interface FilteredSalesReport {
+  totalSales: number;
+  totalProfit: number;
+  totalDiscount: number;
+  invoiceCount: number;
+  averageInvoice: number;
+  byDay: Array<{ date: string; total: number; count: number }>;
+  byUser: Array<{ userRole: string; total: number; count: number }>;
+}
+
+export interface InvoiceDetailsReport {
+  invoices: Array<{
+    id: string;
+    dailyReceiptNumber: number;
+    total: number;
+    profit: number;
+    discount: number;
+    userRole: string;
+    createdAt: string;
+    isReversed: boolean;
+    items: Array<{
+      nameAr: string;
+      quantity: number;
+      price: number;
+      total: number;
+    }>;
+  }>;
+}
+
+export interface TopMedicine {
+  medicineId: string;
+  nameAr: string;
+  totalQuantity: number; totalQty?: number;
+  totalRevenue: number;
+  saleCount: number;
+}
+
+export interface AuditLog {
+  id: number;
+  userRole: string;
+  actionType: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface Setting {
+  key: string;
+  value: string;
+}

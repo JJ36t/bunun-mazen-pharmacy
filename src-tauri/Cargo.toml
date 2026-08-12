@@ -13,8 +13,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sysinfo = "0.29"
-dirs-next = "2.0"
+sysinfo = "0.32"
+dirs = "5"
 chrono = "0.4"
 tokio = { version = "1.0", features = ["full"] }
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono", "rust_decimal", "migrate"] }
@@ -61,3 +61,21 @@ clap = { version = "4.5", features = ["derive"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+# P2 fix: optimized release profile
+# - lto = "fat" — full link-time optimization across all crates (~10-15% smaller binary, slower build)
+# - codegen-units = 1 — better optimization at the cost of compile time
+# - strip = true — strip debug symbols from binary (~30% smaller)
+# - panic = "abort" — smaller binary, no unwinding overhead (acceptable for desktop app)
+[profile.release]
+opt-level = "s"       # optimize for size (vs "z" which is more aggressive)
+lto = "fat"           # full LTO across all dependencies
+codegen-units = 1     # single codegen unit for best optimization
+strip = true          # strip debug symbols
+panic = "abort"       # no unwinding — smaller binary
+
+# P2 fix: optimized dev profile for faster iteration
+[profile.dev]
+opt-level = 0         # no optimization — fastest compile
+debug = true          # keep debug symbols
+split-debuginfo = "unpacked"  # faster linking on Windows

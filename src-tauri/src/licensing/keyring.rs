@@ -34,7 +34,7 @@ impl Keyring {
             keys.push(PublicKeyEntry { id: mk.id.clone(), key: verifying_key, status });
         }
         if keys.is_empty() {
-            eprintln!("[Licensing] WARNING: No Ed25519 keys configured. Only legacy HMAC licenses will be accepted.");
+            tracing::warn!("No Ed25519 keys configured. Only legacy HMAC licenses will be accepted.");
         }
         Ok(Keyring { keys, legacy_enabled: manifest.legacy.enabled })
     }

@@ -17,7 +17,7 @@ use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 /// توليد أو تحميل شهادة self-signed دائمة (لا تُعاد كل إقلاع)
 /// تُخزّن في مجلد بيانات التطبيق
 fn generate_self_signed_cert(ip: &str) -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>), String> {
-    let app_dir = dirs_next::data_dir()
+    let app_dir = dirs::data_dir()
         .ok_or("تعذّر تحديد مجلد البيانات")?
         .join("BununMazenPharmacy");
     std::fs::create_dir_all(&app_dir).ok();
@@ -30,7 +30,7 @@ fn generate_self_signed_cert(ip: &str) -> Result<(CertificateDer<'static>, Priva
             std::fs::read(&cert_file),
             std::fs::read(&key_file),
         ) {
-            println!("[MobileScanner] Loaded persisted self-signed cert");
+            tracing::info!("[MobileScanner]  Loaded persisted self-signed cert");
             let cert = CertificateDer::from(cert_bytes);
             let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_bytes));
             return Ok((cert, key));
@@ -38,7 +38,7 @@ fn generate_self_signed_cert(ip: &str) -> Result<(CertificateDer<'static>, Priva
     }
 
     // توليد شهادة جديدة وحفظها
-    println!("[MobileScanner] Generating new self-signed cert for IP: {}", ip);
+    tracing::info!("[MobileScanner]  Generating new self-signed cert for IP: {}", ip);
     let sans = vec!["localhost".to_string(), ip.to_string()];
     let cert = rcgen::generate_simple_self_signed(sans)
         .map_err(|e| format!("rcgen failed: {}", e))?;
@@ -55,7 +55,7 @@ fn generate_self_signed_cert(ip: &str) -> Result<(CertificateDer<'static>, Priva
         let _ = std::fs::set_permissions(&key_file, std::fs::Permissions::from_mode(0o600));
     }
 
-    println!("[MobileScanner] Cert generated and persisted");
+    tracing::info!("[MobileScanner]  Cert generated and persisted");
     Ok((CertificateDer::from(cert_der), PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_der))))
 }
 
@@ -74,32 +74,32 @@ fn create_tls_acceptor(ip: &str) -> Result<TlsAcceptor, String> {
 pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle, cancel_token: tokio_util::sync::CancellationToken) -> Result<(), String> {
     let local_ip = crate::mobile_scanner::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
 
-    println!("[MobileScanner] ====================================");
-    println!("[MobileScanner] Starting HTTPS/WSS server");
-    println!("[MobileScanner] Local IP: {}", local_ip);
-    println!("[MobileScanner] HTTPS port: {} (https://{}:{})", port, local_ip, port);
-    println!("[MobileScanner] WSS port: {} (wss://{}:{})", port + 1, local_ip, port + 1);
-    println!("[MobileScanner] ====================================");
+    tracing::info!("[MobileScanner]  ====================================");
+    tracing::info!("[MobileScanner]  Starting HTTPS/WSS server");
+    tracing::info!("[MobileScanner]  Local IP: {}", local_ip);
+    tracing::info!("[MobileScanner]  HTTPS port: {} (https://{}:{})", port, local_ip, port);
+    tracing::info!("[MobileScanner]  WSS port: {} (wss://{}:{})", port + 1, local_ip, port + 1);
+    tracing::info!("[MobileScanner]  ====================================");
 
     // ثبّت CryptoProvider الافتراضي (ring) — مطلوب لـ rustls 0.23
     let _ = rustls::crypto::ring::default_provider().install_default();
-    println!("[MobileScanner] CryptoProvider (ring) installed");
+    tracing::info!("[MobileScanner]  CryptoProvider (ring) installed");
 
     // أنشئ TLS acceptor بشهادة self-signed للـ IP المحلي
     let tls_acceptor = create_tls_acceptor(&local_ip)?;
-    println!("[MobileScanner] TLS acceptor created successfully");
+    tracing::info!("[MobileScanner]  TLS acceptor created successfully");
 
     // Security fix: bind to specific LAN IP instead of 0.0.0.0 (all interfaces)
     // Previously bound to 0.0.0.0 — exposed to entire LAN, VPN, Docker, shared WiFi
     // Now binds to the specific local_ip (computed in run_server)
     let https_addr = format!("{}:{}", local_ip, port);
     let https_listener = TcpListener::bind(&https_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] HTTPS listener bound on https://{}:{}", local_ip, port);
+    tracing::info!("[MobileScanner]  HTTPS listener bound on https://{}:{}", local_ip, port);
 
     let wss_port = port + 1;
     let wss_addr = format!("{}:{}", local_ip, wss_port);
     let wss_listener = TcpListener::bind(&wss_addr).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] WSS listener bound on wss://{}:{}", local_ip, wss_port);
+    tracing::info!("[MobileScanner]  WSS listener bound on wss://{}:{}", local_ip, wss_port);
 
     // HTTPS server
     let tls_acceptor_http = tls_acceptor.clone();
@@ -108,22 +108,22 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle,
         loop {
             tokio::select! {
                 _ = cancel_http.cancelled() => {
-                    println!("[MobileScanner] HTTPS server shutting down");
+                    tracing::info!("[MobileScanner]  HTTPS server shutting down");
                     break;
                 }
                 accept_result = https_listener.accept() => {
                     if let Ok((stream, peer_addr)) = accept_result {
-                        println!("[HTTPS] Connection from {}", peer_addr);
+                        tracing::info!("[HTTPS]  Connection from {}", peer_addr);
                         let acceptor = tls_acceptor_http.clone();
                         let origin_ip = local_ip.clone();
                         let origin_port = port;
                         tokio::spawn(async move {
                             match acceptor.accept(stream).await {
                                 Ok(tls_stream) => {
-                                    println!("[HTTPS] TLS handshake OK");
+                                    tracing::info!("[HTTPS]  TLS handshake OK");
                                     let _ = handle_http_request(tls_stream, &origin_ip, origin_port).await;
                                 }
-                                Err(e) => println!("[HTTPS] TLS accept failed: {}", e),
+                                Err(e) => tracing::info!("[HTTPS]  TLS accept failed: {}", e),
                             }
                         });
                     }
@@ -141,12 +141,12 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle,
         loop {
             tokio::select! {
                 _ = cancel_ws.cancelled() => {
-                    println!("[MobileScanner] WSS server shutting down");
+                    tracing::info!("[MobileScanner]  WSS server shutting down");
                     break;
                 }
                 accept_result = wss_listener.accept() => {
                     if let Ok((stream, addr)) = accept_result {
-                        println!("[WSS] Connection from {}", addr);
+                        tracing::info!("[WSS]  Connection from {}", addr);
                         let acceptor = tls_acceptor_ws.clone();
                         let p = pool_clone.clone();
                         let h = app_handle_ws.clone();
@@ -155,7 +155,7 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle,
                                 Ok(tls_stream) => {
                                     let _ = handle_ws_connection(tls_stream, addr, p, h).await;
                                 }
-                                Err(e) => println!("[WSS] TLS accept failed: {}", e),
+                                Err(e) => tracing::info!("[WSS]  TLS accept failed: {}", e),
                             }
                         });
                     }
@@ -168,7 +168,7 @@ pub async fn run_server(port: usize, pool: PgPool, app_handle: tauri::AppHandle,
     cancel_token.cancelled().await;
     // أعطِ المهام وقتاً قصيراً لإغلاق الـ listeners قبل العودة
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    println!("[MobileScanner] Server fully stopped");
+    tracing::info!("[MobileScanner]  Server fully stopped");
     Ok(())
 }
 
@@ -205,7 +205,7 @@ where
 {
     // Part 2 S9: idle timeout — disconnect after 60s of inactivity
     let mut ws_stream = accept_async(stream).await.map_err(|e| e.to_string())?;
-    println!("[MobileScanner] Device connected: {}", addr);
+    tracing::info!("[MobileScanner]  Device connected: {}", addr);
 
     // Security fix: track per-connection pairing state
     // Previously, scan messages were processed without verifying pairing
@@ -233,7 +233,7 @@ where
         match msg {
             Err(_) => {
                 // Timeout — disconnect idle client
-                println!("[MobileScanner] Idle timeout for {}", addr);
+                tracing::info!("[MobileScanner]  Idle timeout for {}", addr);
                 let _ = ws_stream.send(Message::Close(None)).await;
                 break;
             }
@@ -325,7 +325,7 @@ where
         }
         }
     }
-    println!("[MobileScanner] Device disconnected: {}", addr);
+    tracing::info!("[MobileScanner]  Device disconnected: {}", addr);
     Ok(())
 }
 
@@ -463,7 +463,7 @@ async fn lookup_openfoodfacts_api(barcode: &str) -> Option<serde_json::Value> {
 
     let resp = match client.get(&url).send().await {
         Ok(r) => r,
-        Err(e) => { println!("[OpenFoodFacts] Request failed: {}", e); return None; }
+        Err(e) => { tracing::info!(" Request failed: {}", e); return None; }
     };
 
     let body: serde_json::Value = match resp.json().await {

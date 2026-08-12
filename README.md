@@ -10,9 +10,10 @@
 |--------|---------|
 | **Frontend** | React 19 + TypeScript + Tailwind CSS + Zustand |
 | **Backend** | Rust + Tauri 2 |
-| **Database** | PostgreSQL + sqlx |
-| **الأمان** | Ed25519 + AES-256-GCM + PBKDF2 + bcrypt |
-| **الاختبارات** | 43+ Rust unit/integration tests |
+| **Database** | PostgreSQL 14+ + sqlx (44 migrations) |
+| **الأمان** | Ed25519 + AES-256-GCM + PBKDF2 (600k) + bcrypt (cost 12) |
+| **الاختبارات** | 43+ Rust unit tests + 12 property tests + Vitest (frontend) |
+| **المراقبة** | HTTP /health endpoint + structured logging (tracing) |
 
 ---
 
@@ -46,29 +47,45 @@
 - تقارير مفصلة حسب التاريخ والموظف
 
 ### الأمان
-- مصادقة بـ session tokens مخزّنة في قاعدة البيانات
+- مصادقة بـ session tokens مخزّنة كـ SHA-256 hash في قاعدة البيانات (وليست نصاً صريحاً)
 - Rate limiting على تسجيل الدخول (5 محاولات/5 دقائق)
 - Rate limiting على تفعيل الترخيص (10 محاولات/ساعة)
+- Rate limiting على verify_admin_password (5 محاولات/5 دقائق)
 - RBAC كامل (8 أدوار، 22 صلاحية)
-- سجل تدقيق (Audit Log) على كل عملية حساسة
-- تشفير AES-256-GCM للنسخ الاحتياطي مع PBKDF2 (100k iterations)
-- ترخيص Ed25519 غير متماثل مع fallback HMAC للتوافق
+- سجل تدقيق (Audit Log) على كل عملية حساسة + مشغّل anti-tampering (BEFORE DELETE/UPDATE)
+- تشفير AES-256-GCM للنسخ الاحتياطي مع PBKDF2 (600k iterations — OWASP 2023)
+- ترخيص Ed25519 غير متماثل مع fallback HMAC للتوافق (gated behind flag)
 - كلمات مرور عشوائية عند أول تثبيت مع إجبار التغيير
 - XSS prevention في كل تصدير PDF/CSV
+- Session sliding expiry (8h) + absolute max lifetime (24h)
+- FOR UPDATE row locking في كل العمليات المالية الحرجة
+- 30+ CHECK constraints على أعمدة المال/الكمية
+- Audit log partitioning شهري (migration 0044)
+- 6 FK + 2 UNIQUE constraints على الجداول الحرجة (migration 0036)
+- Path traversal protection في save_csv_file
+- WebSocket scanner مع rate limiting + idle timeout + message size limit
 
 ### البنية التحتية
-- 23 migration منظّمة مع auto-recovery
-- Materialized views للتقارير السريعة
-- 43+ اختبار وحدة وتكامل
-- CI pipeline جاهز (GitHub Actions)
+- 44 migration منظّمة مع auto-recovery آمن (لا يمسح _sqlx_migrations كاملاً)
+- Materialized views للتقارير السريعة + refresh عند الإقلاع
+- 43+ اختبار وحدة وتكامل (Rust) + 12 property-based test
+- Vitest setup + اختبارات MemoryCache و FraudDetector (frontend)
+- CI pipeline جاهز (GitHub Actions): lint + build + clippy + security audit
 - Pre-release security check script
-- API documentation كامل
+- API documentation كامل (docs/API.md)
 - إدارة ورديات (Shifts) مع موازنة الصندوق
 - ماسح باركود لاسلكي via WebSocket (HTTPS/WSS)
 - نسخ احتياطي تلقائي يومي مع تدوير (7 نسخ)
-- استعادة نسخ احتياطية لقاعدة البيانات
+- نسخ احتياطي offsite قابل للتهيئة (PHARMACY_OFFSITE_BACKUP_PATH أو settings)
+- استعادة نسخ احتياطية لقاعدة البيانات (TRUNCATE قبل الإدراج لمنع خلط البيانات)
 - كاش طبقة ذاكرة مع SWR (Stale-While-Revalidate)
-- Crash recovery مع circuit breaker + exponential backoff
+- Crash recovery مع circuit breaker + exponential backoff + jitter
+- HTTP /health endpoint على localhost:9191 للمراقبة الخارجية
+- Structured logging مع tracing-subscriber
+- OpenFoodFacts API cache (7-day TTL في قاعدة البيانات)
+- توليد Ed25519 keypair تلقائي عند أول إقلاع (لا حاجة لـ cargo run --bin generate_keys)
+- عكس الأحرف العربية الصحيح للطابعات الحرارية (initial/medial/final forms)
+- Race-safe daily_receipt_number (pg_advisory_xact_lock)
 
 ---
 

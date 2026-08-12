@@ -102,7 +102,7 @@ pub async fn stop_scanner_server() -> Result<(), String> {
     let mut guard = get_token().await.lock().await;
     if let Some(token) = guard.take() {
         token.cancel();
-        println!("[MobileScanner] Server shutdown requested");
+        tracing::info!("[MobileScanner] Server shutdown requested");
     }
     Ok(())
 }

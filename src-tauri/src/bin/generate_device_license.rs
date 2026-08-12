@@ -4,17 +4,16 @@
 // This tool computes the device fingerprint (same as the app) and generates
 // a legacy HMAC license key for it. Run this on the target machine.
 
-use sysinfo::{System, SystemExt, CpuExt};
+use sysinfo::System;
 use ring::{digest, hmac};
 use hex;
 
 fn main() {
     // Compute device fingerprint (same logic as licensing/mod.rs)
-    let mut sys = System::new_all();
-    sys.refresh_all();
+    let sys = System::new_all();
     let mut fingerprint = String::new();
     if let Some(cpu) = sys.cpus().first() { fingerprint.push_str(&cpu.brand()); }
-    if let Some(host) = sys.host_name() { fingerprint.push_str(&host); }
+    if let Some(host) = sysinfo::host_name() { fingerprint.push_str(&host); }
     let alg = digest::digest(&digest::SHA256, fingerprint.as_bytes());
     let device_id = hex::encode(alg).to_uppercase();
 
@@ -22,7 +21,7 @@ fn main() {
     println!("Device Information");
     println!("========================================");
     println!("CPU brand: {}", sys.cpus().first().map(|c| c.brand()).unwrap_or("Unknown"));
-    println!("Hostname:  {}", sys.host_name().unwrap_or_default());
+    println!("Hostname:  {}", sysinfo::host_name().unwrap_or_default());
     println!("Device ID: {}", device_id);
     println!("========================================");
 

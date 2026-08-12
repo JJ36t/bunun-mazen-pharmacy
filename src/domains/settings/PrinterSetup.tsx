@@ -174,8 +174,20 @@ export function PrinterSetupSection() {
 }
 
 // صف طابعة واحد
-function PrinterRow({ label, icon: Icon, iconColor, iconBg, value, onChange, printers, onTest, testing }: unknown) {
-  // type any is acceptable for this simple internal component
+import type { ComponentType } from 'react';
+interface PrinterRowProps {
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  iconColor: string;
+  iconBg: string;
+  value: string;
+  onChange: (v: string) => void;
+  printers: string[];
+  onTest: () => void;
+  testing: boolean;
+}
+
+function PrinterRow({ label, icon: Icon, iconColor, iconBg, value, onChange, printers, onTest, testing }: PrinterRowProps) {
   return (
     <div className="flex items-center gap-3">
       <div className={`w-10 h-10 rounded-xl ${iconBg} ${iconColor} flex items-center justify-center flex-shrink-0`}>

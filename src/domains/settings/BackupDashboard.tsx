@@ -1,4 +1,3 @@
-import type { Medicine } from "../../types";
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useInventoryStore } from '../inventory/inventory.store';

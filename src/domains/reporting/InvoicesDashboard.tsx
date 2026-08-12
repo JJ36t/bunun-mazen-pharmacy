@@ -1,4 +1,3 @@
-import type { Medicine, Invoice, InvoiceItem, Debt, Supplier } from "../../types";
 // ========================================
 // Invoices Dashboard (الفواتير الشاملة)
 // ========================================
@@ -12,15 +11,46 @@ import { Receipt, Search, Trash2, Printer, Calendar, Users, Hash, TrendingUp, Fi
 import { toast } from 'sonner';
 import { exportToPdf } from '../../lib/utils/pdfExport';
 
+interface InvoiceWithDetails {
+  id: string;
+  dailyReceiptNumber: number;
+  totalAmount: number;
+  profitAmount: number;
+  discountAmount: number;
+  userRole: string;
+  createdAt: string;
+  isReversed?: boolean;
+  printedBy?: string;
+  printedAt?: string;
+  items: Array<{ name: string; qty: number; price: number }>;
+}
+
+interface DailyStats {
+  totalInvoices: number;
+  totalAmount: number;
+  totalProfit: number;
+  nextReceiptNumber: number;
+  todayCount?: number;
+  todayTotal?: number;
+  lastReceiptNumber?: number;
+}
+
+interface User {
+  id: string;
+  username: string;
+  role: string;
+  isActive: boolean;
+}
+
 export function InvoicesDashboard() {
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [cashierFilter, setCashierFilter] = useState('all');
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const [dailyStats, setDailyStats] = useState<any>(null);
+  const [dailyStats, setDailyStats] = useState<DailyStats | null>(null);
   const { role, username } = useAuthStore();
   const { pharmacyName } = useSettingsStore();
   const isAdmin = role === 'Super Admin';
@@ -32,13 +62,13 @@ export function InvoicesDashboard() {
   }, []);
 
   const fetchUsers = async () => {
-    try { setUsers(await invoke<any[]>('get_users_db')); } catch (e) { console.error(e); }
+    try { setUsers(await invoke<User[]>('get_users_db')); } catch (e) { console.error(e); }
   };
 
   const fetchInvoices = async () => {
     setLoading(true);
     try {
-      const data = await invoke<any[]>('get_all_invoices_with_details_db', {
+      const data = await invoke<InvoiceWithDetails[]>('get_all_invoices_with_details_db', {
         startDate: startDate + ' 00:00:00',
         endDate: endDate + ' 23:59:59',
         userFilter: cashierFilter,
@@ -49,7 +79,7 @@ export function InvoicesDashboard() {
   };
 
   const fetchDailyStats = async () => {
-    try { setDailyStats(await invoke<any>('get_daily_receipt_stats_db')); } catch (e) { console.error(e); }
+    try { setDailyStats(await invoke<DailyStats>('get_daily_receipt_stats_db')); } catch (e) { console.error(e); }
   };
 
   const handleDelete = async (invoiceId: string) => {
@@ -64,7 +94,7 @@ export function InvoicesDashboard() {
     }
   };
 
-  const handlePrint = async (invoice: any) => {
+  const handlePrint = async (invoice: InvoiceWithDetails) => {
     try {
       const printers = await invoke<string[]>('get_available_printers');
       if (printers.length === 0) { toast.error('لا توجد طابعة'); return; }
@@ -72,7 +102,7 @@ export function InvoicesDashboard() {
         printerName: printers[0],
         pharmacyName,
         invoiceNum: `#${invoice.dailyReceiptNumber}`,
-        itemsJson: JSON.stringify(invoice.items.map((it: any) => ({ nameAr: it.name, quantity: it.qty, price: it.price }))),
+        itemsJson: JSON.stringify(invoice.items.map((it) => ({ nameAr: it.name, quantity: it.qty, price: it.price }))),
         total: invoice.totalAmount.toFixed(2),
       });
       await invoke('mark_invoice_printed_db', { invoiceId: invoice.id, printedBy: username || 'Unknown' });
@@ -96,7 +126,7 @@ export function InvoicesDashboard() {
       ],
       rows: filteredInvoices.map(inv => ({
         dailyReceiptNumber: `#${inv.dailyReceiptNumber}`,
-        items_text: inv.items.map((it: any) => `${it.name} (${it.qty})`).join('، '),
+        items_text: inv.items.map((it) => `${it.name} (${it.qty})`).join('، '),
         totalAmount: `${inv.totalAmount.toFixed(0)} د.ع`,
         discountAmount: inv.discountAmount && inv.discountAmount > 0 ? `${inv.discountAmount.toFixed(0)} د.ع` : '-',
         userRole: inv.userRole,
@@ -115,7 +145,7 @@ export function InvoicesDashboard() {
     const matchesSearch = !search || 
       inv.dailyReceiptNumber?.toString().includes(search) || 
       inv.userRole?.includes(search) ||
-      inv.items?.some((it: any) => it.name?.includes(search));
+      inv.items?.some((it) => it.name?.includes(search));
     return matchesSearch;
   });
 
@@ -208,7 +238,7 @@ export function InvoicesDashboard() {
                   </td>
                   <td className="p-3">
                     <div className="space-y-0.5">
-                      {inv.items.map((it: unknown, i: number) => (
+                      {inv.items.map((it: { name: string; qty: number; price: number }, i: number) => (
                         <div key={i} className="text-xs text-slate-600">
                           {it.name} <span className="text-slate-400">×{it.qty}</span> <span className="text-slate-500 tabular">{it.price.toFixed(0)}</span>
                         </div>

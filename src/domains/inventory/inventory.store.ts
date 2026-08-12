@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
 import type { Medicine } from '../../types';
 import { useAuthStore } from '../security/auth.store';
+import { inventoryService } from '../../lib/services';
 
 export type { Medicine };
 
@@ -15,38 +15,31 @@ interface InventoryState {
   adjustStock: (id: string, amount: number) => Promise<void>;
 }
 
-export const useInventoryStore = create<InventoryState>((set) => ({
+// P1 fix: store now uses the service layer instead of calling invoke() directly.
+// This activates caching (MemoryCache), fraud detection (fraudDetector),
+// crash recovery (crashRecovery journal), and event publishing (eventBus).
+// Other stores should follow the same pattern.
+export const useInventoryStore = create<InventoryState>((set, get) => ({
   medicines: [],
   isLoading: false,
-  
+
   fetchMedicines: async () => {
     set({ isLoading: true });
     try {
-      const data = await invoke<Medicine[]>('get_medicines_db');
+      // Uses cache (30s TTL) + perf monitor
+      const data = await inventoryService.getAll();
       set({ medicines: data, isLoading: false });
     } catch (e) {
       console.error("Failed to fetch medicines:", e);
       set({ isLoading: false });
     }
   },
-  
+
   addMedicine: async (med) => {
     try {
-      const { sessionToken } = useAuthStore.getState();
-      const newId = await invoke<string>('add_medicine_db', {
-        nameAr: med.nameAr,
-        nameEn: med.nameEn,
-        scientificName: med.scientificName || null,
-        barcode: med.barcode,
-        price: med.price,
-        wholesalePrice: 0,
-        costPrice: med.costPrice,
-        quantity: med.quantity,
-        batchNumber: med.batchNumber,
-        expiryDate: med.expiryDate,
-        sessionToken: sessionToken || ''
-      });
-      
+      const { sessionToken, username } = useAuthStore.getState();
+      const newId = await inventoryService.add(med, username ?? 'unknown', sessionToken ?? '');
+
       set((state) => ({
         medicines: [...state.medicines, { ...med, id: newId, isDeleted: false }]
       }));
@@ -55,11 +48,11 @@ export const useInventoryStore = create<InventoryState>((set) => ({
       alert("فشل إضافة الدواء لقاعدة البيانات: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ")));
     }
   },
-  
+
   updateMedicine: async (id, med) => {
     try {
-      const { sessionToken } = useAuthStore.getState();
-      await invoke('update_medicine_db', { medicineId: id, ...med, scientificName: med.scientificName || null, wholesalePrice: 0, sessionToken: sessionToken || '' });
+      const { sessionToken, username } = useAuthStore.getState();
+      await inventoryService.update(id, med, username ?? "unknown", sessionToken ?? '');
       set((state) => ({
         medicines: state.medicines.map(m => m.id === id ? { ...m, ...med } : m)
       }));
@@ -68,13 +61,14 @@ export const useInventoryStore = create<InventoryState>((set) => ({
       alert("فشل تحديث الدواء: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ")));
     }
   },
-  
+
   softDeleteMedicine: async (id, userRole, medName) => {
     try {
       const { sessionToken } = useAuthStore.getState();
-      await invoke('soft_delete_medicine_db', { medicineId: id, userRole, medName, sessionToken: sessionToken || '' });
+      // Service layer runs fraud detector (checkDeletion) before invoke
+      await inventoryService.delete(id, userRole, medName, sessionToken ?? '');
       set((state) => ({
-        medicines: state.medicines.map(m => 
+        medicines: state.medicines.map(m =>
           m.id === id ? { ...m, isDeleted: true } : m
         )
       }));
@@ -83,14 +77,16 @@ export const useInventoryStore = create<InventoryState>((set) => ({
       alert("فشل حذف الدواء من قاعدة البيانات");
     }
   },
-  
+
   adjustStock: async (id, amount) => {
     try {
-      // Phase 2 Auth Fix: send sessionToken (now required by backend)
-      const { sessionToken } = useAuthStore.getState();
-      await invoke('adjust_stock_db', { medicineId: id, amount, sessionToken: sessionToken || '' });
+      const { sessionToken, username } = useAuthStore.getState();
+      const current = get().medicines.find(m => m.id === id);
+      const currentQty = current?.quantity ?? 0;
+      // Service layer runs fraud detector (checkInventoryAdjustment) before invoke
+      await inventoryService.adjustStock(id, amount, username ?? 'unknown', currentQty, sessionToken ?? '');
       set((state) => ({
-        medicines: state.medicines.map(m => 
+        medicines: state.medicines.map(m =>
           m.id === id ? { ...m, quantity: m.quantity + amount } : m
         )
       }));

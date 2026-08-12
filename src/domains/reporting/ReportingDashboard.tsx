@@ -1,27 +1,58 @@
+// ========================================
+// Reporting Dashboard
+// ========================================
+
 import { useState, useEffect } from 'react';
-import type { Medicine, Invoice, SalesReport } from '../../types';
-import { useInventoryStore } from '../inventory/inventory.store';
 import { exportToCSV } from '../../lib/utils/export';
 import { invoke } from '@tauri-apps/api/core';
 import { TrendingUp, FileDown, Trophy, Calendar, Users, Receipt, Warehouse, AlertTriangle, Percent } from 'lucide-react';
+import { useInventoryStore } from '../inventory/inventory.store';
+
+interface TopMed {
+  medicineId: string;
+  nameAr: string;
+  name?: string;
+  totalQuantity: number;
+  totalQty?: number;
+  totalRevenue: number;
+  saleCount: number;
+}
+
+interface InvoiceDetail {
+  id: string;
+  totalAmount: number;
+  profitAmount: number;
+  discountAmount: number;
+  userRole: string;
+  createdAt: string;
+  isReversed: boolean;
+  items: Array<{ name: string; qty: number; price: number }>;
+}
+
+interface ReportData {
+  totalSales: number;
+  totalProfits: number;
+  totalDiscounts: number;
+  invoiceCount: number;
+}
 
 export function ReportingDashboard() {
   const { medicines } = useInventoryStore();
-  const [topMeds, setTopMeds] = useState<any[]>([]);
-  const [reportData, setReportData] = useState({ totalSales: 0, totalProfits: 0, totalDiscounts: 0, invoiceCount: 0 });
-  const [invoiceDetails, setInvoiceDetails] = useState<any[]>([]);
+  const [topMeds, setTopMeds] = useState<TopMed[]>([]);
+  const [reportData, setReportData] = useState<ReportData>({ totalSales: 0, totalProfits: 0, totalDiscounts: 0, invoiceCount: 0 });
+  const [invoiceDetails, setInvoiceDetails] = useState<InvoiceDetail[]>([]);
   const [timeRange, setTimeRange] = useState('today');
   const [customStart, setCustomStart] = useState(new Date().toISOString().split('T')[0]);
   const [customEnd, setCustomEnd] = useState(new Date().toISOString().split('T')[0]);
   const [cashierFilter, setCashierFilter] = useState('all');
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<Array<{ id: string; username: string; role: string; isActive: boolean }>>([]);
   const [reportType, setReportType] = useState<'sales' | 'profits' | 'inventory'>('sales');
 
   useEffect(() => {
     const fetchInit = async () => {
-      try { 
-        setTopMeds(await invoke<any[]>('get_top_medicines_db'));
-        setUsers(await invoke<any[]>('get_users_db'));
+      try {
+        setTopMeds(await invoke<TopMed[]>('get_top_medicines_db'));
+        setUsers(await invoke<Array<{ id: string; username: string; role: string; isActive: boolean }>>('get_users_db'));
       } catch (e) { console.error(e); }
     };
     fetchInit();
@@ -47,15 +78,15 @@ export function ReportingDashboard() {
       const endDateStr = `${end.getFullYear()}-${pad(end.getMonth()+1)}-${pad(end.getDate())} ${pad(end.getHours())}:${pad(end.getMinutes())}:${pad(end.getSeconds())}`;
 
       if (reportType === 'sales' || reportType === 'profits') {
-        const data = await invoke<SalesReport>('get_filtered_sales_report', { startDate: startDateStr, endDate: endDateStr, userFilter: cashierFilter });
+        const data = await invoke<ReportData>('get_filtered_sales_report', { startDate: startDateStr, endDate: endDateStr, userFilter: cashierFilter });
         setReportData(data);
-        const details = await invoke<Invoice[]>('get_invoice_details_report', { startDate: startDateStr, endDate: endDateStr, userFilter: cashierFilter });
+        const details = await invoke<InvoiceDetail[]>('get_invoice_details_report', { startDate: startDateStr, endDate: endDateStr, userFilter: cashierFilter });
         setInvoiceDetails(details);
       }
     } catch (e) { console.error(e); }
   };
 
-  const handleExportSales = () => { exportToCSV("تقرير_المبيعات", ["رقم الفاتورة", "المبلغ", "الخصم", "الربح", "الكاشير", "التاريخ"], invoiceDetails.map(inv => [inv.id, inv.totalAmount, inv.discountAmount || 0, inv.profitAmount, inv.userRole, inv.date])); };
+  const handleExportSales = () => { exportToCSV("تقرير_المبيعات", ["رقم الفاتورة", "المبلغ", "الخصم", "الربح", "الكاشير", "التاريخ"], invoiceDetails.map(inv => [inv.id, inv.totalAmount, inv.discountAmount || 0, inv.profitAmount, inv.userRole, inv.createdAt])); };
   const handleExportInventory = () => { exportToCSV("تقرير_المخزون", ["الدواء", "الكمية", "السعر"], medicines.filter((m) => !m.isDeleted).map((m) => [m.nameAr, m.quantity, m.price])); };
 
   const lowStockMeds = medicines.filter((m) => !m.isDeleted && m.quantity < 50);
@@ -165,7 +196,7 @@ export function ReportingDashboard() {
                     </div>
                   </td></tr>
                 ) : invoiceDetails.map(inv => 
-                  inv.items.map((it: unknown, i: number) => (
+                  inv.items.map((it: { name: string; qty: number; price: number }, i: number) => (
                     <tr key={`${inv.id}-${i}`} className="table-row">
                       <td className="p-4 text-sm font-semibold text-slate-700">{it.name}</td>
                       <td className="p-4 text-sm text-slate-600 text-center tabular">{it.qty}</td>
@@ -180,7 +211,7 @@ export function ReportingDashboard() {
                       </td>
                       <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
                       <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
-                      <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
+                      <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.createdAt).toLocaleString('en-GB')}</td>
                     </tr>
                   ))
                 )}
@@ -261,7 +292,7 @@ export function ReportingDashboard() {
                     </div>
                   </td></tr>
                 ) : invoiceDetails.map(inv => 
-                  inv.items.map((it: unknown, i: number) => (
+                  inv.items.map((it: { name: string; qty: number; price: number }, i: number) => (
                     <tr key={`${inv.id}-${i}`} className="table-row">
                       <td className="p-4 text-sm font-semibold text-slate-700">{it.name}</td>
                       <td className="p-4 text-sm text-slate-600 text-center tabular">{it.qty}</td>
@@ -276,7 +307,7 @@ export function ReportingDashboard() {
                       </td>
                       <td className="p-4 text-sm text-slate-600">{inv.userRole}</td>
                       <td className="p-4 text-sm font-mono text-slate-500 tabular">{inv.id.substring(0, 8)}</td>
-                      <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.date).toLocaleString('en-GB')}</td>
+                      <td className="p-4 text-xs text-slate-400 tabular">{new Date(inv.createdAt).toLocaleString('en-GB')}</td>
                     </tr>
                   ))
                 )}
@@ -425,7 +456,7 @@ export function ReportingDashboard() {
                       i === 2 ? 'bg-orange-100 text-orange-700' :
                       'bg-slate-50 text-slate-500'
                     }`}>{i + 1}</span>
-                    <span className="text-sm font-medium text-slate-800">{med.name}</span>
+                    <span className="text-sm font-medium text-slate-800">{med.nameAr}</span>
                   </div>
                 </td>
                 <td className="p-3"><span className="badge-info tabular">{med.totalQty} قطعة</span></td>

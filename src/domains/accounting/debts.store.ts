@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
 import type { Debt } from '../../types';
 import { useAuthStore } from '../security/auth.store';
+import { debtsService } from '../../lib/services';
 
 export type { Debt };
 
@@ -13,51 +13,76 @@ interface DebtsState {
   deleteDebt: (debtId: string) => Promise<void>;
 }
 
+// P1 fix: store now uses the service layer instead of calling invoke() directly.
+// Activates caching (MemoryCache) + event publishing (eventBus).
 export const useDebtsStore = create<DebtsState>((set) => ({
   debts: [],
+
   fetchDebts: async () => {
     try {
-      const data = await invoke<Debt[]>('get_customer_debts_db');
+      // Uses cache (30s TTL) via debtsService.getAll
+      const data = await debtsService.getAll();
       set({ debts: data });
     } catch (e) {
-      console.error("Failed to fetch debts:", e);
+      console.error('Failed to fetch debts:', e);
     }
   },
+
   addDebt: async (customerName, amount, note, userRole) => {
     try {
       const { sessionToken } = useAuthStore.getState();
-      const newId = await invoke<string>('add_customer_debt_db', { customerName, amount, note, userRole, sessionToken: sessionToken || '' });
-      set((state) => ({ 
-        debts: [{ id: newId, customerName, amount, isPaid: false, note, date: new Date().toISOString(), paidDate: undefined }, ...state.debts] 
+      // Service layer handles cache invalidation + event publishing
+      const newId = await debtsService.add(customerName, amount, note || undefined, userRole, sessionToken || '');
+      set((state) => ({
+        debts: [
+          {
+            id: newId,
+            customerName,
+            amount,
+            isPaid: false,
+            note,
+            date: new Date().toISOString(),
+            paidDate: undefined,
+          },
+          ...state.debts,
+        ],
       }));
     } catch (e) {
-      alert("فشل إضافة الدين: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ")));
+      alert('فشل إضافة الدين: ' + (typeof e === 'string' ? e : ((e as Error)?.message || 'خطأ')));
     }
   },
+
   payDebt: async (debtId, amount, userRole) => {
     try {
       const { sessionToken } = useAuthStore.getState();
-      await invoke('pay_customer_debt_db', { debtId, amount, userRole, sessionToken: sessionToken || '' });
+      // Service layer handles cache invalidation + DASHBOARD_REFRESH event
+      await debtsService.pay(debtId, amount, userRole, sessionToken || '');
       set((state) => ({
-        debts: state.debts.map(d => {
+        debts: state.debts.map((d) => {
           if (d.id === debtId) {
             const newAmount = d.amount - amount;
-            return { ...d, amount: newAmount, isPaid: newAmount <= 0, paidDate: newAmount <= 0 ? new Date().toISOString() : d.paidDate };
+            return {
+              ...d,
+              amount: newAmount,
+              isPaid: newAmount <= 0,
+              paidDate: newAmount <= 0 ? new Date().toISOString() : d.paidDate,
+            };
           }
           return d;
-        })
+        }),
       }));
     } catch (e) {
-      alert("فشل تسديد الدفعة: " + (typeof e === "string" ? e : ((e as Error)?.message || (e as { kind?: string })?.kind || "خطأ")));
+      alert('فشل تسديد الدفعة: ' + (typeof e === 'string' ? e : ((e as Error)?.message || 'خطأ')));
     }
   },
+
   deleteDebt: async (debtId: string) => {
     try {
       const { sessionToken } = useAuthStore.getState();
-      await invoke('delete_customer_debt_db', { debtId, sessionToken: sessionToken || '' });
-      set((state) => ({ debts: state.debts.filter(d => d.id !== debtId) }));
+      await debtsService.delete(debtId, sessionToken || '');
+      set((state) => ({ debts: state.debts.filter((d) => d.id !== debtId) }));
     } catch (e) {
-      alert("فشل حذف الدين: " + (typeof e === "string" ? e : ((e as Error)?.message || "خطأ")));
+      alert('فشل حذف الدين: ' + (typeof e === 'string' ? e : ((e as Error)?.message || 'خطأ')));
     }
-  }
+  },
 }));

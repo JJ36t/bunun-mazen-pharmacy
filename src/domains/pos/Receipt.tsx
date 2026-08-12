@@ -5,9 +5,9 @@ import { Printer, X, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface CartItem { id: string; nameAr: string; quantity: number; price: number; }
-interface ReceiptProps { invoiceNumber: string; items: CartItem[]; total: number; discountAmount?: number; onClose: () => void; }
+interface ReceiptProps { invoiceNumber: string; items: CartItem[]; total: number; discountAmount?: number; pharmacyName?: string; onClose: () => void; }
 
-export function Receipt({ invoiceNumber, items, total, discountAmount, onClose }: ReceiptProps) {
+export function Receipt({ invoiceNumber, items, total, discountAmount, pharmacyName: _pharmacyName, onClose }: ReceiptProps) {
   const { pharmacyName, phone, address } = useSettingsStore();
   const [printers, setPrinters] = useState<string[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState('');

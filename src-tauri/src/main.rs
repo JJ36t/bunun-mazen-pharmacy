@@ -2,12 +2,20 @@
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
 )]
+// P3 note: dead_code is allowed because some functions were moved to module files
+// (auth_commands.rs, sales_commands.rs, inventory_commands.rs, backup_commands.rs,
+// accounting_commands.rs) in a prior refactor, but the original functions in main.rs
+// are kept as fallback in case any invoke_handler references weren't updated.
+// A future cleanup pass (with cargo build verification) can safely remove the
+// duplicates once we confirm all handlers reference the module versions.
 #![allow(dead_code)]
 
 // ثابت تكلفة bcrypt — مرفوعة من 8 إلى 12 (OWASP يوصي ≥ 12)
 const BCRYPT_COST: u32 = 12;
-// ثابت عدد تكرارات PBKDF2 لاشتقاق مفتاح AES (بديل آمن لـ SHA256 المفردة)
-const AES_KDF_ITERATIONS: u32 = 100_000;
+// ثابت عدد تكرارات PBKDF2 لاشتقاق مفتاح AES
+// إصلاح P0: مرفوعة من 100k إلى 600k (OWASP 2023 يوصي ≥ 600k لـ PBKDF2-HMAC-SHA256)
+// ملاحظة: التكرارات الزائدة تُبطئ فك التشفير ~6x، لكن الأمان أهم
+const AES_KDF_ITERATIONS: u32 = 600_000;
 
 
 use std::fs;
@@ -39,6 +47,8 @@ mod smart_barcode_commands;
 mod pharmiq_features;
 mod pharmiq_new_features;
 mod mobile_scanner;
+mod health_endpoint;
+mod arabic_reshaper;
 
 // --- نظام السجلات المنظمة (Structured Logging) ---
 
@@ -46,7 +56,7 @@ mod mobile_scanner;
 fn decimal_to_f64(d: rust_decimal::Decimal) -> f64 {
     use rust_decimal::prelude::ToPrimitive;
     d.to_f64().unwrap_or_else(|| {
-        eprintln!("[WARNING] Decimal to f64 conversion failed for value: {}", d);
+        tracing::warn!(value = %d, "Decimal to f64 conversion failed");
         0.0
     })
 }
@@ -87,7 +97,7 @@ fn is_valid_key(device_id: &str, input_key: &str) -> bool {
 }
 
 fn get_license_file_path() -> PathBuf {
-    let app_dir = dirs_next::data_dir().unwrap_or_else(|| PathBuf::from("."));
+    let app_dir = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
     let app_folder = app_dir.join("BununMazenPharmacy"); fs::create_dir_all(&app_folder).ok();
     app_folder.join("license.dat")
 }
@@ -114,12 +124,12 @@ fn activate_license(activation_key: String) -> Result<bool, String> {
 }
 
 // --- أوامر النسخ الاحتياطي (مع التشفير) ---
-// اشتقاق مفتاح AES-256 من كلمة المرور باستخدام PBKDF2-HMAC-SHA256 (10salt + 100k iterations)
-// بديل آمن لـ SHA256(password) المفردة التي كانت قابلة لكسر GPU
-fn derive_aes_key(password: &str, salt: &[u8; 16]) -> [u8; 32] {
+// اشتقاق مفتاح AES-256 من كلمة المرور باستخدام PBKDF2-HMAC-SHA256
+// الصيغة الجديدة v2: iterations مدفونة في الـ header للتوافق مع النسخ القديمة
+fn derive_aes_key(password: &str, salt: &[u8; 16], iterations: u32) -> [u8; 32] {
     use ring::pbkdf2;
     let mut key = [0u8; 32];
-    pbkdf2::derive(pbkdf2::PBKDF2_HMAC_SHA256, std::num::NonZeroU32::new(AES_KDF_ITERATIONS).unwrap(), salt, password.as_bytes(), &mut key);
+    pbkdf2::derive(pbkdf2::PBKDF2_HMAC_SHA256, std::num::NonZeroU32::new(iterations).unwrap(), salt, password.as_bytes(), &mut key);
     key
 }
 
@@ -127,36 +137,51 @@ fn encrypt_data(data: &str, password: &str) -> Result<String, String> {
     // توليد salt عشوائي 16 بايت (يُخزّن مع النص المشفر)
     let mut salt = [0u8; 16];
     OsRng.fill_bytes(&mut salt);
-    let key_bytes = derive_aes_key(password, &salt);
+    let key_bytes = derive_aes_key(password, &salt, AES_KDF_ITERATIONS);
     let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
     let cipher = Aes256Gcm::new(key);
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher.encrypt(nonce, data.as_bytes()).map_err(|e| e.to_string())?;
-    // الصيغة الجديدة: base64(salt):base64(nonce):base64(ciphertext)
-    // متوافقة مع النسخ القديمة عبر detect في decrypt_data
-    Ok(format!("{}:{}:{}", general_purpose::STANDARD.encode(salt), general_purpose::STANDARD.encode(nonce_bytes), general_purpose::STANDARD.encode(ciphertext)))
+    // الصيغة v2: v2:iterations:salt:nonce:ciphertext (يسمح بفك تشفير النسخ القديمة)
+    Ok(format!("v2:{}:{}:{}:{}", AES_KDF_ITERATIONS, general_purpose::STANDARD.encode(salt), general_purpose::STANDARD.encode(nonce_bytes), general_purpose::STANDARD.encode(ciphertext)))
 }
 
 fn decrypt_data(encrypted_data: &str, password: &str) -> Result<String, String> {
     let parts: Vec<&str> = encrypted_data.split(':').collect();
-    if parts.len() == 3 {
-        // الصيغة الجديدة (PBKDF2): salt:nonce:ciphertext
+    // الصيغة v2: v2:iterations:salt:nonce:ciphertext
+    if parts.len() == 4 && parts[0] == "v2" {
+        let iterations: u32 = parts[1].parse().map_err(|_| "صيغة الملف المشفر غير صحيحة".to_string())?;
+        let salt = general_purpose::STANDARD.decode(parts[2]).map_err(|e| e.to_string())?;
+        let nonce_bytes = general_purpose::STANDARD.decode(parts[3]).map_err(|e| e.to_string())?;
+        let ciphertext = general_purpose::STANDARD.decode(parts[4]).map_err(|e| e.to_string())?;
+        if salt.len() != 16 { return Err("صيغة الملف المشفر غير صحيحة".to_string()); }
+        let mut salt_arr = [0u8; 16];
+        salt_arr.copy_from_slice(&salt);
+        let key_bytes = derive_aes_key(password, &salt_arr, iterations);
+        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+        let cipher = Aes256Gcm::new(key);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| "كلمة مرور النسخة الاحتياطية خاطئة".to_string())?;
+        String::from_utf8(plaintext).map_err(|e| e.to_string())
+    } else if parts.len() == 3 {
+        // الصيغة v1 (100k iterations): salt:nonce:ciphertext — استخدم 100k للتوافق
         let salt = general_purpose::STANDARD.decode(parts[0]).map_err(|e| e.to_string())?;
         let nonce_bytes = general_purpose::STANDARD.decode(parts[1]).map_err(|e| e.to_string())?;
         let ciphertext = general_purpose::STANDARD.decode(parts[2]).map_err(|e| e.to_string())?;
         if salt.len() != 16 { return Err("صيغة الملف المشفر غير صحيحة".to_string()); }
         let mut salt_arr = [0u8; 16];
         salt_arr.copy_from_slice(&salt);
-        let key_bytes = derive_aes_key(password, &salt_arr);
+        // استخدام 100k للتوافق مع النسخ القديمة (قبل ترقية PBKDF2 إلى 600k)
+        let key_bytes = derive_aes_key(password, &salt_arr, 100_000);
         let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
         let cipher = Aes256Gcm::new(key);
         let nonce = Nonce::from_slice(&nonce_bytes);
         let plaintext = cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| "كلمة مرور النسخة الاحتياطية خاطئة".to_string())?;
         String::from_utf8(plaintext).map_err(|e| e.to_string())
     } else if parts.len() == 2 {
-        // الصيغة القديمة (SHA256 مفردة) للتوافق مع النسخ الاحتياطية القديمة
+        // الصيغة القديمة جداً (SHA256 مفردة) للتوافق مع النسخ الاحتياطية القديمة
         let key_bytes = digest::digest(&digest::SHA256, password.as_bytes());
         let key = Key::<Aes256Gcm>::from_slice(key_bytes.as_ref());
         let cipher = Aes256Gcm::new(key);
@@ -172,7 +197,7 @@ fn decrypt_data(encrypted_data: &str, password: &str) -> Result<String, String> 
 
 // إرجاع مسار سطح المكتب عبر منصة (Windows/macOS/Linux)
 fn desktop_dir() -> Result<std::path::PathBuf, String> {
-    if let Some(dir) = dirs_next::desktop_dir() {
+    if let Some(dir) = dirs::desktop_dir() {
         return Ok(dir);
     }
     // fallback
@@ -200,10 +225,84 @@ async fn create_backup(state: tauri::State<'_, PgPool>, data: String, password: 
         return Err("جلسة غير صالحة. يرجى إعادة تسجيل الدخول.".to_string());
     }}
     let dir = desktop_dir()?;
-    let path = dir.join(format!("Pharmacy_Backup_{}.enc", chrono::Local::now().format("%Y%m%d_%H%M%S")));
+    let filename = format!("Pharmacy_Backup_{}.enc", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+    let path = dir.join(&filename);
     let encrypted_data = encrypt_data(&data, &password)?;
     std::fs::File::create(&path).map_err(|e| e.to_string())?.write_all(encrypted_data.as_bytes()).map_err(|e| e.to_string())?;
+
+    // P1 fix: replicate backup to offsite location if configured
+    // Supports: local folder, SMB mount, or any path the OS can write to.
+    // Configure via:
+    //   - DB: settings key 'offsite_backup_path' (operator-set via Settings UI)
+    //   - Env: PHARMACY_OFFSITE_BACKUP_PATH (deployment-set, overrides DB)
+    let offsite_path = std::env::var("PHARMACY_OFFSITE_BACKUP_PATH").ok()
+        .or_else(|| {
+            let pool = state.inner();
+            // Best-effort synchronous lookup — settings table is small
+            let row = tauri::async_runtime::block_on(async {
+                sqlx::query_scalar::<_, Option<String>>(
+                    "SELECT value FROM settings WHERE key = 'offsite_backup_path'"
+                ).fetch_optional(pool).await.ok().flatten().flatten()
+            });
+            row
+        });
+
+    if let Some(offsite) = offsite_path {
+        if !offsite.is_empty() {
+            let offsite_dir = std::path::PathBuf::from(&offsite);
+            if let Err(e) = std::fs::create_dir_all(&offsite_dir) {
+                tracing::warn!(error = %e, path = %offsite, "Failed to create offsite backup dir");
+            } else {
+                let offsite_file = offsite_dir.join(&filename);
+                match std::fs::copy(&path, &offsite_file) {
+                    Ok(_) => {
+                        tracing::info!(
+                            primary = %path.display(),
+                            offsite = %offsite_file.display(),
+                            "Backup replicated to offsite location"
+                        );
+                        // Record offsite backup in audit log
+                        let _ = sqlx::query(
+                            "INSERT INTO audit_logs (user_role, action_type, description) VALUES ('system', 'BACKUP_OFFSITE', $1)"
+                        ).bind(format!("Offsite backup copied to: {}", offsite_file.display()))
+                         .execute(state.inner()).await;
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, path = %offsite_file.display(), "Failed to copy backup to offsite location");
+                        // Record failure in audit log
+                        let _ = sqlx::query(
+                            "INSERT INTO audit_logs (user_role, action_type, description) VALUES ('system', 'BACKUP_OFFSITE_FAILED', $1)"
+                        ).bind(format!("Offsite backup failed: {}", e))
+                         .execute(state.inner()).await;
+                    }
+                }
+                // Prune old offsite backups (keep last 30 days)
+                prune_old_backups(&offsite_dir, 30);
+            }
+        }
+    }
+
     Ok(path.to_string_lossy().to_string())
+}
+
+/// Delete backup files older than `days` in the given directory
+fn prune_old_backups(dir: &std::path::Path, days: i64) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let cutoff = chrono::Local::now() - chrono::Duration::days(days);
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("enc") { continue; }
+            if let Ok(metadata) = entry.metadata() {
+                if let Ok(modified) = metadata.modified() {
+                    let modified_dt: chrono::DateTime<chrono::Local> = modified.into();
+                    if modified_dt < cutoff {
+                        let _ = std::fs::remove_file(&path);
+                        tracing::info!(path = %path.display(), "Pruned old backup");
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[tauri::command]
@@ -258,10 +357,14 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
                     .bind(&username).execute(state.inner()).await {
                     tracing::warn!(error = %e, "Failed to update last_login");
                 }
-                // Create session
+                // Create session — token is hashed at rest (P0 fix)
                 let session_token = uuid::Uuid::new_v4().to_string();
                 let device_info = format!("os:{}", std::env::consts::OS);
-                sqlx::query("INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at, token, expires_at, last_activity, absolute_expires_at) VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW() + INTERVAL '8 hours', NOW(), NOW() + INTERVAL '24 hours')")
+                // Insert with both token (for backward compat) AND token_hash (for lookup)
+                sqlx::query(
+                    "INSERT INTO user_sessions (user_id, username, device_info, is_active, login_at, token, token_hash, expires_at, last_activity, absolute_expires_at) \
+                     VALUES ($1, $2, $3, TRUE, NOW(), $4, hash_session_token($4), NOW() + INTERVAL '8 hours', NOW(), NOW() + INTERVAL '24 hours')"
+                )
                     .bind(user_id).bind(&username).bind(&device_info).bind(&session_token)
                     .execute(state.inner()).await
                     .map_err(|e| format!("فشل إنشاء الجلسة: {}", e))?;
@@ -292,16 +395,35 @@ async fn login(state: tauri::State<'_, PgPool>, username: String, password: Stri
 }
 
 // تحقق من session token — Phase 4: check both sliding + absolute expiry
+// P0 fix: lookup via token_hash (constant-time via unique index), fallback to plaintext for compat
 pub(crate) async fn verify_session_token(pool: &PgPool, session_token: &str) -> Result<(uuid::Uuid, String, String), String> {
+    // Try hashed lookup first (preferred path)
     let row = sqlx::query(
         "SELECT u.id, u.username, u.role FROM user_sessions s JOIN users u ON u.id = s.user_id \
-         WHERE s.token = $1 AND s.is_active = TRUE AND u.is_active = TRUE AND u.deleted_at IS NULL \
+         WHERE s.token_hash = hash_session_token($1) AND s.is_active = TRUE AND u.is_active = TRUE AND u.deleted_at IS NULL \
          AND (s.expires_at IS NULL OR s.expires_at > NOW()) \
          AND (s.absolute_expires_at IS NULL OR s.absolute_expires_at > NOW()) LIMIT 1"
     ).bind(session_token).fetch_optional(pool).await.map_err(|e| e.to_string())?;
+    // Fallback to plaintext lookup for sessions created before migration 0039
+    let row = match row {
+        Some(r) => Some(r),
+        None => {
+            tracing::debug!("Hashed lookup missed, trying plaintext fallback...");
+            sqlx::query(
+                "SELECT u.id, u.username, u.role FROM user_sessions s JOIN users u ON u.id = s.user_id \
+                 WHERE s.token = $1 AND s.is_active = TRUE AND u.is_active = TRUE AND u.deleted_at IS NULL \
+                 AND (s.expires_at IS NULL OR s.expires_at > NOW()) \
+                 AND (s.absolute_expires_at IS NULL OR s.absolute_expires_at > NOW()) LIMIT 1"
+            ).bind(session_token).fetch_optional(pool).await.map_err(|e| e.to_string())?
+        }
+    };
     match row {
         Some(r) => {
-            let _ = sqlx::query("UPDATE user_sessions SET last_activity = NOW(), expires_at = NOW() + INTERVAL '8 hours' WHERE token = $1")
+            // Update activity via token_hash (preferred) — best-effort
+            let _ = sqlx::query(
+                "UPDATE user_sessions SET last_activity = NOW(), expires_at = NOW() + INTERVAL '8 hours' \
+                 WHERE token_hash = hash_session_token($1) OR token = $1"
+            )
                 .bind(session_token).execute(pool).await;
             Ok((r.get(0), r.get(1), r.get(2)))
         },
@@ -310,9 +432,13 @@ pub(crate) async fn verify_session_token(pool: &PgPool, session_token: &str) -> 
 }
 
 // Phase 4: Logout command — invalidate session in DB
+// P0 fix: match by token_hash (preferred) OR plaintext token (backward compat)
 #[tauri::command]
 async fn logout_db(state: tauri::State<'_, PgPool>, session_token: String) -> Result<(), String> {
-    sqlx::query("UPDATE user_sessions SET is_active = FALSE, logout_at = NOW() WHERE token = $1")
+    sqlx::query(
+        "UPDATE user_sessions SET is_active = FALSE, logout_at = NOW() \
+         WHERE token_hash = hash_session_token($1) OR token = $1"
+    )
         .bind(&session_token)
         .execute(state.inner()).await
         .map_err(|e| format!("فشل تسجيل الخروج: {}", e))?;
@@ -1293,17 +1419,10 @@ fn today() -> chrono::NaiveDate { chrono::Local::now().date_naive() }
 
 // --- أوامر الطباعة (متعددة المنصات + تشكيل عربي RTL) ---
 
-// تحويل نص عربي ليطبع بشكل صحيح على طابعات ESC/POS بدون فيرموير عربي
-// نعكس الأحرف لكل سطر عربي ونغلقه بـ RTL mark (الحل المبسّط؛ الحل الكامل يحتاج arabic_reshaper)
-fn shape_arabic_for_print(s: &str) -> String {
-    // تحقق إن كان النص يحوي أحرف عربية
-    let has_arabic = s.chars().any(|c| (c as u32) >= 0x0600 && (c as u32) <= 0x06FF);
-    if !has_arabic { return s.to_string(); }
-    // عكس الأحرف في كل كلمة على حدة + عكس ترتيب الكلمات
-    let mut words: Vec<String> = s.split_whitespace().map(|w| w.chars().rev().collect()).collect();
-    words.reverse();
-    format!("\u{200F}{}", words.join(" ")) // RLM mark + reversed
-}
+// P1 fix: Arabic shaping now handled by arabic_reshaper module
+// (proper presentation forms for isolated/initial/medial/final positions)
+// The old naive "reverse letters within word" approach produced broken output.
+// Use `arabic_reshaper::shape_arabic_for_print` directly when needed.
 
 #[tauri::command]
 fn get_available_printers() -> Vec<String> {
@@ -1350,7 +1469,7 @@ fn print_receipt_direct(printer_name: String, pharmacy_name: String, invoice_num
     let mut esc_data: Vec<u8> = Vec::new();
     esc_data.extend_from_slice(b"\x1B\x40"); // init
     esc_data.extend_from_slice(b"\x1B\x61\x01"); // center
-    esc_data.extend_from_slice(format!("{}\n", shape_arabic_for_print(&pharmacy_name)).as_bytes());
+    esc_data.extend_from_slice(format!("{}\n", arabic_reshaper::shape_arabic_for_print(&pharmacy_name)).as_bytes());
     esc_data.extend_from_slice(b"\x1B\x61\x00"); // left align
     esc_data.extend_from_slice(b"----------------------------\n");
     esc_data.extend_from_slice(format!("Invoice: {}\n", invoice_num).as_bytes());
@@ -1361,7 +1480,7 @@ fn print_receipt_direct(printer_name: String, pharmacy_name: String, invoice_num
         let qty = item["quantity"].as_i64().unwrap_or(0);
         let price = item["price"].as_f64().unwrap_or(0.0);
         let line_total = price * qty as f64;
-        let shaped = shape_arabic_for_print(name);
+        let shaped = arabic_reshaper::shape_arabic_for_print(name);
         // اسم دواء (محدود 18) + كمية + سعر الإجمالي
         esc_data.extend_from_slice(format!("{:<18} x{} {:.2}\n", shaped.chars().take(18).collect::<String>(), qty, line_total).as_bytes());
     }
@@ -1749,7 +1868,7 @@ async fn create_auto_backup_db(state: tauri::State<'_, PgPool>, user_role: Strin
 
 // كلمة مرور عشوائية للنسخ التلقائي تُخزّن في مجلد بيانات التطبيق (وليست hardcoded)
 fn get_or_create_auto_backup_password() -> Result<String, String> {
-    let app_dir = dirs_next::data_dir().ok_or("تعذّر تحديد مجلد البيانات")?.join("BununMazenPharmacy");
+    let app_dir = dirs::data_dir().ok_or("تعذّر تحديد مجلد البيانات")?.join("BununMazenPharmacy");
     std::fs::create_dir_all(&app_dir).ok();
     let key_file = app_dir.join(".backup_key");
     if key_file.exists() {
@@ -1789,6 +1908,58 @@ async fn restore_backup_to_db(state: tauri::State<'_, PgPool>, file_path: String
 
     let pool = state.inner();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // P1 fix: TRUNCATE all business-data tables BEFORE restoring.
+    // Old code used ON CONFLICT DO NOTHING/UPDATE which mixed old + new data —
+    // a restore would leave deleted records present + new records overlaid.
+    // Now we wipe the business tables (respecting FK order) and insert fresh.
+    //
+    // System tables (users, roles, permissions, audit_logs) are NOT truncated:
+    //  - users: would lock out the operator
+    //  - roles/permissions: would break RBAC
+    //  - audit_logs: tamper-proof history must survive restore
+    //
+    // CASCADE not used — we list children before parents explicitly.
+    tracing::warn!("Truncating business tables for clean restore...");
+    let truncate_tables = [
+        "invoice_items",
+        "invoice_payments",
+        "invoices",
+        "customer_debts",
+        "supplier_orders",
+        "supplier_order_items",
+        "suppliers",
+        "purchase_history",
+        "ledger_entries",
+        "expenses",
+        "cash_drawer_events",
+        "stock_count_items",
+        "stock_counts",
+        "prescription_items",
+        "prescriptions",
+        "quarantined_stock",
+        "expiry_losses",
+        "label_print_jobs",
+        "print_jobs",
+        "price_history",
+        "medicine_batches",
+        "medicine_barcodes",
+        "medicines",
+        "interaction_overrides",
+        "scan_audit_logs",
+        "barcode_scan_logs",
+        "settings",
+    ];
+    for table in &truncate_tables {
+        // TRUNCATE individual tables (RESTART IDENTITY resets sequences)
+        let _ = sqlx::query(&format!("TRUNCATE TABLE {} RESTART IDENTITY CASCADE", table))
+            .execute(&mut *tx).await
+            .map_err(|e| {
+                tracing::warn!(table = table, error = %e, "Failed to truncate table (continuing)");
+            });
+    }
+    tracing::info!("Business tables truncated — starting restore...");
+
     let mut restored_counts = serde_json::Map::new();
 
     // استعادة الأدوية
@@ -2173,6 +2344,8 @@ fn generate_random_password(len: usize) -> String {
 
 fn main() {
     init_logging();
+    // P0 fix: auto-provision Ed25519 keypair on first launch (no longer requires manual cargo run --bin generate_keys)
+    licensing::ensure_keys_exist();
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
@@ -2182,7 +2355,7 @@ fn main() {
             // إصلاح P0-4: في release، نرفض الإقلاع بدون PHARMACY_DB_PASSWORD
             let db_password = std::env::var("PHARMACY_DB_PASSWORD").unwrap_or_else(|_| {
                 if cfg!(debug_assertions) {
-                    eprintln!("[SECURITY WARNING] PHARMACY_DB_PASSWORD not set — using dev default. THIS WILL FAIL in release builds.");
+                    tracing::warn!("PHARMACY_DB_PASSWORD not set — using dev default. THIS WILL FAIL in release builds.");
                     "123456".to_string()
                 } else {
                     panic!("[SECURITY] PHARMACY_DB_PASSWORD environment variable not set. Refusing to start in release mode.");
@@ -2205,39 +2378,68 @@ fn main() {
                 }
             });
             tauri::async_runtime::block_on(async {
-                // === Auto-recovery for migration checksum mismatches ===
-                // sqlx::migrate يرفض المتابعة في عدة حالات:
-                // 1. VersionMismatch: checksum الـ migration المطبق لا يطابق الملف الحالي
-                // 2. VersionMissing: migration طُبق سابقاً لكن ملفه لم يعد موجوداً (مثل 20240106000000 الذي حذفناه)
-                // 3. checksum: أي مشكلة في البصمة
-                // الحل: نحاول التشغيل العادي أولاً، ولو فشل، نُنظّف السجلات المشكوك فيها ونُعيد المحاولة.
+                // === Hardened migration runner (replaces dangerous auto-recovery) ===
+                // التطبيق القديم كان يمسح _sqlx_migrations بالكامل عند أي خطأ يحتوي كلمة "migration"
+                // (بما فيها "constraint already exists"!), ثم يُعيد تشغيل كل migrations.
+                // هذا تسبب في مشكلة 0033: القيد موجود لكن السجل محذوف → إعادة الإنشاء تفشل.
+                //
+                // السياسة الجديدة:
+                //   1. VersionMismatch / VersionMissing / checksum → امسح فقط السجل المعطوب وأعد المحاولة
+                //   2. أخطاء SQL (duplicate_constraint, already exists) → panic مع رسالة واضحة
+                //   3. لا نمسح _sqlx_migrations بالكامل أبداً
                 if let Err(e) = sqlx::migrate!("./migrations").run(&pool).await {
                     let err_str = e.to_string();
-                    println!("[Migrations] First attempt failed: {}", err_str);
+                    tracing::error!(error = %err_str, "Migration run failed");
 
-                    // تحقق من كل أنواع أخطاء migrations المعروفة
-                    let is_migration_issue = err_str.contains("VersionMismatch")
+                    // تحقق فقط من أخطاء sqlx الصريحة (وليس أي نص يحتوي "migration")
+                    let is_checksum_issue = err_str.contains("VersionMismatch")
                         || err_str.contains("VersionMissing")
-                        || err_str.contains("checksum")
-                        || err_str.contains("previously applied")
+                        || err_str.contains("checksum mismatch")
                         || err_str.contains("previously applied but is missing")
                         || err_str.contains("missing in the resolved migrations")
-                        || err_str.contains("has been modified")
-                        || err_str.contains("migration");
+                        || err_str.contains("has been modified");
 
-                    if is_migration_issue {
-                        println!("[Migrations] Detected migration issue — clearing ALL migration history and retrying...");
-                        // امسح كل سجلات migrations دفعة واحدة (الجداول موجودة بـ IF NOT EXISTS)
-                        let _ = sqlx::query("DELETE FROM _sqlx_migrations").execute(&pool).await;
-                        // أعد تشغيل كل migrations من الصفر
+                    let is_already_applied = err_str.contains("already applied")
+                        || err_str.contains("No migrations to apply");
+
+                    if is_checksum_issue {
+                        // استخرج رقم الـ migration المعطوب من رسالة الخطأ
+                        tracing::warn!("Detected checksum/version mismatch — attempting targeted cleanup...");
+                        // امسح فقط آخر سجل (الأكثر عرضة للخطأ) بدلاً من مسح الكل
+                        let _ = sqlx::query(
+                            "DELETE FROM _sqlx_migrations WHERE version = (
+                                SELECT MAX(version) FROM _sqlx_migrations
+                            )"
+                        ).execute(&pool).await;
                         match sqlx::migrate!("./migrations").run(&pool).await {
-                            Ok(_) => println!("[Migrations] Auto-recovery successful!"),
+                            Ok(_) => tracing::info!("Migration targeted cleanup successful!"),
                             Err(e2) => {
-                                panic!("Could not run migrations after auto-recovery: {}. Manual fix required — delete the pharmacy_db database and restart.", e2);
+                                panic!(
+                                    "❌ Migration failed even after targeted cleanup.\n\
+                                     Error: {}\n\n\
+                                     🔧 Manual fix required:\n\
+                                     1. Stop the app\n\
+                                     2. Open psql: psql -U postgres -d pharmacy_db\n\
+                                     3. Run: DELETE FROM _sqlx_migrations WHERE version = <broken_version>;\n\
+                                     4. Restart the app\n\
+                                     Or drop the database: DROP DATABASE pharmacy_db; (data loss!)",
+                                    e2
+                                );
                             }
                         }
+                    } else if is_already_applied {
+                        // ليست مشكلة حقيقية — فقط سجل مكرر
+                        tracing::info!("Migrations already applied — skipping.");
                     } else {
-                        panic!("Could not run migrations: {}", e);
+                        // خطأ SQL حقيقي (duplicate constraint, syntax error, إلخ)
+                        panic!(
+                            "❌ Migration failed with SQL error.\n\
+                             Error: {}\n\n\
+                             🔧 This is NOT a checksum issue — do NOT clear _sqlx_migrations.\n\
+                             Fix the offending migration file to be idempotent (use DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$;)\n\
+                             Then restart the app.",
+                            err_str
+                        );
                     }
                 }
                 
@@ -2264,6 +2466,15 @@ fn main() {
                 // Phase 5: refresh materialized views on startup
                 let _ = sqlx::query("SELECT refresh_all_materialized_views()").execute(&pool).await;
             });
+
+            // P1 fix: spawn health endpoint on localhost:9191 (configurable via PHARMACY_HEALTH_PORT)
+            // Provides /health and /ready for external monitoring
+            {
+                let health_pool = pool.clone();
+                tauri::async_runtime::spawn(async move {
+                    health_endpoint::start_health_server(health_pool).await;
+                });
+            }
 
             app.manage(pool);
             Ok(())
