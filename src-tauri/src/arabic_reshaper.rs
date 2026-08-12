@@ -31,14 +31,14 @@ struct ShapeForms {
     isolated: char,
     initial: char,  // also used for "starting" form
     medial: char,
-    final: char,    // also used for "ending" form
+    final_form: char,    // also used for "ending" form (renamed from `final` — reserved keyword)
     joins_next: bool, // can this letter join to the next letter?
 }
 
 // Common Arabic letters with their presentation forms.
 // Source: https://en.wikipedia.org/wiki/Arabic_script_in_Unicode
 const fn forms(iso: char, init: char, med: char, fin: char, joins: bool) -> ShapeForms {
-    ShapeForms { isolated: iso, initial: init, medial: med, final: fin, joins_next: joins }
+    ShapeForms { isolated: iso, initial: init, medial: med, final_form: fin, joins_next: joins }
 }
 
 // Build the mapping table
@@ -131,7 +131,7 @@ fn shape_arabic(input: &str) -> String {
         let shaped = match (prev_connects, next_connects) {
             (true, true) => forms.medial,
             (false, true) => forms.initial,
-            (true, false) => forms.final,
+            (true, false) => forms.final_form,
             (false, false) => forms.isolated,
         };
         let _ = (prev_joining, next_joining); // suppress unused warnings

@@ -58,7 +58,8 @@ pub fn generate_device_fingerprint() -> String {
     let sys = System::new_all();
     let mut fingerprint = String::new();
     if let Some(cpu) = sys.cpus().first() { fingerprint.push_str(&cpu.brand()); }
-    if let Some(host) = sysinfo::host_name() { fingerprint.push_str(&host); }
+    // sysinfo 0.32: host_name() is a method on System, not a free function
+    if let Some(host) = System::host_name() { fingerprint.push_str(&host); }
     let alg = digest::digest(&digest::SHA256, fingerprint.as_bytes());
     hex::encode(alg).to_uppercase()
 }

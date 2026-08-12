@@ -610,7 +610,7 @@ async fn delete_suspended_invoice_db(state: tauri::State<'_, PgPool>, inv_id: St
 
 // --- أوامر سجل التدقيق ---
 #[tauri::command]
-async fn log_action_db(state: tauri::State<'_, PgPool>, user_role: String, action_type: String, description: String, session_token: String) -> Result<(), String> {
+async fn log_action_db(state: tauri::State<'_, PgPool>, _user_role: String, action_type: String, description: String, session_token: String) -> Result<(), String> {
     // Part 2: derive user_role from session, not client
     let (_uid, session_username, _role) = verify_session_token(state.inner(), &session_token).await?;
     let effective_role = session_username;
@@ -953,7 +953,7 @@ async fn record_sale_db(state: tauri::State<'_, PgPool>, discount_percentage: f6
 
     let mut items_desc = Vec::new();
     for item in items {
-        let name = item["nameAr"].as_str().ok_or("Missing name")?;
+        let _name = item["nameAr"].as_str().ok_or("Missing name")?;
         let qty = item["quantity"].as_i64().ok_or("Missing qty")? as i32;
         let med_uuid = uuid::Uuid::parse_str(item["id"].as_str().ok_or("Err")?).map_err(|e| e.to_string())?;
         // Part 3 S10: fetch price from DB (not client) to prevent price manipulation
@@ -1031,7 +1031,7 @@ async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, it
     for item in items {
         let med_id_str = item["id"].as_str().ok_or("Missing item id")?;
         let med_id = uuid::Uuid::parse_str(med_id_str).map_err(|e| e.to_string())?;
-        let name = item["nameAr"].as_str().ok_or("Missing name")?;
+        let _name = item["nameAr"].as_str().ok_or("Missing name")?;
         let qty = item["quantity"].as_i64().ok_or("Missing qty")? as i32;
         let price_f64 = item["price"].as_f64().ok_or("Missing price")?;
         let price_dec = rust_decimal::Decimal::from_f64(price_f64).ok_or("Invalid item price")?;

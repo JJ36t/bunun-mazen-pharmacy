@@ -6,7 +6,6 @@
 // can poll this endpoint without authenticating to the Tauri app.
 
 use sqlx::PgPool;
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;

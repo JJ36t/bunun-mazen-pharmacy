@@ -13,7 +13,8 @@ fn main() {
     let sys = System::new_all();
     let mut fingerprint = String::new();
     if let Some(cpu) = sys.cpus().first() { fingerprint.push_str(&cpu.brand()); }
-    if let Some(host) = sysinfo::host_name() { fingerprint.push_str(&host); }
+    // sysinfo 0.32: host_name() is a method on System
+    if let Some(host) = System::host_name() { fingerprint.push_str(&host); }
     let alg = digest::digest(&digest::SHA256, fingerprint.as_bytes());
     let device_id = hex::encode(alg).to_uppercase();
 
@@ -21,7 +22,7 @@ fn main() {
     println!("Device Information");
     println!("========================================");
     println!("CPU brand: {}", sys.cpus().first().map(|c| c.brand()).unwrap_or("Unknown"));
-    println!("Hostname:  {}", sysinfo::host_name().unwrap_or_default());
+    println!("Hostname:  {}", System::host_name().unwrap_or_default());
     println!("Device ID: {}", device_id);
     println!("========================================");
 
