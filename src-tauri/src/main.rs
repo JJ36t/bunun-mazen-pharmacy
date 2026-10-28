@@ -1031,7 +1031,7 @@ async fn record_refund_db(state: tauri::State<'_, PgPool>, total_amount: f64, it
     for item in items {
         let med_id_str = item["id"].as_str().ok_or("Missing item id")?;
         let med_id = uuid::Uuid::parse_str(med_id_str).map_err(|e| e.to_string())?;
-        let _name = item["nameAr"].as_str().ok_or("Missing name")?;
+        let name = item["nameAr"].as_str().ok_or("Missing name")?;
         let qty = item["quantity"].as_i64().ok_or("Missing qty")? as i32;
         let price_f64 = item["price"].as_f64().ok_or("Missing price")?;
         let price_dec = rust_decimal::Decimal::from_f64(price_f64).ok_or("Invalid item price")?;

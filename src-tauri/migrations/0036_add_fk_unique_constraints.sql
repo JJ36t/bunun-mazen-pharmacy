@@ -53,7 +53,7 @@ END $$;
 
 -- Unique daily receipt number per day (prevent duplicate receipt numbers)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_daily_receipt_unique
-    ON invoices(daily_receipt_number, created_at::date)
+    ON invoices(daily_receipt_number, (created_at::date))
     WHERE daily_receipt_number IS NOT NULL;
 
 -- Unique medicine_batches per medicine (prevent duplicate batch numbers for same medicine)

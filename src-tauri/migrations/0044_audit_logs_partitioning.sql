@@ -21,8 +21,20 @@
 -- ========================================
 
 -- Step 1: Rename existing table
+-- Only rename when audit_logs is still the OLD non-partitioned table.
+-- Re-running on a database that already has the new partitioned table
+-- must NOT rename it (otherwise the copy step would hit a table with
+-- no partitions and fail with "no partition found for row").
 DO $$ BEGIN
-    ALTER TABLE audit_logs RENAME TO audit_logs_old;
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'audit_logs')
+       AND NOT EXISTS (
+           SELECT 1
+           FROM pg_partitioned_table pt
+           JOIN pg_class c ON c.oid = pt.partrelid
+           WHERE c.relname = 'audit_logs'
+       ) THEN
+        ALTER TABLE audit_logs RENAME TO audit_logs_old;
+    END IF;
 EXCEPTION WHEN OTHERS THEN
     RAISE NOTICE 'audit_logs not renamed: %', SQLERRM;
 END $$;
@@ -63,7 +75,7 @@ BEGIN
                 partition_name, month_start, month_end
             );
             RAISE NOTICE 'Created partition: %', partition_name;
-        EXCEPTION WHEN duplicate_object THEN
+        EXCEPTION WHEN duplicate_object OR duplicate_table THEN
             RAISE NOTICE 'Partition % already exists', partition_name;
         END;
     END LOOP;
@@ -76,9 +88,21 @@ DO $$
 BEGIN
     -- Check if audit_logs_old exists and has data
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'audit_logs_old') THEN
-        -- Copy existing rows
-        EXECUTE 'INSERT INTO audit_logs (id, user_role, action_type, description, created_at, prev_hash, row_hash)
-                 SELECT id, user_role, action_type, description, created_at, prev_hash, row_hash
+        -- Older schemas never received the tamper-proof columns (comment in
+        -- step 2 claims 0031 added them, but no earlier migration does).
+        -- Add them here so the copy below does not fail on fresh databases.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'audit_logs_old' AND column_name = 'prev_hash') THEN
+            EXECUTE 'ALTER TABLE audit_logs_old ADD COLUMN prev_hash TEXT';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'audit_logs_old' AND column_name = 'row_hash') THEN
+            EXECUTE 'ALTER TABLE audit_logs_old ADD COLUMN row_hash TEXT';
+        END IF;
+        -- Copy existing rows (id omitted: old schemas used UUID ids while the
+        -- new partitioned table uses BIGSERIAL — let the sequence assign fresh ids)
+        EXECUTE 'INSERT INTO audit_logs (user_role, action_type, description, created_at, prev_hash, row_hash)
+                 SELECT user_role, action_type, description, created_at, prev_hash, row_hash
                  FROM audit_logs_old
                  ORDER BY created_at';
 
@@ -122,7 +146,7 @@ BEGIN
             partition_name, next_month, next_month + INTERVAL '1 month'
         );
         RETURN format('Created partition: %s', partition_name);
-    EXCEPTION WHEN duplicate_object THEN
+    EXCEPTION WHEN duplicate_object OR duplicate_table THEN
         RETURN format('Partition %s already exists', partition_name);
     END;
 END;
