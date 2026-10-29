@@ -121,6 +121,7 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
     setSaving(true);
     try {
       const medId = await invoke<string>('add_medicine_from_global_db', {
+        sessionToken: useAuthStore.getState().sessionToken,
         barcode,
         name: finalName,
         activeIngredient: data.activeIngredient || null,
@@ -131,7 +132,6 @@ export function SmartBarcodeLookup({ barcode, onClose, onMedicineAdded }: SmartB
         quantity: q,
         batchNumber: batchNumber || null,
         expiryDate: expiryDate || null,
-        userRole: useAuthStore.getState().username || 'unknown',
       });
       toast.success('تم إضافة الدواء للمخزون وربطه بالباركود');
       onMedicineAdded(medId);

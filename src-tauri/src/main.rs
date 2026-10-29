@@ -488,13 +488,13 @@ async fn get_users_db(state: tauri::State<'_, PgPool>, session_token: String) ->
     };
     let mut users = Vec::new();
     for row in rows {
-        let last_login: Option<chrono::NaiveDateTime> = row.get(4);
+        let last_login: Option<chrono::DateTime<chrono::Utc>> = row.get(4);
         users.push(serde_json::json!({
             "id": row.get::<uuid::Uuid, _>(0).to_string(),
             "username": row.get::<String, _>(1),
             "role": row.get::<String, _>(2),
             "isActive": row.get::<bool, _>(3),
-            "lastLogin": last_login.map(|d| d.to_string()),
+            "lastLogin": last_login.map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string()),
         }));
     }
     Ok(users)
@@ -595,7 +595,7 @@ async fn get_suspended_invoices_db(state: tauri::State<'_, PgPool>) -> Result<Ve
         .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut invs = Vec::new();
     for row in rows {
-        invs.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "itemsJson": row.get::<String, _>(1), "date": row.get::<chrono::NaiveDateTime, _>(2).to_string() }));
+        invs.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "itemsJson": row.get::<String, _>(1), "date": row.get::<chrono::DateTime<chrono::Utc>, _>(2).format("%Y-%m-%d %H:%M:%S").to_string() }));
     }
     Ok(invs)
 }
@@ -624,7 +624,7 @@ async fn get_audit_logs_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_
         .fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut logs = Vec::new();
     for row in rows {
-        logs.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "userRole": row.get::<String, _>(1), "actionType": row.get::<String, _>(2), "description": row.get::<String, _>(3), "date": row.get::<chrono::NaiveDateTime, _>(4).to_string() }));
+        logs.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "userRole": row.get::<String, _>(1), "actionType": row.get::<String, _>(2), "description": row.get::<String, _>(3), "date": row.get::<chrono::DateTime<chrono::Utc>, _>(4).format("%Y-%m-%d %H:%M:%S").to_string() }));
     } Ok(logs)
 }
 
@@ -646,7 +646,7 @@ async fn get_patients_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_js
         patients.push(serde_json::json!({
             "id": row.get::<uuid::Uuid, _>(0).to_string(), "name": row.get::<String, _>(1), 
             "nationalId": row.get::<String, _>(2), "phone": row.get::<String, _>(3), 
-            "notes": row.get::<Option<String>, _>(4), "date": row.get::<chrono::NaiveDateTime, _>(5).to_string()
+            "notes": row.get::<Option<String>, _>(4), "date": row.get::<chrono::DateTime<chrono::Utc>, _>(5).format("%Y-%m-%d %H:%M:%S").to_string()
         }));
     }
     Ok(patients)
@@ -1130,7 +1130,7 @@ async fn get_accounting_summary_db(state: tauri::State<'_, PgPool>) -> Result<se
     let exp_rows = sqlx::query("SELECT id, description, amount, created_at FROM expenses ORDER BY created_at DESC LIMIT 10").fetch_all(state.inner()).await.map_err(|e| e.to_string())?;
     let mut expenses_list = Vec::new();
     for row in exp_rows {
-        expenses_list.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "description": row.get::<String, _>(1), "amount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)), "date": row.get::<chrono::NaiveDateTime, _>(3).to_string() }));
+        expenses_list.push(serde_json::json!({ "id": row.get::<uuid::Uuid, _>(0).to_string(), "description": row.get::<String, _>(1), "amount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)), "date": row.get::<chrono::DateTime<chrono::Utc>, _>(3).format("%Y-%m-%d %H:%M:%S").to_string() }));
     }
     Ok(serde_json::json!({ "totalSales": decimal_to_f64(total_sales), "totalProfits": decimal_to_f64(total_profits), "totalDiscounts": decimal_to_f64(total_discounts), "totalExpenses": decimal_to_f64(total_expenses), "cashbox": decimal_to_f64(cashbox), "expenses": expenses_list }))
 }
@@ -1212,7 +1212,7 @@ async fn get_invoice_details_report(state: tauri::State<'_, PgPool>, start_date:
             "profitAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
             "discountAmount": decimal_to_f64(row.get::<Option<rust_decimal::Decimal>, _>(3).unwrap_or(rust_decimal::Decimal::ZERO)),
             "userRole": row.get::<Option<String>, _>(4).unwrap_or_else(|| "N/A".to_string()),
-            "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(), "items": items
+            "date": row.get::<chrono::DateTime<chrono::Utc>, _>(5).format("%Y-%m-%d %H:%M:%S").to_string(), "items": items
         }));
     }
     Ok(invoices)
@@ -1288,8 +1288,8 @@ async fn get_customer_debts_db(state: tauri::State<'_, PgPool>) -> Result<Vec<se
         debts.push(serde_json::json!({
             "id": row.get::<uuid::Uuid, _>(0).to_string(), "customerName": row.get::<String, _>(1),
             "amount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)), "isPaid": row.get::<bool, _>(3),
-            "note": row.get::<Option<String>, _>(4), "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
-            "paidDate": row.get::<Option<chrono::NaiveDateTime>, _>(6).map(|d| d.to_string())
+            "note": row.get::<Option<String>, _>(4), "date": row.get::<chrono::DateTime<chrono::Utc>, _>(5).format("%Y-%m-%d %H:%M:%S").to_string(),
+            "paidDate": row.get::<Option<chrono::DateTime<chrono::Utc>>, _>(6).map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
         }));
     }
     Ok(debts)
@@ -1560,8 +1560,8 @@ async fn get_active_sessions_db(state: tauri::State<'_, PgPool>) -> Result<Vec<s
         sessions.push(serde_json::json!({
             "id": row.get::<uuid::Uuid, _>(0).to_string(),
             "username": row.get::<String, _>(1),
-            "loginAt": row.get::<chrono::NaiveDateTime, _>(2).to_string(),
-            "lastActivity": row.get::<chrono::NaiveDateTime, _>(3).to_string(),
+            "loginAt": row.get::<chrono::DateTime<chrono::Utc>, _>(2).format("%Y-%m-%d %H:%M:%S").to_string(),
+            "lastActivity": row.get::<chrono::DateTime<chrono::Utc>, _>(3).format("%Y-%m-%d %H:%M:%S").to_string(),
             "deviceInfo": row.get::<String, _>(4),
         }));
     }
@@ -1598,7 +1598,7 @@ async fn get_fraud_alerts_db(state: tauri::State<'_, PgPool>, unresolved_only: b
             "relatedId": row.get::<Option<String>, _>(5),
             "metadata": row.get::<Option<String>, _>(6),
             "isResolved": row.get::<bool, _>(7),
-            "createdAt": row.get::<chrono::NaiveDateTime, _>(8).to_string(),
+            "createdAt": row.get::<chrono::DateTime<chrono::Utc>, _>(8).format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
     }
     Ok(alerts)
@@ -1627,7 +1627,7 @@ async fn get_plugins_db(state: tauri::State<'_, PgPool>) -> Result<Vec<serde_jso
             "version": row.get::<String, _>(3),
             "description": row.get::<Option<String>, _>(4),
             "isEnabled": row.get::<bool, _>(5),
-            "installedAt": row.get::<chrono::NaiveDateTime, _>(6).to_string(),
+            "installedAt": row.get::<chrono::DateTime<chrono::Utc>, _>(6).format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
     }
     Ok(plugins)
@@ -1677,7 +1677,7 @@ async fn get_pending_journal_entries_db(state: tauri::State<'_, PgPool>) -> Resu
             "operation_id": row.get::<String, _>(2),
             "payload": row.get::<String, _>(3),
             "user_role": row.get::<String, _>(4),
-            "started_at": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
+            "started_at": row.get::<chrono::DateTime<chrono::Utc>, _>(5).format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
     }
     Ok(entries)
@@ -1710,7 +1710,7 @@ async fn get_print_jobs_db(state: tauri::State<'_, PgPool>, status_filter: Optio
             "status": row.get::<String, _>(3),
             "retryCount": row.get::<i32, _>(4),
             "errorMessage": row.get::<Option<String>, _>(5),
-            "createdAt": row.get::<chrono::NaiveDateTime, _>(6).to_string(),
+            "createdAt": row.get::<chrono::DateTime<chrono::Utc>, _>(6).format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
     }
     Ok(jobs)
@@ -1731,7 +1731,7 @@ async fn get_backup_history_db(state: tauri::State<'_, PgPool>) -> Result<Vec<se
             "status": row.get::<String, _>(4),
             "errorMessage": row.get::<Option<String>, _>(5),
             "userRole": row.get::<Option<String>, _>(6),
-            "createdAt": row.get::<chrono::NaiveDateTime, _>(7).to_string(),
+            "createdAt": row.get::<chrono::DateTime<chrono::Utc>, _>(7).format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
     }
     Ok(history)
@@ -1777,7 +1777,7 @@ async fn create_auto_backup_db(state: tauri::State<'_, PgPool>, user_role: Strin
     let invoices_arr: Vec<serde_json::Value> = invoices.iter().map(|r| serde_json::json!({
         "id": r.get::<uuid::Uuid, _>(0).to_string(), "total_amount": r.get::<rust_decimal::Decimal, _>(1).to_string(),
         "profit_amount": r.get::<rust_decimal::Decimal, _>(2).to_string(), "user_role": r.get::<Option<String>, _>(3),
-        "daily_receipt_number": r.get::<Option<i32>, _>(4), "created_at": r.get::<chrono::NaiveDateTime, _>(5).to_string(),
+        "daily_receipt_number": r.get::<Option<i32>, _>(4), "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>(5).format("%Y-%m-%d %H:%M:%S").to_string(),
         "is_reversed": r.get::<bool, _>(6), "discount_amount": r.get::<Option<rust_decimal::Decimal>, _>(7).map(|d| d.to_string())
     })).collect();
     let invoice_items_arr: Vec<serde_json::Value> = invoice_items.iter().map(|r| serde_json::json!({
@@ -1787,13 +1787,13 @@ async fn create_auto_backup_db(state: tauri::State<'_, PgPool>, user_role: Strin
     let expenses_arr: Vec<serde_json::Value> = expenses.iter().map(|r| serde_json::json!({
         "id": r.get::<uuid::Uuid, _>(0).to_string(), "description": r.get::<String, _>(1),
         "amount": r.get::<rust_decimal::Decimal, _>(2).to_string(), "category": r.get::<Option<String>, _>(3).unwrap_or_else(|| "operational".to_string()),
-        "created_at": r.get::<chrono::NaiveDateTime, _>(4).to_string()
+        "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>(4).format("%Y-%m-%d %H:%M:%S").to_string()
     })).collect();
     let debts_arr: Vec<serde_json::Value> = debts.iter().map(|r| serde_json::json!({
         "id": r.get::<uuid::Uuid, _>(0).to_string(), "customer_name": r.get::<String, _>(1),
         "amount": r.get::<rust_decimal::Decimal, _>(2).to_string(), "is_paid": r.get::<bool, _>(3),
-        "note": r.get::<Option<String>, _>(4), "created_at": r.get::<chrono::NaiveDateTime, _>(5).to_string(),
-        "paid_date": r.get::<Option<chrono::NaiveDateTime>, _>(6).map(|d| d.to_string())
+        "note": r.get::<Option<String>, _>(4), "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>(5).format("%Y-%m-%d %H:%M:%S").to_string(),
+        "paid_date": r.get::<Option<chrono::DateTime<chrono::Utc>>, _>(6).map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
     })).collect();
     let suppliers_arr: Vec<serde_json::Value> = suppliers.iter().map(|r| serde_json::json!({
         "id": r.get::<uuid::Uuid, _>(0).to_string(), "name": r.get::<String, _>(1),
@@ -1803,14 +1803,14 @@ async fn create_auto_backup_db(state: tauri::State<'_, PgPool>, user_role: Strin
     let patients_arr: Vec<serde_json::Value> = patients.iter().map(|r| serde_json::json!({
         "id": r.get::<uuid::Uuid, _>(0).to_string(), "name": r.get::<String, _>(1),
         "national_id": r.get::<String, _>(2), "phone": r.get::<String, _>(3),
-        "notes": r.get::<Option<String>, _>(4), "created_at": r.get::<chrono::NaiveDateTime, _>(5).to_string()
+        "notes": r.get::<Option<String>, _>(4), "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>(5).format("%Y-%m-%d %H:%M:%S").to_string()
     })).collect();
     let settings_arr: Vec<serde_json::Value> = settings_rows.iter().map(|r| serde_json::json!({
         "key": r.get::<String, _>(0), "value": r.get::<String, _>(1)
     })).collect();
     let audit_arr: Vec<serde_json::Value> = audit_logs.iter().map(|r| serde_json::json!({
         "user_role": r.get::<Option<String>, _>(0), "action_type": r.get::<String, _>(1),
-        "description": r.get::<String, _>(2), "created_at": r.get::<chrono::NaiveDateTime, _>(3).to_string()
+        "description": r.get::<String, _>(2), "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>(3).format("%Y-%m-%d %H:%M:%S").to_string()
     })).collect();
 
     let backup_data = serde_json::json!({
@@ -2195,7 +2195,7 @@ async fn get_performance_metrics_db(state: tauri::State<'_, PgPool>, metric_name
             "metricValue": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
             "unit": row.get::<String, _>(3),
             "context": row.get::<Option<String>, _>(4),
-            "createdAt": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
+            "createdAt": row.get::<chrono::DateTime<chrono::Utc>, _>(5).format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
     }
     Ok(metrics)
@@ -2322,7 +2322,7 @@ async fn get_refunds_db(state: tauri::State<'_, PgPool>, limit: Option<i64>) -> 
             "profitAmount": decimal_to_f64(row.get::<rust_decimal::Decimal, _>(2)),
             "discountAmount": decimal_to_f64(row.get::<Option<rust_decimal::Decimal>, _>(3).unwrap_or(rust_decimal::Decimal::ZERO)),
             "userRole": row.get::<Option<String>, _>(4).unwrap_or_else(|| "N/A".to_string()),
-            "date": row.get::<chrono::NaiveDateTime, _>(5).to_string(),
+            "date": row.get::<chrono::DateTime<chrono::Utc>, _>(5).format("%Y-%m-%d %H:%M:%S").to_string(),
             "isReversed": row.get::<bool, _>(6),
             "refundReasonCode": row.get::<Option<String>, _>(7),
             "refundNotes": row.get::<Option<String>, _>(8),

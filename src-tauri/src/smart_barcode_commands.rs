@@ -10,6 +10,7 @@ use sqlx::{PgPool, Row};
 use serde_json;
 use std::time::Duration;
 use rust_decimal::prelude::FromPrimitive;
+use crate::verify_session_token;
 
 /// HTTP client helper
 async fn http_get_json(url: &str) -> Result<serde_json::Value, String> {
@@ -283,8 +284,14 @@ pub async fn smart_barcode_lookup(
         Err(e) => errors.push(format!("local: {}", e)),
     }
 
-    // 2. ابحث في OpenFoodFacts (متوازي مع GS1)
-    let off_result = tokio::spawn(lookup_in_openfoodfacts(trimmed.to_string())).await;
+    // 2. ابحث في OpenFoodFacts عبر الكاش (متوازي مع GS1)
+    // Audit 3.4: the POS path must use the DB-backed cached lookup (7-day TTL),
+    // not the live API every scan.
+    let off_result = {
+        let pool = state.inner().clone();
+        let bc = trimmed.to_string();
+        tokio::spawn(async move { lookup_in_openfoodfacts_cached(&pool, &bc).await }).await
+    };
     match off_result {
         Ok(Ok(Some(r))) => results.push(r),
         Ok(Ok(None)) => {},
@@ -309,9 +316,12 @@ pub async fn smart_barcode_lookup(
 
 /// 5. إضافة دواء جديد من نتيجة البحث اللحظي
 /// يستقبل بيانات الدواء + السعر + الكمية ويضيفه لـ medicines
+/// Audit 3.2 (P0): identity is derived from the verified session, never from
+/// a client-sent role. Caller must hold the `inventory.add` permission.
 #[tauri::command]
 pub async fn add_medicine_from_global_db(
     state: tauri::State<'_, PgPool>,
+    session_token: String,
     barcode: String,
     name: String,
     active_ingredient: Option<String>,
@@ -322,9 +332,38 @@ pub async fn add_medicine_from_global_db(
     quantity: i32,
     batch_number: Option<String>,
     expiry_date: Option<String>,
-    user_role: String,
 ) -> Result<String, String> {
     let pool = state.inner();
+    // تحقق الجلسة واستخراج الهوية الموثقة من قاعدة البيانات
+    let (_uid, username, role) = verify_session_token(pool, &session_token).await?;
+
+    // فرض صلاحية inventory.add على الخادم (وليس في الواجهة فقط)
+    let has_perm: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM users u \
+         JOIN roles r ON (LOWER(u.role) = LOWER(r.name) OR LOWER(u.role) = LOWER(r.display_name)) \
+         JOIN role_permissions rp ON r.id = rp.role_id \
+         JOIN permissions p ON rp.permission_id = p.id \
+         WHERE u.username = $1 AND p.name = 'inventory.add'"
+    )
+    .bind(&username)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if has_perm == 0 {
+        return Err(format!("ليست لديك صلاحية إضافة أدوية للمخزون ({})", username));
+    }
+
+    // تحقق منطقي أساسي قبل أي كتابة
+    if name.trim().is_empty() || name.trim().eq_ignore_ascii_case("unknown") {
+        return Err("اسم الدواء مطلوب".to_string());
+    }
+    if price <= 0.0 || cost_price <= 0.0 {
+        return Err("السعر وسعر الشراء يجب أن يكونا أكبر من صفر".to_string());
+    }
+    if quantity < 0 {
+        return Err("الكمية لا يمكن أن تكون سالبة".to_string());
+    }
+
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     let expiry = expiry_date.and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
@@ -404,10 +443,10 @@ pub async fn add_medicine_from_global_db(
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // سجل تدقيق
-    let desc = format!("إضافة دواء من القاعدة العالمية: {} (باركود: {})", name, final_barcode);
+    // سجل تدقيق — الهوية الموثقة من الجلسة (وليس دوراً مرسلاً من الواجهة)
+    let desc = format!("إضافة دواء من القاعدة العالمية: {} (باركود: {}) بواسطة {}", name, final_barcode, username);
     let _ = sqlx::query("INSERT INTO audit_logs (user_role, action_type, description) VALUES ($1, 'ADD_MEDICINE_GLOBAL', $2)")
-        .bind(&user_role).bind(&desc)
+        .bind(&role).bind(&desc)
         .execute(&mut *tx).await;
 
     tx.commit().await.map_err(|e| e.to_string())?;
